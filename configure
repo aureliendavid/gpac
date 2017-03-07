@@ -1051,7 +1051,6 @@ else
     fi
 fi
 
-set -x
 #look for opensvc support
 
 if test "$darwin" = "yes" ; then
