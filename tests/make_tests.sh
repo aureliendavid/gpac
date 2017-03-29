@@ -440,27 +440,23 @@ fi
 MP4CLIENT="MP4Client"
 
 if [ $MP4CLIENT_NOT_FOUND = 0 ] && [ $do_clean = 0 ] ; then
-
-MP4Client -run-for 0 2> /dev/null
-res=$?
-if [ $res != 0 ] ; then
-MP4CLIENT_NOT_FOUND=1
-echo ""
-log $L_WAR "WARNING: MP4Client not found (ret $res) - launch results:"
-MP4Client -run-for 0
-res=$?
-if [ $res = 0 ] ; then
-log $L_INF "MP4Client returned $res on second run - enabling all playback tests"
-else
-echo "** MP4Client returned $res - disabling all playback tests - dumping GPAC config file **"
-cat $HOME/.gpac/GPAC.cfg
-echo "** End of dump **"
+  MP4Client -run-for 0 2> /dev/null
+  res=$?
+  if [ $res != 0 ] ; then
+    MP4CLIENT_NOT_FOUND=1
+    echo ""
+    log $L_WAR "WARNING: MP4Client not found (ret $res) - launch results:"
+    MP4Client -run-for 0
+    res=$?
+    if [ $res = 0 ] ; then
+      log $L_INF "MP4Client returned $res on second run - enabling all playback tests"
+    else
+      echo "** MP4Client returned $res - disabling all playback tests - dumping GPAC config file **"
+      cat $HOME/.gpac/GPAC.cfg
+      echo "** End of dump **"
+    fi
+  fi
 fi
-
-fi
-
-fi
-
 
 MP42TS -h 2> /dev/null
 res=$?
@@ -608,6 +604,10 @@ test_begin ()
   if [ -f $TEST_ERR_FILE ] ; then
    test_skip=2
   fi
+ fi
+
+ if [ $MP4CLIENT_NOT_FOUND > 0 ] ; then
+  skip_play_hash=1
  fi
 
  if [ $generate_hash = 1 ] ; then
@@ -1111,7 +1111,21 @@ do_hash_test ()
  echo "HASH_TEST=$2" > $STATHASH_SH
 
  echo "Computing $1  ($2) hash: " >> $log_subtest
- $MP4BOX -hash -std $1 > $test_hash 2>> $log_subtest
+ file_to_hash="$1"
+
+ # for text files, we remove potential CR chars
+ # to prevent having different hashes on different platforms
+ if [ -n "$(file -b $1 | grep text)" ] ; then
+  file_to_hash="to_hash_$(basename $1)"
+  sed "s/\r//" "$1" > "$file_to_hash"
+ fi
+
+ $MP4BOX -hash -std $file_to_hash > $test_hash 2>> $log_subtest
+
+ if [ "$file_to_hash" != "$1" ]; then
+  rm "$file_to_hash"
+ fi
+
  if [ $generate_hash = 0 ] ; then
   if [ ! -f $ref_hash ] ; then
    echo "HASH_NOT_FOUND=1" >> $STATHASH_SH
