@@ -740,7 +740,7 @@ shopt -s nullglob
     result="$SUBTEST_NAME:Fail(ret code $RETURN_VALUE) $result"
    fi
    test_ok=0
-   test_exec_na=$((test_exec_na + 1))
+   test_fail=$((test_fail + 1))
   fi
 
   if [ $log_after_fail = 1 ] ; then
@@ -766,10 +766,12 @@ shopt -s nullglob
    if [ $HASH_NOT_FOUND -eq 1 ] ; then
     result="$HASH_TEST:HashNotFound $result"
     nb_hash_missing=$((nb_hash_missing + 1))
+    test_exec_na=$((test_exec_na + 1))
    elif [ $HASH_FAIL -eq 1 ] ; then
     result="$HASH_TEST:HashFail $result"
     test_ok=0
     nb_hash_fail=$((nb_hash_fail + 1))
+    test_exec_na=$((test_exec_na + 1))
    fi
   fi
   rm -f $i > /dev/null
@@ -1394,23 +1396,22 @@ else
  TESTS_SKIP=$((TESTS_SKIP + $TEST_SKIP))
 fi
 
-if [ $TEST_EXEC_NA != 0 ] ; then
- if [ $TEST_FAIL = 0 ] ; then
-  TEST_FAIL=1
- fi
- TESTS_EXEC_NA=$((TESTS_EXEC_NA + 1))
-fi
-
 if [ $TEST_FAIL = 0 ] ; then
- TESTS_PASSED=$((TESTS_PASSED + 1))
+  if [ $TEST_EXEC_NA = 0 ] && [ $SUBTESTS_LEAK = 0 ]; then
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+  else
+    rm -f $i > /dev/null
+    if [ $TEST_EXEC_NA != 0 ] ; then
+      TESTS_EXEC_NA=$((TESTS_EXEC_NA + 1))
+    else
+      TESTS_LEAK=$((TESTS_LEAK + 1))
+    fi
+  fi
 else
- TESTS_FAILED=$((TESTS_FAILED + 1))
- rm -f $i > /dev/null
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  rm -f $i > /dev/null
 fi
 
-if [ $SUBTESTS_LEAK != 0 ] ; then
-  TESTS_LEAK=$((TESTS_LEAK + 1))
-fi
 
 SUBTESTS_FAIL=$((SUBTESTS_FAIL + $TEST_FAIL))
 SUBTESTS_EXEC_NA=$((SUBTESTS_EXEC_NA + $TEST_EXEC_NA))
@@ -1499,12 +1500,12 @@ fi
 
  if [ $SUBTESTS_HASH_FAIL != 0 ] ; then
   pc=$((100*SUBTESTS_HASH_FAIL/SUBTESTS_DONE))
-  log $L_WAR "Tests HASH total $TESTS_HASH - fail $TESTS_HASH_FAIL ($pc % of subtests)"
+  log $L_WAR "Tests HASH total $SUBTESTS_HASH - fail $SUBTESTS_HASH_FAIL ($pc % of subtests)"
  fi
 
  if [ $SUBTESTS_HASH_MISSING != 0 ] ; then
   pc=$((100*SUBTESTS_HASH_MISSING/$SUBTESTS_HASH))
-  log $L_WAR "Missing hashes $SUBTESTS_HASH_MISSING / $SUBTESTS_HASH ($pc % )"
+  log $L_WAR "Missing hashes $SUBTESTS_HASH_MISSING / $SUBTESTS_HASH ($pc % hashed subtests)"
  fi
 
 
