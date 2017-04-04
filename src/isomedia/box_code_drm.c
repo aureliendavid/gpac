@@ -168,7 +168,6 @@ void schm_del(GF_Box *s)
 
 GF_Err schm_Read(GF_Box *s, GF_BitStream *bs)
 {
-	GF_Err e;
 	GF_SchemeTypeBox *ptr = (GF_SchemeTypeBox *)s;
 
 	ptr->scheme_type = gf_bs_read_u32(bs);
@@ -378,7 +377,6 @@ void iKMS_del(GF_Box *s)
 
 GF_Err iKMS_Read(GF_Box *s, GF_BitStream *bs)
 {
-	GF_Err e;
 	u32 len;
 	GF_ISMAKMSBox *ptr = (GF_ISMAKMSBox *)s;
 
@@ -426,7 +424,6 @@ void iSFM_del(GF_Box *s)
 
 GF_Err iSFM_Read(GF_Box *s, GF_BitStream *bs)
 {
-	GF_Err e;
 	GF_ISMASampleFormatBox *ptr = (GF_ISMASampleFormatBox *)s;
 
 	ptr->selective_encryption = gf_bs_read_int(bs, 1);
@@ -527,7 +524,6 @@ GF_Err ohdr_AddBox(GF_Box *s, GF_Box *a)
 GF_Err ohdr_Read(GF_Box *s, GF_BitStream *bs)
 {
 	u16 cid_len, ri_len;
-	GF_Err e;
 	GF_OMADRMCommonHeaderBox *ptr = (GF_OMADRMCommonHeaderBox*)s;
 
 	ptr->EncryptionMethod = gf_bs_read_u8(bs);
@@ -621,7 +617,6 @@ void grpi_del(GF_Box *s)
 GF_Err grpi_Read(GF_Box *s, GF_BitStream *bs)
 {
 	u16 gid_len;
-	GF_Err e;
 	GF_OMADRMGroupIDBox *ptr = (GF_OMADRMGroupIDBox*)s;
 
 	gid_len = gf_bs_read_u16(bs);
@@ -722,7 +717,6 @@ void odtt_del(GF_Box *s)
 
 GF_Err odtt_Read(GF_Box *s, GF_BitStream *bs)
 {
-	GF_Err e;
 	GF_OMADRMTransactionTrackingBox *ptr = (GF_OMADRMTransactionTrackingBox *)s;
 
 	gf_bs_read_data(bs, ptr->TransactionID, 16);
@@ -767,7 +761,6 @@ void odrb_del(GF_Box *s)
 
 GF_Err odrb_Read(GF_Box *s, GF_BitStream *bs)
 {
-	GF_Err e;
 	GF_OMADRMRightsObjectBox *ptr = (GF_OMADRMRightsObjectBox *)s;
 
 	ptr->oma_ro_size = (u32) ptr->size;
@@ -895,7 +888,6 @@ void pssh_del(GF_Box *s)
 
 GF_Err pssh_Read(GF_Box *s, GF_BitStream *bs)
 {
-	GF_Err e;
 	GF_ProtectionSystemHeaderBox *ptr = (GF_ProtectionSystemHeaderBox *)s;
 
 	gf_bs_read_data(bs, (char *) ptr->SystemID, 16);
@@ -976,7 +968,6 @@ void tenc_del(GF_Box *s)
 
 GF_Err tenc_Read(GF_Box *s, GF_BitStream *bs)
 {
-	GF_Err e;
 	GF_TrackEncryptionBox *ptr = (GF_TrackEncryptionBox*)s;
 
 	gf_bs_read_u8(bs); //reserved
@@ -1097,14 +1088,15 @@ GF_Err piff_tenc_Size(GF_Box *s)
 
 GF_Box *piff_psec_New()
 {
-	ISOM_DECL_BOX_ALLOC(GF_PIFFSampleEncryptionBox, GF_ISOM_BOX_TYPE_UUID);
+	ISOM_DECL_BOX_ALLOC(GF_SampleEncryptionBox, GF_ISOM_BOX_TYPE_UUID);
 	tmp->internal_4cc = GF_ISOM_BOX_UUID_PSEC;
+	tmp->is_piff = GF_TRUE;
 	return (GF_Box *)tmp;
 }
 
 void piff_psec_del(GF_Box *s)
 {
-	GF_PIFFSampleEncryptionBox *ptr = (GF_PIFFSampleEncryptionBox *)s;
+	GF_SampleEncryptionBox *ptr = (GF_SampleEncryptionBox *)s;
 	while (gf_list_count(ptr->samp_aux_info)) {
 		GF_CENCSampleAuxInfo *sai = (GF_CENCSampleAuxInfo *)gf_list_get(ptr->samp_aux_info, 0);
 		if (sai) gf_isom_cenc_samp_aux_info_del(sai);
@@ -1117,8 +1109,8 @@ void piff_psec_del(GF_Box *s)
 
 GF_Err piff_psec_Read(GF_Box *s, GF_BitStream *bs)
 {
-	u32 sample_count, i, j;
-	GF_PIFFSampleEncryptionBox *ptr = (GF_PIFFSampleEncryptionBox *)s;
+	u32 sample_count;
+	GF_SampleEncryptionBox *ptr = (GF_SampleEncryptionBox *)s;
 	if (ptr->size<4) return GF_ISOM_INVALID_FILE;
 	ptr->version = gf_bs_read_u8(bs);
 	ptr->flags = gf_bs_read_u24(bs);
@@ -1133,36 +1125,16 @@ GF_Err piff_psec_Read(GF_Box *s, GF_BitStream *bs)
 	if (ptr->IV_size == 0)
 		ptr->IV_size = 8; //default to 8
 
+	ptr->bs_offset = gf_bs_get_position(bs);
+
 	sample_count = gf_bs_read_u32(bs);
 	ISOM_DECREASE_SIZE(ptr, 4);
 	if (ptr->IV_size != 8 && ptr->IV_size != 16) {
 		GF_LOG(GF_LOG_WARNING, GF_LOG_CONTAINER, ("[iso file] PIFF PSEC box incorrect IV size: %u - shall be 8 or 16\n", ptr->IV_size));
 		return GF_BAD_PARAM;
 	}
-
-	ptr->samp_aux_info = gf_list_new();
-	for (i=0; i<sample_count; ++i) {
-		GF_CENCSampleAuxInfo *sai;
-		GF_SAFEALLOC(sai, GF_CENCSampleAuxInfo);
-		if (!sai) return GF_OUT_OF_MEM;
-
-		sai->IV_size = ptr->IV_size;
-		gf_bs_read_data(bs, (char *) sai->IV, ptr->IV_size);
-		ISOM_DECREASE_SIZE(ptr, ptr->IV_size);
-		if (ptr->flags & 2) {
-			sai->subsample_count = gf_bs_read_u16(bs);
-			sai->subsamples = gf_malloc(sai->subsample_count*sizeof(GF_CENCSubSampleEntry));
-			for (j = 0; j < sai->subsample_count; ++j) {
-				sai->subsamples[j].bytes_clear_data = gf_bs_read_u16(bs);
-				sai->subsamples[j].bytes_encrypted_data = gf_bs_read_u32(bs);
-			}
-			ISOM_DECREASE_SIZE(ptr, (2+sai->subsample_count*6) );
-		}
-		gf_list_add(ptr->samp_aux_info, sai);
-	}
-
-	ptr->bs_offset = gf_bs_get_position(bs);
-	assert(ptr->size == 0);
+	//as for senc, we skip parsing of the box until we have all saiz/saio info
+	ptr->size = 0;
 	return GF_OK;
 }
 
@@ -1196,7 +1168,7 @@ GF_Err piff_psec_Write(GF_Box *s, GF_BitStream *bs)
 {
 	GF_Err e;
 	u32 sample_count;
-	GF_PIFFSampleEncryptionBox *ptr = (GF_PIFFSampleEncryptionBox *) s;
+	GF_SampleEncryptionBox *ptr = (GF_SampleEncryptionBox *) s;
 	if (!s) return GF_BAD_PARAM;
 
 	e = gf_isom_box_write_header(s, bs);
@@ -1233,7 +1205,7 @@ GF_Err piff_psec_Write(GF_Box *s, GF_BitStream *bs)
 GF_Err piff_psec_Size(GF_Box *s)
 {
 	u32 i, sample_count;
-	GF_PIFFSampleEncryptionBox *ptr = (GF_PIFFSampleEncryptionBox*)s;
+	GF_SampleEncryptionBox *ptr = (GF_SampleEncryptionBox*)s;
 
 	ptr->size += 4;
 	if (ptr->flags & 1) {
@@ -1267,7 +1239,6 @@ void piff_pssh_del(GF_Box *s)
 
 GF_Err piff_pssh_Read(GF_Box *s, GF_BitStream *bs)
 {
-	GF_Err e;
 	GF_PIFFProtectionSystemHeaderBox *ptr = (GF_PIFFProtectionSystemHeaderBox*)s;
 
 	gf_bs_read_data(bs, (char *) ptr->SystemID, 16);
@@ -1297,7 +1268,6 @@ GF_Err piff_pssh_Write(GF_Box *s, GF_BitStream *bs)
 
 GF_Err piff_pssh_Size(GF_Box *s)
 {
-	GF_Err e;
 	GF_PIFFProtectionSystemHeaderBox *ptr = (GF_PIFFProtectionSystemHeaderBox*)s;
 
 	ptr->size += 24 + ptr->private_data_size;
@@ -1324,9 +1294,9 @@ void senc_del(GF_Box *s)
 }
 
 #ifndef	GPAC_DISABLE_ISOM_FRAGMENTS
-GF_Err senc_Parse(GF_BitStream *bs, GF_TrackBox *trak, GF_TrackFragmentBox *traf, GF_SampleEncryptionBox *ptr)
+GF_Err senc_Parse(GF_BitStream *bs, GF_TrackBox *trak, GF_TrackFragmentBox *traf, GF_SampleEncryptionBox *senc)
 #else
-GF_Err senc_Parse(GF_BitStream *bs, GF_TrackBox *trak, void *traf, GF_SampleEncryptionBox *ptr)
+GF_Err senc_Parse(GF_BitStream *bs, GF_TrackBox *trak, void *traf, GF_SampleEncryptionBox *senc)
 #endif
 {
 	GF_Err e;
@@ -1338,10 +1308,10 @@ GF_Err senc_Parse(GF_BitStream *bs, GF_TrackBox *trak, void *traf, GF_SampleEncr
 		return GF_BAD_PARAM;
 #endif
 
-	gf_bs_seek(bs, ptr->bs_offset);
+	gf_bs_seek(bs, senc->bs_offset);
 
 	count = gf_bs_read_u32(bs);
-	if (!ptr->samp_aux_info) ptr->samp_aux_info = gf_list_new();
+	if (!senc->samp_aux_info) senc->samp_aux_info = gf_list_new();
 	for (i=0; i<count; i++) {
 		u32 is_encrypted;
 		u32 samp_count;
@@ -1353,14 +1323,15 @@ GF_Err senc_Parse(GF_BitStream *bs, GF_TrackBox *trak, void *traf, GF_SampleEncr
 		if (trak) samp_count += trak->sample_count_at_seg_start;
 #endif
 
-		e = gf_isom_get_sample_cenc_info_ex(trak, traf, samp_count, &is_encrypted, &sai->IV_size, NULL, NULL, NULL, NULL, NULL);
+		e = gf_isom_get_sample_cenc_info_ex(trak, traf, senc, samp_count, &is_encrypted, &sai->IV_size, NULL, NULL, NULL, NULL, NULL);
 		if (e) {
 			GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[isobmf] could not get cenc info for sample %d: %s\n", samp_count, gf_error_to_string(e) ));
 			return e;
 		}
+
 		if (is_encrypted) {
 			gf_bs_read_data(bs, (char *)sai->IV, sai->IV_size);
-			if (ptr->flags & 0x00000002) {
+			if (senc->flags & 0x00000002) {
 				sai->subsample_count = gf_bs_read_u16(bs);
 				sai->subsamples = (GF_CENCSubSampleEntry *)gf_malloc(sai->subsample_count*sizeof(GF_CENCSubSampleEntry));
 				for (j = 0; j < sai->subsample_count; j++) {
@@ -1369,7 +1340,7 @@ GF_Err senc_Parse(GF_BitStream *bs, GF_TrackBox *trak, void *traf, GF_SampleEncr
 				}
 			}
 		}
-		gf_list_add(ptr->samp_aux_info, sai);
+		gf_list_add(senc->samp_aux_info, sai);
 	}
 	gf_bs_seek(bs, pos);
 	return GF_OK;
@@ -1431,7 +1402,6 @@ GF_Err senc_Write(GF_Box *s, GF_BitStream *bs)
 
 GF_Err senc_Size(GF_Box *s)
 {
-	GF_Err e;
 	u32 sample_count;
 	u32 i;
 	GF_SampleEncryptionBox *ptr = (GF_SampleEncryptionBox*)s;
@@ -1682,7 +1652,6 @@ void aeib_del(GF_Box *s)
 
 GF_Err aeib_Read(GF_Box *s, GF_BitStream *bs)
 {
-	GF_Err e;
 	GF_AdobeEncryptionInfoBox *ptr = (GF_AdobeEncryptionInfoBox*)s;
 	u32 len;
 
@@ -1716,7 +1685,6 @@ GF_Err aeib_Write(GF_Box *s, GF_BitStream *bs)
 
 GF_Err aeib_Size(GF_Box *s)
 {
-	GF_Err e;
 	GF_AdobeEncryptionInfoBox *ptr = (GF_AdobeEncryptionInfoBox*)s;
 	if (ptr->enc_algo)
 		ptr->size += strlen(ptr->enc_algo) + 1;
@@ -1854,7 +1822,6 @@ void adaf_del(GF_Box *s)
 
 GF_Err adaf_Read(GF_Box *s, GF_BitStream *bs)
 {
-	GF_Err e;
 	GF_AdobeDRMAUFormatBox *ptr = (GF_AdobeDRMAUFormatBox*)s;
 
 	ptr->selective_enc = gf_bs_read_u8(bs);
@@ -1882,7 +1849,6 @@ GF_Err adaf_Write(GF_Box *s, GF_BitStream *bs)
 
 GF_Err adaf_Size(GF_Box *s)
 {
-	GF_Err e;
 	GF_AdobeDRMAUFormatBox *ptr = (GF_AdobeDRMAUFormatBox*)s;
 	ptr->size += 3;
 	return GF_OK;

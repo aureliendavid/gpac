@@ -43,7 +43,6 @@ void ispe_del(GF_Box *a)
 
 GF_Err ispe_Read(GF_Box *s, GF_BitStream *bs)
 {
-	GF_Err e;
 	GF_ImageSpatialExtentsPropertyBox *p = (GF_ImageSpatialExtentsPropertyBox *)s;
 
 	if (p->version == 0 && p->flags == 0) {
@@ -111,7 +110,7 @@ GF_Err colr_Read(GF_Box *s, GF_BitStream *bs)
 		p->matrix_coefficients = gf_bs_read_u16(bs);
 		p->full_range_flag = (gf_bs_read_u8(bs) & 0x80 ? GF_TRUE : GF_FALSE);
 	} else {
-		p->opaque = gf_malloc(sizeof(u8)* (u32) p->size);
+		p->opaque = gf_malloc(sizeof(u8)*(size_t)p->size);
 		p->opaque_size = (u32) p->size;
 		GF_LOG(GF_LOG_WARNING, GF_LOG_CONTAINER, ("ICC colour profile not supported \n" ));
 		gf_bs_read_data(bs, (char *) p->opaque, p->opaque_size);
@@ -170,7 +169,6 @@ void pixi_del(GF_Box *a)
 GF_Err pixi_Read(GF_Box *s, GF_BitStream *bs)
 {
 	u32 i;
-	GF_Err e;
 	GF_PixelInformationPropertyBox *p = (GF_PixelInformationPropertyBox *)s;
 
 	if (p->version == 0 && p->flags == 0) {
@@ -233,7 +231,6 @@ void rloc_del(GF_Box *a)
 
 GF_Err rloc_Read(GF_Box *s, GF_BitStream *bs)
 {
-	GF_Err e;
 	GF_RelativeLocationPropertyBox *p = (GF_RelativeLocationPropertyBox *)s;
 
 	if (p->version == 0 && p->flags == 0) {
@@ -451,7 +448,6 @@ void ipma_del(GF_Box *a)
 GF_Err ipma_Read(GF_Box *s, GF_BitStream *bs)
 {
 	u32 i, j;
-	GF_Err e;
 	GF_ItemPropertyAssociationBox *p = (GF_ItemPropertyAssociationBox *)s;
 	u32 entry_count, association_count;
 
@@ -594,7 +590,6 @@ void grptype_del(GF_Box *s)
 
 GF_Err grptype_Read(GF_Box *s, GF_BitStream *bs)
 {
-	GF_Err e;
 	u32 bytesToRead;
 	u32 i;
 	GF_EntityToGroupTypeBox *ptr = (GF_EntityToGroupTypeBox *)s;
