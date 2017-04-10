@@ -546,6 +546,8 @@ void visual_3d_init_draw(GF_TraverseState *tr_state, u32 layer_type)
 		GF_Rect orig_vp = tr_state->camera->vp;
 		Fixed vp_width = orig_vp.width;
 //		Fixed vp_height = orig_vp.height;
+		Fixed old_w = tr_state->camera->width;
+		Fixed old_h = tr_state->camera->height;
 
 		//fill up the entire screen matchin AR
 		if (tr_state->visual->autostereo_type==GF_3D_STEREO_HEADSET) {
@@ -566,6 +568,8 @@ void visual_3d_init_draw(GF_TraverseState *tr_state, u32 layer_type)
 				tr_state->camera->vp.width = max_width;
 				tr_state->camera->vp.height = max_height;
 #endif
+				tr_state->camera->width = max_width;
+				tr_state->camera->height = max_height;
 
 			tr_state->camera->vp.x = (INT2FIX(tr_state->visual->compositor->display_width) - tr_state->visual->nb_views*tr_state->camera->vp.width)/2 + tr_state->visual->current_view * tr_state->camera->vp.width;
 			tr_state->camera->vp.y = (INT2FIX(tr_state->visual->compositor->display_height) - tr_state->camera->vp.height)/2;
@@ -596,6 +600,9 @@ void visual_3d_init_draw(GF_TraverseState *tr_state, u32 layer_type)
 		visual_3d_setup_projection(tr_state, layer_type);
 
 		tr_state->camera->vp = orig_vp;
+		tr_state->camera->width = old_w;
+		tr_state->camera->height = old_h;
+
 	} else if (tr_state->visual->autostereo_type==GF_3D_STEREO_TOP) {
 		GF_Rect orig_vp;
 		orig_vp = tr_state->camera->vp;
@@ -1874,14 +1881,22 @@ Bool visual_3d_setup_texture(GF_TraverseState *tr_state, Fixed diffuse_alpha)
 			switch (txh->pixelformat) {
 			/*override diffuse color with full intensity, but keep material alpha (cf VRML lighting)*/
 			case GF_PIXEL_RGB_24:
-				v[0] = v[1] = v[2] = FIX_ONE;
-				v[3] = diffuse_alpha;
-				visual_3d_set_material(tr_state->visual, V3D_MATERIAL_DIFFUSE, v);
+				if (tr_state->visual->has_material_2d) {
+					SFColor c;
+					c.red = c.green = c.blue = FIX_ONE;
+					visual_3d_set_material_2d(tr_state->visual, c, diffuse_alpha);
+				} else {
+					v[0] = v[1] = v[2] = FIX_ONE;
+					v[3] = diffuse_alpha;
+					visual_3d_set_material(tr_state->visual, V3D_MATERIAL_DIFFUSE, v);
+				}
 				break;
 			/*override diffuse color AND material alpha (cf VRML lighting)*/
 			case GF_PIXEL_RGBA:
-				v[0] = v[1] = v[2] = v[3] = FIX_ONE;
-				visual_3d_set_material(tr_state->visual, V3D_MATERIAL_DIFFUSE, v);
+				if (!tr_state->visual->has_material_2d) {
+					v[0] = v[1] = v[2] = v[3] = FIX_ONE;
+					visual_3d_set_material(tr_state->visual, V3D_MATERIAL_DIFFUSE, v);
+				}
 				tr_state->mesh_is_transparent = 1;
 				break;
 				/*			case GF_PIXEL_GREYSCALE:
