@@ -1,6 +1,6 @@
 This is a test file containing some text.
 
-1st paragraph
+1st Paragraph
 Lorem ipsum dolor sit amet, consectetur adipiscing elit. Suspendisse vehicula suscipit ligula, quis dignissim ipsum auctor quis. Vestibulum condimentum pharetra quam, id aliquet libero euismod quis. Sed sollicitudin ullamcorper arcu, sit amet maximus tortor gravida vel. Duis in dolor in lorem consectetur eleifend. Donec ac suscipit ante. Praesent pharetra vestibulum felis et aliquet. In hac habitasse platea dictumst. Vestibulum orci urna, auctor vel tempus vitae, mattis at enim. Donec porttitor sollicitudin ex, vitae congue dolor dapibus sit amet. Integer vitae quam a erat dignissim eleifend. Aliquam sagittis leo ut leo luctus pulvinar. Fusce ut porta eros, eget bibendum justo. Mauris nunc quam, ullamcorper in hendrerit et, tristique elementum erat. Vivamus convallis pellentesque dignissim.
 
 2nd paragraph
