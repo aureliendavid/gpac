@@ -19,4 +19,4 @@ configure text eol=lf
 *.dsw text eol=crlf
 
 #tests
-tests/media/xmlin4/input.txt eol=crlf
+tests/media/xmlin4/input.txt text eol=crlf
