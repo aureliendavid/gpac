@@ -38,7 +38,7 @@ ts_test "singleau" "-src $mp4file -dst-file=$tsfile -single-au -pcr-init 0"
 
 ts_test "multiau" "-src $mp4file -dst-file=$tsfile -multi-au -pcr-init 0"
 
-ts_test "temi" "-src $mp4file -dst-file=$tsfile -temi -insert-ntp -pcr-init 0"
+ts_test "temi" "-src $mp4file -dst-file=$tsfile -temi -pcr-init 0"
 
 ts_test "pcr" "-src $mp4file -dst-file=$tsfile -pcr-ms 40 -force-pcr-only -pcr-init 0 -pcr-offset 30000 -rap"
 
