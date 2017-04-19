@@ -26,6 +26,7 @@
 #include <gpac/mpegts.h>
 #include <gpac/constants.h>
 #include <gpac/media_tools.h>
+#include <math.h>
 
 #if !defined(GPAC_DISABLE_MPEG2TS_MUX)
 
@@ -906,9 +907,9 @@ static void gf_m2ts_remap_timestamps_for_pes(GF_M2TS_Mux_Stream *stream, u32 pck
 
 	/*Rescale our timestamps and express them in PCR*/
 	if (stream->ts_scale) {
-		*cts = (u64) (stream->ts_scale * (s64) *cts);
-		*dts = (u64) (stream->ts_scale * (s64) *dts);
-		if (duration) *duration = (u32) (stream->ts_scale * (u32) *duration);
+		*cts = (u64) round(stream->ts_scale * (s64) *cts);
+		*dts = (u64) round(stream->ts_scale * (s64) *dts);
+		if (duration) *duration = (u32) round(stream->ts_scale * (u32) *duration);
 
 	}
 	if (!stream->program->initial_ts_set) {
