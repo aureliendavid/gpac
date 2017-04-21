@@ -26,7 +26,6 @@
 #include <gpac/mpegts.h>
 #include <gpac/constants.h>
 #include <gpac/media_tools.h>
-#include <math.h>
 
 #if !defined(GPAC_DISABLE_MPEG2TS_MUX)
 

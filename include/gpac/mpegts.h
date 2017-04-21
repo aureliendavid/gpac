@@ -46,7 +46,7 @@
 #include <gpac/thread.h>
 #include <gpac/internal/odf_dev.h>
 
-#include "libavutil/rational.h"
+
 
 /*MPEG-2 Descriptor tags*/
 enum
