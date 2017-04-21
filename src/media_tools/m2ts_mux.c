@@ -907,9 +907,10 @@ static void gf_m2ts_remap_timestamps_for_pes(GF_M2TS_Mux_Stream *stream, u32 pck
 
 	/*Rescale our timestamps and express them in PCR*/
 	if (stream->ts_scale.num) {
-		*cts = (u64) av_q2d( av_mul_q( stream->ts_scale, (AVRational) {(int)*cts, 1} ) );
-		*dts = (u64) av_q2d( av_mul_q( stream->ts_scale, (AVRational) {(int)*dts, 1} ) );
-		if (duration) *duration = (u32) av_q2d( av_mul_q( stream->ts_scale, (AVRational) {(int)*duration, 1} ) );
+		*cts = (u64)( *cts * stream->ts_scale.num / stream->ts_scale.den ) ;
+		*dts = (u64)( *dts * stream->ts_scale.num / stream->ts_scale.den ) ;
+		if (duration) *duration = (u32)( *duration * stream->ts_scale.num / stream->ts_scale.den ) ;
+
 
 	}
 	if (!stream->program->initial_ts_set) {
@@ -2284,7 +2285,7 @@ GF_M2TS_Mux_Stream *gf_m2ts_program_stream_add(GF_M2TS_Mux_Program *program, str
 	stream->ifce->output_ctrl = gf_m2ts_output_ctrl;
 	stream->ifce->output_udta = stream;
 	stream->mx = gf_mx_new("M2TS PID");
-	if (ifce->timescale != 90000) stream->ts_scale = (AVRational) {90000 , ifce->timescale};
+	if (ifce->timescale != 90000) stream->ts_scale = (GF_Fraction) {90000, ifce->timescale};
 	return stream;
 }
 
@@ -2294,7 +2295,7 @@ GF_Err gf_m2ts_program_stream_update_ts_scale(GF_ESInterface *_self, u32 time_sc
 	GF_M2TS_Mux_Stream *stream = (GF_M2TS_Mux_Stream *)_self->output_udta;
 	if (!stream || !time_scale)
 		return GF_BAD_PARAM;
-	stream->ts_scale = (AVRational) {90000 , time_scale} ;
+	stream->ts_scale = (GF_Fraction) {90000, time_scale} ;
 
 	return GF_OK;
 }
