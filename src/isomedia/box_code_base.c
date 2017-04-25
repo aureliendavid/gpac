@@ -7817,13 +7817,14 @@ GF_UserDataMap *udta_getEntry(GF_UserDataBox *ptr, u32 box_type, bin128 *uuid)
 GF_Err udta_AddBox(GF_Box *s, GF_Box *a)
 {
 	GF_Err e;
+	u32 box_type;
 	GF_UserDataMap *map;
 	GF_UserDataBox *ptr = (GF_UserDataBox *)s;
 	if (!ptr) return GF_BAD_PARAM;
 	if (!a) return GF_OK;
 
 	/* for unknown udta boxes, we reference them by their original box type */
-	u32 box_type = a->type;
+	box_type = a->type;
 	if (box_type == GF_ISOM_BOX_TYPE_UNKNOWN) {
 		GF_UnknownBox* unkn = (GF_UnknownBox *)a;
 		if (unkn)
