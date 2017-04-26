@@ -506,6 +506,10 @@ enum
 	GF_ISOM_BOX_TYPE_BLOC	= GF_4CC( 'b', 'l', 'o', 'c' ),
 	GF_ISOM_BOX_TYPE_AINF	= GF_4CC( 'a', 'i', 'n', 'f' ),
 
+	GF_ISOM_BOX_TYPE_JPEG	= GF_4CC( 'j', 'p', 'e', 'g' ),
+	GF_ISOM_BOX_TYPE_PNG	= GF_4CC( 'p', 'n', 'g', ' ' ),
+	GF_ISOM_BOX_TYPE_JP2K	= GF_4CC( 'j', 'p', '2', 'k' ),
+
 	GF_ISOM_BOX_TYPE_UNKNOWN = GF_4CC( 'U', 'N', 'K', 'N' ),
 };
 
@@ -3721,7 +3725,7 @@ Bool gf_isom_box_is_file_level(GF_Box *s);
 
 GF_Box *boxstring_new_with_data(u32 type, const char *string);
 
-GF_Err gf_isom_read_null_terminated_string(GF_Box *s, GF_BitStream *bs, u32 size, char **out_str);
+GF_Err gf_isom_read_null_terminated_string(GF_Box *s, GF_BitStream *bs, u64 size, char **out_str);
 
 #endif //GPAC_DISABLE_ISOM
 

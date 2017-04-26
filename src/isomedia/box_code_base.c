@@ -5570,6 +5570,9 @@ GF_Err stsd_AddBox(GF_Box *s, GF_Box *a)
 	case GF_ISOM_BOX_TYPE_SBTT:
 	case GF_ISOM_BOX_TYPE_ELNG:
 	case GF_ISOM_BOX_TYPE_MP3:
+	case GF_ISOM_BOX_TYPE_JPEG:
+	case GF_ISOM_BOX_TYPE_JP2K:
+	case GF_ISOM_BOX_TYPE_PNG:
 	case GF_ISOM_SUBTYPE_3GP_AMR:
 	case GF_ISOM_SUBTYPE_3GP_AMR_WB:
 	case GF_ISOM_SUBTYPE_3GP_EVRC:
@@ -6816,6 +6819,9 @@ static void gf_isom_check_sample_desc(GF_TrackBox *trak)
 		case GF_ISOM_BOX_TYPE_STPP:
 		case GF_ISOM_BOX_TYPE_SBTT:
 		case GF_ISOM_BOX_TYPE_MP3:
+		case GF_ISOM_BOX_TYPE_JPEG:
+		case GF_ISOM_BOX_TYPE_PNG:
+		case GF_ISOM_BOX_TYPE_JP2K:
 			continue;
 		case GF_ISOM_BOX_TYPE_UNKNOWN:
 			break;
@@ -10397,7 +10403,7 @@ void fpar_del(GF_Box *s)
 	gf_free(ptr);
 }
 
-GF_Err gf_isom_read_null_terminated_string(GF_Box *s, GF_BitStream *bs, u32 size, char **out_str)
+GF_Err gf_isom_read_null_terminated_string(GF_Box *s, GF_BitStream *bs, u64 size, char **out_str)
 {
 	u32 len=10;
 	u32 i=0;
