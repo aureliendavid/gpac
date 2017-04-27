@@ -20,3 +20,4 @@ configure text eol=lf
 
 #tests
 tests/media/xmlin4/input.txt text eol=crlf
+tests/media/laser/*.xml text eol=lf
