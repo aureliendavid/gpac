@@ -231,15 +231,16 @@ double round_ieee_754(double d) {
 
 double round_float_hte(double value, int digits)
 {
-	if (!value)
-		return value;
+	if (value) {
 
-	int missing_digits = digits - (int)log10(fabs(value)) - (fabs(value) > 1.f);
+		int missing_digits = digits - (int)log10(fabs(value)) - (fabs(value) > 1.f);
 
-	double exp = pow(10.f, missing_digits > 0 ? missing_digits : 0);
-	value *= exp;
-	value = round_ieee_754(value);
-	value /= exp;
+		double exp = pow(10.f, missing_digits > 0 ? missing_digits : 0);
+
+		value *= exp;
+		value = round_ieee_754(value);
+		value /= exp;
+	}
 	return value;
 };
 
