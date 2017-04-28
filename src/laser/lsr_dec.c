@@ -2529,11 +2529,20 @@ static void lsr_read_float_list(GF_LASeRCodec *lsr, GF_Node *n, u32 tag, SVG_Coo
 		}
 	}
 	count = lsr_read_vluimsbf5(lsr, "count");
-	for (i=0; i<count; i++) {
-		SVG_Number *n = (SVG_Number *)gf_malloc(sizeof(SVG_Number));
-		n->type = SVG_NUMBER_VALUE;
-		n->value = lsr_read_fixed_16_8(lsr, "val");
-		gf_list_add(*coords, n);
+	if (tag == TAG_SVG_ATT_text_rotate) {
+		for (i=0; i<count; i++) {
+			SVG_Number *n = (SVG_Number *)gf_malloc(sizeof(SVG_Number));
+			n->type = SVG_NUMBER_VALUE;
+			n->value = lsr_read_fixed_16_8(lsr, "val");
+			gf_list_add(*coords, n);
+		}
+	}
+	else {
+		for (i=0; i<count; i++) {
+			Fixed *n = (Fixed *)gf_malloc(sizeof(Fixed));
+			*n = lsr_read_fixed_16_8(lsr, "val");
+			gf_list_add(*coords, n);
+		}
 	}
 }
 
