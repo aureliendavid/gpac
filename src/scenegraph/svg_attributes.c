@@ -244,7 +244,11 @@ double round_float_hte(double value, int digits)
 	return value;
 };
 
+#ifdef WIN32
 #define _FIX2FLT(x) (round_float_hte(FIX2FLT(x),6))
+#else
+#define _FIX2FLT(x) FIX2FLT(x)
+#endif
 
 GF_EXPORT
 GF_EventType gf_dom_event_type_by_name(const char *name)
