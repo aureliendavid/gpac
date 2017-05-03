@@ -211,6 +211,13 @@ static const struct dom_event_def {
 
 };
 
+/** In order to have the same representation of laser/svg media on unix and windows
+  * we have to force windows to use the same rounding method as the glibc.
+  * See: http://pubs.opengroup.org/onlinepubs/009695399/functions/fprintf.html
+  * "The low-order digit shall be rounded in an implementation-defined manner."
+  * glibc uses the IEEE-754 recommended half-to-even method while windows rounds half up.
+  * When windows finally implement HTE rounding for we'll be able to remove the convoluted functions below
+ **/
 int is_even(double d) {
 	double int_part;
 	modf(d / 2.0, &int_part);
@@ -2023,7 +2030,7 @@ static u32 svg_parse_length(SVG_Number *number, char *value_string, Bool clamp0t
 	u32 unit_len = 0;
 	u32 read_chars;
 	if (!number || !value_string) return 0;
-	
+
 	if (!strcmp(value_string, "inherit")) {
 		number->type = SVG_NUMBER_INHERIT;
 		return 7;
@@ -2503,7 +2510,7 @@ err:
 		GF_LOG(GF_LOG_ERROR, GF_LOG_PARSER, ("[SVG Parsing] Fail to allocate SMIL time\n"));
 		return;
 	}
-	
+
 	gf_list_add(values, value);
 
 	switch (e->sgprivate->tag) {
@@ -5405,7 +5412,7 @@ static GF_Err svg_viewbox_muladd(Fixed alpha, SVG_ViewBox *a, Fixed beta, SVG_Vi
 static GF_Err svg_point_muladd(Fixed alpha, SVG_Point *pta, Fixed beta, SVG_Point *ptb, SVG_Point *ptc)
 {
 	if (!pta || !ptb || !ptc) return GF_BAD_PARAM;
-	
+
 	ptc->x = gf_mulfix(alpha, pta->x) + gf_mulfix(beta, ptb->x);
 	ptc->y = gf_mulfix(alpha, pta->y) + gf_mulfix(beta, ptb->y);
 	return GF_OK;
