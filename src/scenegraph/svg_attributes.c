@@ -216,7 +216,7 @@ static const struct dom_event_def {
   * See: http://pubs.opengroup.org/onlinepubs/009695399/functions/fprintf.html
   * "The low-order digit shall be rounded in an implementation-defined manner."
   * glibc uses the IEEE-754 recommended half-to-even method while windows rounds half up.
-  * When windows finally implement HTE rounding for we'll be able to remove the convoluted functions below
+  * When windows finally implements HTE rounding we'll be able to remove the convoluted functions below
  **/
 int is_even(double d) {
 	double int_part;
