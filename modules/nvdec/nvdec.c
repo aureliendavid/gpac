@@ -262,7 +262,7 @@ static GF_Err NVDec_AttachStream(GF_BaseDecoder *ifcg, GF_ESD *esd)
 	ctx->needs_resetup = GF_FALSE;
 
 
-	if (! ctx->cuda_dev) {
+	if (! ctx->cuda_ctx) {
 	    int major, minor;
 	    char deviceName[256];
 		res = cuDeviceGet(&ctx->cuda_dev, 0);
@@ -275,9 +275,7 @@ static GF_Err NVDec_AttachStream(GF_BaseDecoder *ifcg, GF_ESD *esd)
 		cuDeviceGetName(deviceName, 256, ctx->cuda_dev);
 
 		GF_LOG(GF_LOG_INFO, GF_LOG_CODEC, ("[NVDec] GPU Device %s (idx 0) has SM %d.%d compute capability\n", deviceName, major, minor));
-	}
 
-	if (! ctx->cuda_ctx) {
 		if (ctx->use_gl_texture) {
 			res = cuGLCtxCreate(&ctx->cuda_ctx, CU_CTX_BLOCKING_SYNC, ctx->cuda_dev);
 
@@ -355,10 +353,12 @@ static GF_Err NVDec_AttachStream(GF_BaseDecoder *ifcg, GF_ESD *esd)
 		GF_LOG(GF_LOG_ERROR, GF_LOG_CODEC, ("[NVDec] failed to push CUDA CTX %s\n", cudaGetErrorEnum(res) ) );
 	}
 	res = cuvidCreateVideoParser(&ctx->cu_parser, &oVideoParserParameters);
+	cuCtxPopCurrent(NULL);
+
 	if (res != CUDA_SUCCESS) {
 		GF_LOG(GF_LOG_ERROR, GF_LOG_CODEC, ("[NVDec] failed to create CUVID parserCTX %s\n", cudaGetErrorEnum(res) ) );
+		return GF_PROFILE_NOT_SUPPORTED;
 	}
-	cuCtxPopCurrent(NULL);
 
 	GF_LOG(GF_LOG_DEBUG, GF_LOG_CODEC, ("[NVDec] video parser init OK\n") );
 
@@ -470,6 +470,7 @@ static GF_Err NVDec_SetCapabilities(GF_BaseDecoder *ifcg, GF_CodecCapability cap
 				ctx->cu_parser = NULL;
 			}
 			ctx->needs_resetup = GF_TRUE;
+			ctx->dec_create_error = CUDA_SUCCESS;
 		}
 		return GF_OK;
 	}
@@ -505,7 +506,8 @@ static GF_Err NVDec_ProcessData(GF_MediaDecoder *ifcg,
 		ctx->skip_next_frame = GF_FALSE;
 	}
 
-	if (ctx->dec_create_error) return GF_IO_ERR;
+	if (ctx->dec_create_error) 
+		return GF_IO_ERR;
 	
 	cu_pkt.payload_size = inBufferLength;
 	cu_pkt.payload = inBuffer;
