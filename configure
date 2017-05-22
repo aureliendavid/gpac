@@ -1154,7 +1154,7 @@ EOF
 
 if test "$mingw32" = "yes"  ; then
     LINK_SSL="-lssl -lcrypto"
-elif test "$win32" = "yes" ; then
+elif test "$win32" =  "yes" ; then
     LINK_SSL="-lssleay32 -leay32"
 else
     LINK_SSL="-lssl -lcrypto"
