@@ -951,7 +951,8 @@ static void dump_nalu(FILE *dump, char *ptr, u32 ptr_size, Bool is_svc, HEVCStat
 	u8 dependency_id, quality_id, temporal_id;
 	u8 track_ref_index;
 	s8 sample_offset;
-	u32 data_offset, idx, data_size;
+	u32 data_offset, data_size;
+	s32 idx;
 	GF_BitStream *bs;
 
 	if (!ptr_size) {
@@ -1605,8 +1606,6 @@ GF_Err dump_isom_xml(GF_ISOFile *file, char *inName, Bool is_final_name, Bool do
 	if (e) {
 		fprintf(stderr, "Error dumping ISO structure\n");
 	}
-	if ( gf_isom_get_track_count(file) == 0 )
-		do_track_dump = GF_FALSE;
 
 	if (do_track_dump) {
 		u32 i, j;
