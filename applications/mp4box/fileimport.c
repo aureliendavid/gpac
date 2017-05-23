@@ -409,7 +409,7 @@ GF_Err import_file(GF_ISOFile *dest, char *inName, u32 import_flags, Double forc
 			} else {
 				if (!strnicmp(ext+1, "max_lid=", 8))
 					max_layer_id_plus_one = 1 + (u8) val;
-				else 
+				else
 					max_temporal_id_plus_one = 1 + (u8) val;
 			}
 		}
@@ -479,7 +479,7 @@ GF_Err import_file(GF_ISOFile *dest, char *inName, u32 import_flags, Double forc
 		else if (!stricmp(ext+1, "swf-same-app")) import.swf_flags |= GF_SM_SWF_REUSE_APPEARANCE;
 		else if (!strnicmp(ext+1, "swf-flatten=", 12)) import.swf_flatten_angle = (Float) atof(ext+13);
 #endif
-		
+
 		else if (!strnicmp(ext+1, "kind=", 5)) {
 			char *kind_scheme, *kind_value;
 			char *kind_data = ext+6;
@@ -535,7 +535,7 @@ GF_Err import_file(GF_ISOFile *dest, char *inName, u32 import_flags, Double forc
 	do_audio = do_video = 0;
 	track_id = prog_id = 0;
 	do_all = 1;
-	ext = strrchr(szName, '#');
+	ext = strrchr(szName, '#'); // TODO: look for the # part after the extension only
 	if (ext) ext[0] = 0;
 
 	keep_handler = gf_isom_probe_file(szName);
