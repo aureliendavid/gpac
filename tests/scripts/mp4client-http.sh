@@ -19,7 +19,7 @@ single_playback_test "-guid http://download.tsi.telecom-paristech.fr/gpac/gpac_t
 
 #progressive amr
 #TODO: why is this blocking??
-#single_playback_test "-guid http://download.tsi.telecom-paristech.fr/gpac/gpac_test_suite/resources/media/import/bear_audio.amr" "mp4client-http-amr"
+single_playback_test "-guid http://download.tsi.telecom-paristech.fr/gpac/gpac_test_suite/resources/media/import/bear_audio.amr" "mp4client-http-amr"
 
 #progressive bifs with commands in http
 single_playback_test "-guid http://download.tsi.telecom-paristech.fr/gpac/gpac_test_suite/regression_tests/bifs/bifs-command-animated-osmo4logo.bt" "mp4client-http-bt-commands"
