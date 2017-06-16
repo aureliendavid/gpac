@@ -129,9 +129,13 @@ struct __gf_dash_segmenter
 	/*set if seg_rad_name depends on input file name (had %s in it). In this case, SegmentTemplate cannot be used at adaptation set level*/
 	Bool variable_seg_rad_name;
 
+	/*If true, disable generation date printing in mpd headers*/
+	Bool force_test_mode;
+
 	GF_DASH_ContentLocationMode cp_location_mode;
 
 	Double max_segment_duration;
+	Bool no_cache;
 
 };
 
@@ -210,6 +214,7 @@ struct _dash_segment_input
 	Bool get_component_info_done;
 	//cached isobmf input
 	GF_ISOFile *isobmf_input;
+	Bool no_cache;
 };
 
 
@@ -2406,7 +2411,9 @@ restart_fragmentation_pass:
 	/* writing Representation level descriptors */
 	if (dash_input->nb_rep_descs) {
 		for (i=0; i<dash_input->nb_rep_descs; i++) {
-			fprintf(dash_cfg->mpd, "    %s\n", dash_input->rep_descs[i]);
+			if (strchr(dash_input->rep_descs[i], '<') != NULL) {
+				fprintf(dash_cfg->mpd, "    %s\n", dash_input->rep_descs[i]);
+			}
 		}
 	}
 
@@ -3331,7 +3338,12 @@ static GF_Err dasher_isom_segment_file(GF_DashSegInput *dash_input, const char *
 	}
 
 
-	return gf_media_isom_segment_file(dash_input->isobmf_input, szOutName, dash_cfg, dash_input, first_in_set);
+	e= gf_media_isom_segment_file(dash_input->isobmf_input, szOutName, dash_cfg, dash_input, first_in_set);
+	if(dash_input->no_cache){
+		gf_isom_delete(dash_input->isobmf_input);
+		dash_input->isobmf_input=NULL;
+	}
+	return e;
 }
 
 #endif /*GPAC_DISABLE_ISOM_FRAGMENTS*/
@@ -4338,7 +4350,9 @@ static GF_Err dasher_mp2t_segment_file(GF_DashSegInput *dash_input, const char *
 	/* writing Representation level descriptors */
 	if (dash_input->nb_rep_descs) {
 		for (i=0; i<dash_input->nb_rep_descs; i++) {
-			fprintf(dash_cfg->mpd, "    %s\n", dash_input->rep_descs[i]);
+			if (strchr(dash_input->rep_descs[i], '<') != NULL) {
+				fprintf(dash_cfg->mpd, "    %s\n", dash_input->rep_descs[i]);
+			}
 		}
 	}
 
@@ -4938,15 +4952,18 @@ static GF_Err write_mpd_header(GF_DASHSegmenter *dasher, FILE *mpd, Bool is_mpeg
 	assert(time_ms<1000);
 
 	fprintf(mpd, "<?xml version=\"1.0\"?>\n");
-	fprintf(mpd, "<!-- MPD file Generated with GPAC version "GPAC_FULL_VERSION" ");
+	if(!dasher->force_test_mode)
+		fprintf(mpd, "<!-- MPD file Generated with GPAC version "GPAC_FULL_VERSION" ");
 
 #ifndef _WIN32_WCE
 	gtime = sec - GF_NTP_SEC_1900_TO_1970;
 	t = gmtime(&gtime);
-	fprintf(mpd, " at %d-%02d-%02dT%02d:%02d:%02d.%03dZ", 1900+t->tm_year, t->tm_mon+1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec, (u32) time_ms);
+	if(!dasher->force_test_mode)
+		fprintf(mpd, " at %d-%02d-%02dT%02d:%02d:%02d.%03dZ", 1900+t->tm_year, t->tm_mon+1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec, (u32) time_ms);
 	GF_LOG(GF_LOG_INFO, GF_LOG_DASH, ("[DASH] Generating MPD at time %d-%02d-%02dT%02d:%02d:%02d.%03dZ\n", 1900+t->tm_year, t->tm_mon+1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec, (u32) time_ms) );
 #else
 	GetSystemTime(&syst);
+	if(!dasher->force_test);
 	fprintf(mpd, " at %d-%02d-%02dT%02d:%02d:%02dZ", syst.wYear, syst.wMonth, syst.wDay, syst.wHour, syst.wMinute, syst.wSecond);
 	GF_LOG(GF_LOG_INFO, GF_LOG_DASH, ("[DASH] Generating MPD at time %d-%02d-%02dT%02d:%02d:%02dZ\n", syst.wYear, syst.wMonth, syst.wDay, syst.wHour, syst.wMinute, syst.wSecond);
 #endif
@@ -5091,7 +5108,9 @@ static GF_Err write_period_header(GF_DASHSegmenter *dasher, FILE *mpd, const cha
 	for (i=0; i< dasher->nb_inputs; i++) {
 		if (dasher->inputs[i].adaptation_set && (dasher->inputs[i].period==period_num)) {
 			for (j = 0; j < dasher->inputs[i].nb_p_descs; j++) {
-				fprintf(mpd, "  %s\n", dasher->inputs[i].p_descs[j]);
+				if (strchr(dasher->inputs[i].p_descs[j], '<') != NULL) {
+					fprintf(mpd, "  %s\n", dasher->inputs[i].p_descs[j]);
+				}
 			}
 		}
 	}
@@ -5144,7 +5163,9 @@ static GF_Err write_adaptation_header(FILE *mpd, GF_DashProfile profile, Bool us
 	for (i=0; i< nb_dash_inputs; i++) {
 		if ((dash_inputs[i].adaptation_set == adaptation_set_num) && (dash_inputs[i].period == period_num)) {
 			for (j = 0; j < dash_inputs[i].nb_as_c_descs; j++) {
-				fprintf(mpd, "   %s\n", dash_inputs[i].as_c_descs[j]);
+				if (strchr(dash_inputs[i].as_c_descs[j], '<') != NULL) {
+					fprintf(mpd, "   %s\n", dash_inputs[i].as_c_descs[j]);
+				}
 			}
 		}
 	}
@@ -5175,7 +5196,9 @@ static GF_Err write_adaptation_header(FILE *mpd, GF_DashProfile profile, Bool us
 
 		/* writing AdaptationSet level descriptors specified only all inputs for that AdaptationSet*/
 		for (i=0; i<first_rep->nb_as_descs; i++) {
-			fprintf(mpd, "   %s\n", first_rep->as_descs[i]);
+			if (strchr(first_rep->as_descs[i], '<') != NULL) {
+				fprintf(mpd, "   %s\n", first_rep->as_descs[i]);
+			}
 		}
 
 		if (bitstream_switching_mode) {
@@ -5657,6 +5680,12 @@ GF_Err gf_dasher_set_info(GF_DASHSegmenter *dasher, const char *title, const cha
 }
 
 GF_EXPORT
+GF_Err gf_dasher_set_test_mode(GF_DASHSegmenter *dasher, Bool forceTestMode){
+	dasher->force_test_mode=forceTestMode;
+	return GF_OK;
+}
+
+GF_EXPORT
 GF_Err gf_dasher_set_location(GF_DASHSegmenter *dasher, const char *location)
 {
 	if (!dasher) return GF_BAD_PARAM;
@@ -5857,6 +5886,14 @@ GF_Err gf_dasher_set_profile_extension(GF_DASHSegmenter *dasher, const char *das
 	return GF_OK;
 }
 
+GF_EXPORT
+GF_Err gf_dasher_enable_cached_inputs(GF_DASHSegmenter *dasher, Bool no_cache)
+{
+	if (!dasher) return GF_BAD_PARAM;
+	if(no_cache)dasher->no_cache = GF_TRUE;
+	return GF_OK;
+}
+
 
 GF_EXPORT
 GF_Err gf_dasher_add_input(GF_DASHSegmenter *dasher, GF_DashSegmenterInput *input)
@@ -5890,6 +5927,7 @@ GF_Err gf_dasher_add_input(GF_DASHSegmenter *dasher, GF_DashSegmenterInput *inpu
 	dash_input->as_c_descs = input->as_c_descs;
 	dash_input->nb_p_descs = input->nb_p_descs;
 	dash_input->p_descs = input->p_descs;
+	dash_input->no_cache = dasher->no_cache;
 
 	dash_input->bandwidth = input->bandwidth;
 
