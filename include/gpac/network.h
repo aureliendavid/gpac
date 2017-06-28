@@ -149,6 +149,9 @@ s32 gf_gettimeofday(struct timeval *tp, void *tz);
  *\param sec number of seconds
  *\param msec number of milliseconds
  */
+#if defined (WIN32) && !defined(_WIN32_WCE)
+int gettimeofday2(struct timeval * tp, struct timezone * tzp);
+#endif
 void gf_utc_time_since_1970(u32 *sec, u32 *msec);
 
 

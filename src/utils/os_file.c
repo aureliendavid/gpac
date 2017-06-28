@@ -317,19 +317,18 @@ FILE *gf_temp_file_new(char ** const fileName)
 		res = _wfopen(pTemp, TEXT("w+b"));
 #elif defined(WIN32)
 	char tmp[MAX_PATH];
-	res = tmpfile();
-	if (!res) {
-		GF_LOG(GF_LOG_INFO, GF_LOG_CORE, ("[Win32] system failure for tmpfile(): 0x%08x\n", GetLastError()));
+	//res = tmpfile();
+	//if (!res) {
+	//	GF_LOG(GF_LOG_INFO, GF_LOG_CORE, ("[Win32] system failure for tmpfile(): 0x%08x\n", GetLastError()));
 
 		/*tmpfile() may fail under vista ...*/
 		if (GetEnvironmentVariable("TEMP", tmp, MAX_PATH)) {
 			char tmp2[MAX_PATH], *t_file;
-			gf_rand_init(GF_FALSE);
-			sprintf(tmp2, "gpac_%08x_", gf_rand());
-			t_file = tempnam(tmp, tmp2);
-			res = gf_fopen(t_file, "w+b");
+			//gf_rand_init(GF_FALSE);
+			//sprintf(tmp2, "gpac_%08x_", gf_rand());
+			t_file = tempnam(tmp, "gpac_");
+			res = fopen(t_file, "w+b");
 			if (res) {
-				gpac_file_handles--;
 				if (fileName) {
 					*fileName = gf_strdup(t_file);
 				} else {
@@ -338,7 +337,7 @@ FILE *gf_temp_file_new(char ** const fileName)
 			}
 			free(t_file);
 		}
-	}
+	//}
 #else
 	res = tmpfile();
 #endif

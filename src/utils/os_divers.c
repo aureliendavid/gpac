@@ -324,14 +324,41 @@ u32 gf_rand()
 #include <sys/stat.h>
 #endif
 
+#if defined (WIN32) && !defined(_WIN32_WCE)
+int gettimeofday2(struct timeval * tp, struct timezone * tzp)
+{
+	// Note: some broken versions only have 8 trailing zero's, the correct epoch has 9 trailing zero's
+	// This magic number is the number of 100 nanosecond intervals since January 1, 1601 (UTC)
+	// until 00:00:00 January 1, 1970 
+	static const u64 EPOCH = ((u64)116444736000000000ULL);
+
+	SYSTEMTIME  system_time;
+	FILETIME    file_time;
+	u64			time;
+
+	GetSystemTime(&system_time);
+	SystemTimeToFileTime(&system_time, &file_time);
+	time = ((u64)file_time.dwLowDateTime);
+	time += ((u64)file_time.dwHighDateTime) << 32;
+
+	tp->tv_sec = (long)((time - EPOCH) / 10000000L);
+	tp->tv_usec = (long)(system_time.wMilliseconds * 1000);
+	return 0;
+}
+#endif
+
 GF_EXPORT
 void gf_utc_time_since_1970(u32 *sec, u32 *msec)
 {
 #if defined (WIN32) && !defined(_WIN32_WCE)
-	struct _timeb	tb;
-	_ftime( &tb );
-	*sec = (u32) tb.time;
-	*msec = tb.millitm;
+	//struct _timeb	tb;
+	//_ftime( &tb );
+	//*sec = (u32) tb.time;
+	//*msec = tb.millitm;
+	struct timeval tv;
+	gettimeofday2(&tv, NULL);
+	*sec = (u32)tv.tv_sec;
+	*msec = tv.tv_usec / 1000;
 #else
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
