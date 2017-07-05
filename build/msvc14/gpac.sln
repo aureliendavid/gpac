@@ -1,6 +1,6 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.23107.0
+# Visual Studio 15
+VisualStudioVersion = 15.0.26430.14
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mp4client", "mp4client.vcxproj", "{A35D99BF-D72D-4F56-99A1-97249B22BCE2}"
 EndProject
@@ -136,12 +136,10 @@ Global
 		{C79C2D73-06E9-4622-92CE-F166B1B51792}.Debug - MP4Box_only|Win32.ActiveCfg = Debug|Win32
 		{C79C2D73-06E9-4622-92CE-F166B1B51792}.Debug - MP4Box_only|x64.ActiveCfg = Debug|x64
 		{C79C2D73-06E9-4622-92CE-F166B1B51792}.Debug|Win32.ActiveCfg = Debug|Win32
-		{C79C2D73-06E9-4622-92CE-F166B1B51792}.Debug|Win32.Build.0 = Debug|Win32
 		{C79C2D73-06E9-4622-92CE-F166B1B51792}.Debug|x64.ActiveCfg = Debug|x64
 		{C79C2D73-06E9-4622-92CE-F166B1B51792}.Release - MP4Box_only|Win32.ActiveCfg = Release|Win32
 		{C79C2D73-06E9-4622-92CE-F166B1B51792}.Release - MP4Box_only|x64.ActiveCfg = Release|x64
 		{C79C2D73-06E9-4622-92CE-F166B1B51792}.Release|Win32.ActiveCfg = Release|Win32
-		{C79C2D73-06E9-4622-92CE-F166B1B51792}.Release|Win32.Build.0 = Release|Win32
 		{C79C2D73-06E9-4622-92CE-F166B1B51792}.Release|x64.ActiveCfg = Release|x64
 		{1F7CD37F-DC9A-4AC7-881B-36B263A644C7}.Debug - MP4Box_only|Win32.ActiveCfg = Debug|Win32
 		{1F7CD37F-DC9A-4AC7-881B-36B263A644C7}.Debug - MP4Box_only|x64.ActiveCfg = Debug|x64

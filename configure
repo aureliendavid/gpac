@@ -1,7 +1,7 @@
 #!/bin/sh
 #
-# GPAC configure script 
-#     (c) 2003-2012 Telecom ParisTech 
+# GPAC configure script
+#     (c) 2003-2012 Telecom ParisTech
 #     Authors: Jean Le Feuvre, Romain Bouqueau
 #
 #set -v
@@ -414,7 +414,7 @@ case "$cpu" in
         ;;
     ppc64)
         cpu="powerpc"
-        ;;  
+        ;;
     "Power Macintosh"|ppc)
         cpu="powerpc"
         ;;
@@ -573,13 +573,13 @@ EOF
         darwin="yes"
         gcc_version=`$cc -v 2>>$logs | grep version | cut -d ' ' -f3`
         case "$gcc_version" in
-            *2.95*) 
+            *2.95*)
                 CFLAGS="$CFLAGS -no-cpp-precomp -pipe -fomit-frame-pointer"
                 ;;
             3.*)
                 CFLAGS="$CFLAGS -no-cpp-precomp -pipe -fomit-frame-pointer -mdynamic-no-pic -fno-common"
                 ;;
-            4.*) 
+            4.*)
                 CFLAGS="$CFLAGS -pipe -fomit-frame-pointer -fno-common"
                 ;;
         esac
@@ -610,7 +610,7 @@ EOF
         ;;
 
     CYGWIN*|cygwin*)
-        js_flags=-DXP_PC 
+        js_flags=-DXP_PC
         extralibs="$extralibs -lws2_32 -lwinmm"
         cygwin="yes"
         win32="yes"
@@ -643,7 +643,7 @@ esac
 
 
 #defines directory for binaries and libs (ex. for TinyGL)
-target_bin_dir="" 
+target_bin_dir=""
 if test "$cross_prefix" = "" ; then
     target_bin_dir=`${cc} -v 2>>$logs | sed -n '2p' | awk ' {print $2}'`-${cc_orig}
 else
@@ -1025,14 +1025,14 @@ avcap_ldflags="-lavcap"
 cat > $TMPC << EOF
 #include <avcap/avcap.h>
 using namespace avcap;
-int main( void ) { 
+int main( void ) {
   const DeviceCollector::DeviceList& dl = DEVICE_COLLECTOR::instance().getDeviceList();
   DeviceDescriptor* dd = 0;
   for (DeviceCollector::DeviceList::const_iterator i = dl.begin(); i != dl.end(); i++) {
     dd = *i;
     std::cout << dd->getName().c_str() << "\n";
   }
-  return 0; 
+  return 0;
 }
 EOF
 if docxx -o $TMPO $TMPC $LDFLAGS $avcap_cflags $avcap_ldflags ; then
@@ -1050,7 +1050,6 @@ else
         avcap_ldflags="-L../../$local_lib $avcap_ldflags"
     fi
 fi
-
 
 #look for opensvc support
 
@@ -1153,9 +1152,9 @@ cat > $TMPC << EOF
 int main( void ) { return 0; }
 EOF
 
-if test "$mingw32" = "yes" ; then
+if test "$mingw32" = "yes"  ; then
     LINK_SSL="-lssl -lcrypto"
-elif test "$win32" = "yes" ; then
+elif test "$win32" =  "yes" ; then
     LINK_SSL="-lssleay32 -leay32"
 else
     LINK_SSL="-lssl -lcrypto"
@@ -1517,8 +1516,8 @@ if test "$pkg_config" != "no"; then
     freenect_flags=`$pkg_config --cflags libfreenect`
     freenect_libs=`$pkg_config --libs libfreenect`
     has_freenect="system"
-    freenect_flags="-DFREENECT_FLAT_HEADERS $freenect_flags" 
-  fi 
+    freenect_flags="-DFREENECT_FLAT_HEADERS $freenect_flags"
+  fi
 fi
 
 if test "$has_freenect" = "no"; then
@@ -1935,13 +1934,13 @@ for opt do
             if test "$tmp_has_png" = "system" ; then
                 if test "$has_png"  != "system" ; then
                     if test "$cross_prefix" != "" ; then
-                        echo 
+                        echo
                         echo "WARNING: PNG has been forced to system, but we are cross-compiling, it will have to be on target"
-                        echo 
+                        echo
                     else
-                        echo 
+                        echo
                         echo "WARNING!! : PNG has been forced to system even though it hasn't been found in this host"
-                        echo 
+                        echo
                     fi
                 fi
             fi
@@ -1951,20 +1950,20 @@ for opt do
             if test "$tmp_has_zlib" = "system" ; then
                 if test "$has_zlib"  != "system" ; then
                     if test "$cross_prefix" != "" ; then
-                        echo 
+                        echo
                         echo "WARNING: ZLIB has been forced to system, but we are cross-compiling, it will have to be on target"
-                        echo 
+                        echo
                     else
-                        echo 
+                        echo
                         echo "WARNING!! : ZLIB has been forced to system even though it hasn't been found in this host"
-                        echo 
+                        echo
                     fi
                 fi
                 has_zlib=$tmp_has_zlib
             elif test "$tmp_has_zlib" = "no" ; then
-                echo 
+                echo
                 echo "WARNING!! : you have forced not to use ZLIB. This will disable some core functionalities of GPAC."
-                echo 
+                echo
                 has_zlib="force-no"
             fi
             ;;
@@ -2125,55 +2124,55 @@ for opt do
         --disable-streaming) disable_streaming="yes"
             ;;
         --enable-streaming) disable_streaming="no"
-            ;; 
+            ;;
         --disable-player) disable_player="yes"
             ;;
         --enable-player) disable_player="no"
-            ;; 
+            ;;
         --disable-scenegraph) disable_scenegraph="yes"
             ;;
         --enable-scenegraph) disable_scenegraph="no"
-            ;; 
+            ;;
         --disable-dvbx) disable_dvbx="yes"
             ;;
         --enable-dvbx) disable_dvbx="no"
-            ;; 
+            ;;
         --disable-vobsub) disable_vobsub="yes"
             ;;
         --enable-vobsub) disable_vobsub="no"
-            ;; 
+            ;;
         --disable-ttxt) disable_ttxt="yes"
             ;;
         --enable-ttxt) disable_ttxt="no"
-            ;; 
+            ;;
         --disable-ttml) disable_ttml="yes"
             ;;
         --enable-ttml) disable_ttml="no"
-            ;; 
+            ;;
         --disable-saf) disable_saf="yes"
             ;;
         --enable-saf) disable_saf="no"
-            ;; 
+            ;;
         --disable-smgr) disable_smgr="yes"
             ;;
         --enable-smgr) disable_smgr="no"
-            ;; 
+            ;;
         --disable-mpd) disable_mpd="yes"
             ;;
         --enable-mpd) disable_mpd="no"
-            ;; 
+            ;;
         --disable-dash) disable_dash="yes"
             ;;
         --enable-dash) disable_dash="no"
-            ;; 
+            ;;
         --disable-core) disable_core_tools="yes"
             ;;
         --enable-core) disable_core_tools="no"
-            ;; 
+            ;;
         --disable-hevc) disable_hevc="yes"
             ;;
         --enable-hevc) disable_hevc="no"
-            ;; 
+            ;;
     esac
 done
 
@@ -2276,7 +2275,7 @@ if test "$pkg_config" != "no"; then
     if $pkg_config --exists libxul 2>>$logs ; then
         if docxx -o $TMPO $TMPCXX `$pkg_config --cflags libxul` `$pkg_config --libs libxul` ; then
             has_xul="system"
-            xul_flags="`$pkg_config --cflags libxul` `$pkg_config --libs libxul`" 
+            xul_flags="`$pkg_config --cflags libxul` `$pkg_config --libs libxul`"
         fi
     fi
   fi
@@ -2988,7 +2987,7 @@ if test "$win32" = "yes" ; then
         echo "#define fseeko64 fseek" >> $TMPH
     fi
     if test "$mingw32" = "yes" ; then
-    
+
 # -municode test
 cat > $TMPC << EOF
 #include <inttypes.h>
@@ -3315,7 +3314,7 @@ echo "GPAC_ENST_INC=$GPAC_ENST" >> config.mak
 if test "$source_path_used" = "yes" ; then
 
     echo "Creating compilation tree image"
-    SRC_DIRS="src src/utils src/isomedia src/ietf src/odf src/bifs src/scenegraph src/terminal src/mcrypt src/media_tools src/scene_manager src/compositor src/laser" 
+    SRC_DIRS="src src/utils src/isomedia src/ietf src/odf src/bifs src/scenegraph src/terminal src/mcrypt src/media_tools src/scene_manager src/compositor src/laser"
 
     APP_DIRS="applications/mp4box applications/mp4client applications/osmozilla applications/osmo4_wx applications/mp42ts applications/dashcast"
 

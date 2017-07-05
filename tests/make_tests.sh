@@ -207,7 +207,7 @@ sync_media ()
  if [ ! -e $EXTERNAL_MEDIA_DIR ] ; then
   mkdir $EXTERNAL_MEDIA_DIR
  fi
- cd $EXTERNAL_MEDIA_DIR
+ cd   $EXTERNAL_MEDIA_DIR
  wget -q -m -nH --no-parent --cut-dirs=4 --reject "*.gif" "$REFERENCE_DIR/media/"
  cd "$main_dir"
 }
