@@ -5445,7 +5445,7 @@ static void dash_global_rate_adaptation(GF_DashClient *dash, Bool for_postponed_
 		return;
 	}
 
-	for (q_idx=0; q_idx<nb_qualities; q_idx++) {
+  for (q_idx=0; q_idx<nb_qualities; q_idx++) {
 		bandwidths[q_idx] = 0;
 		groups_per_quality[q_idx] = 0;
 
@@ -5764,6 +5764,14 @@ restart_period:
 					if (dash->mpd->type==GF_MPD_TYPE_DYNAMIC) {
 						gf_dash_group_check_time(group);
 					}
+					//cache is full, notify client some segments are pending
+					if ((group->nb_cached_segments == group->max_cached_segments)
+						&& !dash->request_period_switch
+						&& !group->has_pending_enhancement
+					) {
+						dash->dash_io->on_dash_event(dash->dash_io, GF_DASH_EVENT_SEGMENT_AVAILABLE, i, GF_OK);
+					}
+
 					if (group->nb_cached_segments<group->max_cached_segments) {
 						cache_full = 0;
 					}
