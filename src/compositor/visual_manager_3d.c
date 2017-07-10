@@ -303,7 +303,7 @@ void visual_3d_viewpoint_change(GF_TraverseState *tr_state, GF_Node *vp, Bool an
 
 	camera_reset_viewpoint(tr_state->camera, animate_change);
 	if (tr_state->layer3d) gf_node_dirty_set(tr_state->layer3d, GF_SG_VRML_BINDABLE_DIRTY, 0);
-	// gf_sc_invalidate(tr_state->visual->compositor, NULL);
+	gf_sc_invalidate(tr_state->visual->compositor, NULL);
 }
 
 void visual_3d_setup_projection(GF_TraverseState *tr_state, Bool is_layer)
