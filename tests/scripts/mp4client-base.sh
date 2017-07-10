@@ -5,7 +5,7 @@ single_playback_test "-guid" "mp4client-gui"
 #2- test playback of raw media
 single_playback_test "$MEDIA_DIR/auxiliary_files/count_english.mp3" "mp4client-mp3"
 
-single_playback_test "$MEDIA_DIR/auxiliary_files/count_video.cmp" "mp4client-m4vp2"
+single_playback_test "$MEDIA_DIR/auxiliary_files/count_video.mp4" "mp4client-m4vp2"
 
 single_playback_test "$MEDIA_DIR/auxiliary_files/enst_video.h264" "mp4client-h264"
 
