@@ -303,7 +303,7 @@ void visual_3d_viewpoint_change(GF_TraverseState *tr_state, GF_Node *vp, Bool an
 
 	camera_reset_viewpoint(tr_state->camera, animate_change);
 	if (tr_state->layer3d) gf_node_dirty_set(tr_state->layer3d, GF_SG_VRML_BINDABLE_DIRTY, 0);
-	// gf_sc_invalidate(tr_state->visual->compositor, NULL);
+	gf_sc_invalidate(tr_state->visual->compositor, NULL);
 }
 
 void visual_3d_setup_projection(GF_TraverseState *tr_state, Bool is_layer)
@@ -1886,42 +1886,45 @@ Bool visual_3d_setup_texture(GF_TraverseState *tr_state, Fixed diffuse_alpha)
 	gf_node_dirty_reset(tr_state->appear, 0);
 
 	txh = gf_sc_texture_get_handler(((M_Appearance *)tr_state->appear)->texture);
-	if (txh) {
-		gf_sc_texture_set_blend_mode(txh, gf_sc_texture_is_transparent(txh) ? TX_MODULATE : TX_REPLACE);
-		tr_state->mesh_num_textures = gf_sc_texture_enable(txh, ((M_Appearance *)tr_state->appear)->textureTransform);
-		if (tr_state->mesh_num_textures) {
-			Fixed v[4];
-			switch (txh->pixelformat) {
-			/*override diffuse color with full intensity, but keep material alpha (cf VRML lighting)*/
-			case GF_PIXEL_RGB_24:
-				if (tr_state->visual->has_material_2d) {
-					SFColor c;
-					c.red = c.green = c.blue = FIX_ONE;
-					visual_3d_set_material_2d(tr_state->visual, c, diffuse_alpha);
-				} else {
-					v[0] = v[1] = v[2] = FIX_ONE;
-					v[3] = diffuse_alpha;
-					visual_3d_set_material(tr_state->visual, V3D_MATERIAL_DIFFUSE, v);
-				}
-				break;
-			/*override diffuse color AND material alpha (cf VRML lighting)*/
-			case GF_PIXEL_RGBA:
-				if (!tr_state->visual->has_material_2d) {
-					v[0] = v[1] = v[2] = v[3] = FIX_ONE;
-					visual_3d_set_material(tr_state->visual, V3D_MATERIAL_DIFFUSE, v);
-				}
-				tr_state->mesh_is_transparent = 1;
-				break;
-				/*			case GF_PIXEL_GREYSCALE:
-								tr_state->mesh_num_textures = 2;
-								break;
-				*/
+	//no texture, return TRUE (eg draw)
+	if (!txh)
+		return GF_TRUE;
+
+	gf_sc_texture_set_blend_mode(txh, gf_sc_texture_is_transparent(txh) ? TX_MODULATE : TX_REPLACE);
+	tr_state->mesh_num_textures = gf_sc_texture_enable(txh, ((M_Appearance *)tr_state->appear)->textureTransform);
+	if (tr_state->mesh_num_textures) {
+		Fixed v[4];
+		switch (txh->pixelformat) {
+		/*override diffuse color with full intensity, but keep material alpha (cf VRML lighting)*/
+		case GF_PIXEL_RGB_24:
+			if (tr_state->visual->has_material_2d) {
+				SFColor c;
+				c.red = c.green = c.blue = FIX_ONE;
+				visual_3d_set_material_2d(tr_state->visual, c, diffuse_alpha);
+			} else {
+				v[0] = v[1] = v[2] = FIX_ONE;
+				v[3] = diffuse_alpha;
+				visual_3d_set_material(tr_state->visual, V3D_MATERIAL_DIFFUSE, v);
 			}
+			break;
+		/*override diffuse color AND material alpha (cf VRML lighting)*/
+		case GF_PIXEL_RGBA:
+			if (!tr_state->visual->has_material_2d) {
+				v[0] = v[1] = v[2] = v[3] = FIX_ONE;
+				visual_3d_set_material(tr_state->visual, V3D_MATERIAL_DIFFUSE, v);
+			}
+			tr_state->mesh_is_transparent = 1;
+			break;
+			/*			case GF_PIXEL_GREYSCALE:
+							tr_state->mesh_num_textures = 2;
+							break;
+			*/
 		}
-		return tr_state->mesh_num_textures ? GF_TRUE : GF_FALSE;
 	}
+	return tr_state->mesh_num_textures ? GF_TRUE : GF_FALSE;
+#else
+	return GF_TRUE;
 #endif /*GPAC_DISABLE_VRML*/
-	return GF_FALSE;
 }
 
 void visual_3d_disable_texture(GF_TraverseState *tr_state)
