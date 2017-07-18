@@ -116,9 +116,9 @@ Bool MC_URLChanged(MFURL *old_url, MFURL *new_url)
 {
 	u32 i;
 	if (gf_mo_get_od_id(old_url) != gf_mo_get_od_id(new_url)) return 1;
-	
+
 	if ((new_url->count==1) && new_url->vals[0].url && !strlen(new_url->vals[0].url) ) new_url->count = 0;
-	
+
 	if (old_url->count != new_url->count) return 1;
 
 	for (i=0; i<old_url->count; i++) {
@@ -398,7 +398,7 @@ void RenderMediaControl(GF_Node *node, void *rs, Bool is_destroy)
 			else if (stack->paused) {
 				if (prev)
 					mediacontrol_resume((GF_ObjectManager *) prev->odm, 0);
-				
+
 				stack->paused = 0;
 			}
 			/*MediaControl has been detached*/
@@ -411,6 +411,7 @@ void RenderMediaControl(GF_Node *node, void *rs, Bool is_destroy)
 	} else {
 		stack->stream = gf_scene_get_media_object(stack->parent, &stack->control->url, GF_MEDIA_OBJECT_UNDEF, 0);
 		if (!stack->stream || !stack->stream->odm) {
+			//fprintf(stderr, "RenderMediaControl() stack->control->url.count=%d \n", stack->control->url.count);
 			if (stack->control->url.count) gf_term_invalidate_compositor(stack->parent->root_od->term);
 			stack->stream = NULL;
 			stack->changed = 0;
