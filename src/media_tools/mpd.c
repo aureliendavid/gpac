@@ -1298,6 +1298,7 @@ static GF_Err gf_m3u8_fill_mpd_struct(MasterPlaylist *pl, const char *m3u8_file,
 						if (!sub_url) sub_url = elt->url;
 						else sub_url ++;
 						if (strcmp(szURL, sub_url)) {
+							GF_LOG(GF_LOG_INFO, GF_LOG_DASH, ("[MPD] Cannot remap M3U8 to segment template MPD, using segment list\n"));
 							use_template = GF_FALSE;
 							break;
 						}
@@ -1709,8 +1710,6 @@ GF_Err gf_m3u8_to_mpd(const char *m3u8_file, const char *base_url,
 
 			the_pe = pe;
 			suburl = NULL;
-			if (!strstr(pe->url, ".m3u8"))
-				continue; /*not HLS*/
 
 			if (!parse_sub_playlist)
 				continue;
@@ -2348,7 +2347,7 @@ static GF_Err gf_mpd_write(GF_MPD const * const mpd, FILE *out)
 	fprintf(out, "<?xml version=\"1.0\"?>\n<MPD xmlns=\"%s\" type=\"%s\"", (mpd->xml_namespace ? mpd->xml_namespace : "urn:mpeg:dash:schema:mpd:2011"), (mpd->type == GF_MPD_TYPE_STATIC) ? "static" : "dynamic");
 
 	if (mpd->ID)
-		fprintf(out, " ID=\"%s\"", mpd->ID);
+		fprintf(out, " id=\"%s\"", mpd->ID);
 
 	if (mpd->profiles)
 		fprintf(out, " profiles=\"%s\"", mpd->profiles);

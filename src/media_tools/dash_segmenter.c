@@ -308,6 +308,24 @@ GF_Err gf_media_mpd_format_segment_name(GF_DashTemplateSegmentType seg_type, Boo
 				char_template += (u32) strlen(seg_rad_name + char_template)+1;
 				if (sep) sep[0] = '$';
 			}
+			else if (!strnicmp(& seg_rad_name[char_template], "$Path=", 6)) {
+				char *sep = strchr(seg_rad_name + char_template+6, '$');
+				if (sep) sep[0] = 0;
+				if (!is_template && !is_init_template) {
+					strcat(segment_name, seg_rad_name + char_template+6);
+				}
+				char_template += (u32) strlen(seg_rad_name + char_template)+1;
+				if (sep) sep[0] = '$';
+			}
+			else if (!strnicmp(& seg_rad_name[char_template], "$Segment=", 9)) {
+				char *sep = strchr(seg_rad_name + char_template+9, '$');
+				if (sep) sep[0] = 0;
+				if (!is_init && !is_init_template) {
+					strcat(segment_name, seg_rad_name + char_template+9);
+				}
+				char_template += (u32) strlen(seg_rad_name + char_template)+1;
+				if (sep) sep[0] = '$';
+			}
 
 			else {
 				char_template+=1;
@@ -317,32 +335,12 @@ GF_Err gf_media_mpd_format_segment_name(GF_DashTemplateSegmentType seg_type, Boo
 				strcat(segment_name, tmp);
 			}
 		}
-
-		//take care of base_url, if any
-		if (gf_url_is_local(base_url)) {
-			const char *name;
-			char tmp_segment_name[GF_MAX_PATH], tmp_path[GF_MAX_PATH], tmp_path2[GF_MAX_PATH];
-			name = gf_url_get_resource_name(segment_name);
-			gf_url_get_resource_path(segment_name, tmp_path);
-			strcpy(tmp_segment_name, name);
-			gf_url_get_resource_path(base_url, tmp_path2);
-			if (tmp_path2[strlen(tmp_path2)] != GF_PATH_SEPARATOR) {
-				char ext[2];
-				ext[0] = GF_PATH_SEPARATOR;
-				ext[1] = 0;
-				strcat(tmp_path2, ext);
-			}
-			segment_name[0] = '\0';
-			strcat(segment_name, tmp_path);
-			strcat(segment_name, tmp_path2);
-			strcat(segment_name, tmp_segment_name);
-		}
 	}
 
-	if (is_template) {
-		if (use_segment_timeline && !strstr(seg_rad_name, "$Time")) {
+	if (is_template && !strstr(seg_rad_name, "$Number") && !strstr(seg_rad_name, "$Time")) {
+		if (use_segment_timeline) {
 			strcat(segment_name, "$Time$");
-		} else if (!use_segment_timeline && !strstr(seg_rad_name, "$Number")) {
+		} else {
 			strcat(segment_name, "$Number$");
 		}
 	}
@@ -1508,7 +1506,7 @@ restart_fragmentation_pass:
 		for (i=0; i<count; i++) {
 			const char *key_name = gf_cfg_get_key_name(dash_cfg->dash_ctx, RepURLsSecName, i);
 			opt = gf_cfg_get_key(dash_cfg->dash_ctx, RepURLsSecName, key_name);
-			sprintf(szMPDTempLine, "     %s\n", opt);
+			sprintf(szMPDTempLine, "      %s\n", opt);
 			gf_bs_write_data(mpd_bs, szMPDTempLine, (u32) strlen(szMPDTempLine));
 		}
 
@@ -1600,7 +1598,7 @@ restart_fragmentation_pass:
 			} else {
 				start_range = gf_isom_get_file_size(output);
 				if (seg_rad_name) {
-					gf_media_mpd_format_segment_name(GF_DASH_TEMPLATE_SEGMENT, is_bs_switching, SegmentName, output_file, dash_input->representationID, dash_input->baseURL ? dash_input->baseURL[0] : NULL, seg_rad_name, !stricmp(seg_ext, "null") ? NULL : seg_ext, period_duration + (u64)segment_start_time, bandwidth, cur_seg, dash_cfg->use_segment_timeline);
+					gf_media_mpd_format_segment_name(GF_DASH_TEMPLATE_SEGMENT, is_bs_switching, SegmentName, output_file, dash_input->representationID, dash_input->baseURL ? dash_input->baseURL[0] : NULL, seg_rad_name, !stricmp(seg_ext, "null") ? NULL : seg_ext, period_duration + (u64)segment_start_time*mpd_timescale/dash_cfg->dash_scale, bandwidth, cur_seg, dash_cfg->use_segment_timeline);
 					e = gf_isom_start_segment(output, SegmentName, dash_cfg->fragments_in_memory);
 
 					/*we are in bitstream switching mode, delete init segment*/
@@ -1613,7 +1611,7 @@ restart_fragmentation_pass:
 
 					if (!use_url_template) {
 						const char *name = gf_dasher_strip_output_dir(dash_cfg->mpd_name, SegmentName);
-						sprintf(szMPDTempLine, "     <SegmentURL media=\"%s\"/>\n", name );
+						sprintf(szMPDTempLine, "      <SegmentURL media=\"%s\"/>\n", name );
 						gf_bs_write_data(mpd_bs, szMPDTempLine, (u32) strlen(szMPDTempLine));
 						if (dash_cfg->dash_ctx) {
 							char szKey[100], szVal[4046];
@@ -2024,8 +2022,9 @@ restart_fragmentation_pass:
 			last_seg_dur = SegmentDuration;
 
 			if (mpd_timeline_bs) {
-				u32 tick_adjust = 0;
+				u64 s_start, s_end;
 
+				u32 tick_adjust = 0;
 				//since dash scale and ref track used for segmentation may not have the same timescale we will have drift in segment timelines. Adjust it
 				if (tfref) {
 					s64 seg_start_time_min_cts = (s64) (tfref->min_cts_in_segment + tfref->media_time_to_pres_time_shift) * dash_cfg->dash_scale;
@@ -2059,8 +2058,13 @@ restart_fragmentation_pass:
 						}
 					}
 				}
+
+				s_start = (u64) ( ((Double)period_duration + segment_start_time) * mpd_timescale );
+				s_end = (u64) ( ((Double)period_duration + segment_start_time + SegmentDuration + (Double) tick_adjust)*mpd_timescale);
+				s_start /= dash_cfg->dash_scale;
+				s_end /= dash_cfg->dash_scale;
 				//adjust
-				gf_dash_append_segment_timeline(mpd_timeline_bs, period_duration + (u64)segment_start_time, (u64)(period_duration + segment_start_time + SegmentDuration + tick_adjust), &previous_segment_duration, &first_segment_in_timeline, &segment_timeline_repeat_count);
+				gf_dash_append_segment_timeline(mpd_timeline_bs, s_start, s_end, &previous_segment_duration, &first_segment_in_timeline, &segment_timeline_repeat_count);
 				period_duration += tick_adjust;
 			}
 			if (dash_cfg->max_segment_duration * dash_cfg->dash_scale < SegmentDuration) {
@@ -2198,7 +2202,7 @@ restart_fragmentation_pass:
 	}
 	//close timeline
 	if (mpd_timeline_bs) {
-		if (previous_segment_duration == SegmentDuration) {
+		if (previous_segment_duration * dash_cfg->dash_scale == SegmentDuration * mpd_timescale) {
 			segment_timeline_repeat_count ++;
 			sprintf(szMPDTempLine, " r=\"%d\"/>\n", segment_timeline_repeat_count);
 			gf_bs_write_data(mpd_timeline_bs, szMPDTempLine, (u32) strlen(szMPDTempLine));
@@ -2285,7 +2289,7 @@ restart_fragmentation_pass:
 		if (!dash_cfg->variable_seg_rad_name && first_in_set) {
 			const char *rad_name = gf_dasher_strip_output_dir(dash_cfg->mpd_name, seg_rad_name);
 			gf_media_mpd_format_segment_name(GF_DASH_TEMPLATE_TEMPLATE, is_bs_switching, SegmentName, output_file, dash_input->representationID, NULL, rad_name, !stricmp(seg_ext, "null") ? NULL : seg_ext, 0, 0, 0, dash_cfg->use_segment_timeline);
-			fprintf(dash_cfg->mpd, "   <SegmentTemplate timescale=\"%d\" media=\"%s\" startNumber=\"%d\"", mpd_timeline_bs ? dash_cfg->dash_scale : mpd_timescale, SegmentName, startNumber);
+			fprintf(dash_cfg->mpd, "   <SegmentTemplate media=\"%s\" timescale=\"%d\" startNumber=\"%d\"", SegmentName, mpd_timescale, startNumber);
 			if (dash_cfg->ast_offset_ms<0) {
 				fprintf(dash_cfg->mpd, " availabilityTimeOffset=\"%g\"", - (Double) dash_cfg->ast_offset_ms / 1000.0);
 			}
@@ -2334,7 +2338,7 @@ restart_fragmentation_pass:
 				u32 size;
 
 
-				fprintf(dash_cfg->mpd, " timescale=\"%d\">\n", dash_cfg->dash_scale);
+				fprintf(dash_cfg->mpd, " timescale=\"%d\">\n", mpd_timescale);
 
 				gf_bs_get_content(mpd_timeline_bs, &mpd_seg_info, &size);
 				gf_fwrite(mpd_seg_info, 1, size, dash_cfg->mpd);
@@ -2447,7 +2451,7 @@ restart_fragmentation_pass:
 				gf_media_mpd_format_segment_name(GF_DASH_TEMPLATE_TEMPLATE, is_bs_switching, SegmentName, output_file, dash_input->representationID, NULL, rad_name, !stricmp(seg_ext, "null") ? NULL : seg_ext, 0, bandwidth, 0, dash_cfg->use_segment_timeline);
 			}
 
-			fprintf(dash_cfg->mpd, "    <SegmentTemplate timescale=\"%d\" media=\"%s\" startNumber=\"%d\"", dash_cfg->use_segment_timeline ? dash_cfg->dash_scale : mpd_timescale, SegmentName, startNumber);
+			fprintf(dash_cfg->mpd, "    <SegmentTemplate media=\"%s\" timescale=\"%d\" startNumber=\"%d\"", SegmentName,mpd_timescale, startNumber);
 			if (!dash_cfg->use_segment_timeline) {
 				fprintf(dash_cfg->mpd, " duration=\"%d\"", (u32) (max_segment_duration * mpd_timescale + 0.5));
 			}
@@ -2661,7 +2665,7 @@ static GF_Err dasher_isom_get_input_components_info(GF_DashSegInput *input, GF_D
 			input->components[input->nb_components].fps_num = gf_isom_get_media_timescale(in, i+1);
 			/*get duration of track or of 2nd sample otherwise*/
 			if (gf_isom_get_track_duration(in, i + 1)) {
-				input->components[input->nb_components].fps_denum = (u32)(gf_isom_get_track_duration(in, i+1) * gf_isom_get_media_timescale(in, i+1) / ((gf_isom_get_sample_count(in, i+1) - 1) * gf_isom_get_timescale(in)));
+				input->components[input->nb_components].fps_denum = (u32)(gf_isom_get_media_duration(in, i+1) / gf_isom_get_sample_count(in, i+1) );
 			} else {
 				input->components[input->nb_components].fps_denum = gf_isom_get_sample_duration(in, i+1, 2);
 			}
