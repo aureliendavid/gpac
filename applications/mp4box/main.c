@@ -256,6 +256,7 @@ void PrintGeneralUsage()
 	        " -split-rap           splits in files beginning at each RAP. same as -splitr.\n"
 	        "                       * Note: this removes all MPEG-4 Systems media\n"
 	        " -split-chunk S:E     extracts a new file from Start to End (in seconds). same as -splitx\n"
+	        "                       E may be a number, \"end\" or \"end-N\", where N is a number of seconds before the end\n"
 	        "                       * Note: this removes all MPEG-4 Systems media\n"
 	        " -splitz S:E          same as -split-chunk, but adjust the end time to be before the last RAP sample\n"
 	        "                       * Note: this removes all MPEG-4 Systems media\n"
@@ -332,6 +333,7 @@ void PrintDASHUsage()
 	        " \":period=NAME\"     sets the representation's period to NAME. Multiple periods may be used\n"
 	        "                       period appear in the MPD in the same order as specified with this option\n"
 	        " \":BaseURL=NAME\"    sets the BaseURL. Set multiple times for multiple BaseURLs\n"
+	        "                        WARNING: this does NOT modify generated files location (see segment template).\n"
 	        " \":bandwidth=VALUE\" sets the representation's bandwidth to a given value\n"
 	        " \":period_duration=VALUE\"  increases the duration of this period by the given duration in seconds\n"
 	        "                       only used when no input media is specified (remote period insertion), eg :period=X:xlink=Z:duration=Y.\n"
@@ -356,11 +358,22 @@ void PrintDASHUsage()
 	        " -segment-name name   sets the segment name for generated segments\n"
 	        "                       If not set (default), segments are concatenated in output file\n"
 	        "                        except in \"live\" profile where dash_%%s is used\n"
+	        "                       Replacement strings supported:\n"
+	        "                      $Number[%%0Nd]$ is replaced by the segment number, possibly prefixed with 0.\n"
+	        "                      $RepresentationID$ is replaced by representation name.\n"
+	        "                      $Time$ is replaced by segment start time.\n"
+	        "                      $Bandwidth$ is replaced by representation bandwidth.\n"
+	        "                      $Init=NAME$ is replaced by NAME for init segment, ignored otherwise. May occur multiple times.\n"
+	        "                      $Index=NAME$ is replaced by NAME for index segments, ignored otherwise. May occur multiple times.\n"
+	        "                      $Path=PATH$ is replaced by PATH when creating segments, ignored otherwise. May occur multiple times.\n"
+	        "                      $Segment=NAME$ is replaced by NAME for media segments, ignored for init segments. May occur multiple times.\n"
+			"\n"
 	        " -segment-ext name    sets the segment extension. Default is m4s, \"null\" means no extension\n"
 	        " -segment-timeline    uses SegmentTimeline when generating segments.\n"
 	        " -segment-marker MARK adds a box of type \'MARK\' at the end of each DASH segment. MARK shall be a 4CC identifier\n"
 	        " -insert-utc          inserts UTC clock at the begining of each ISOBMF segment\n"
 	        " -base-url string     sets Base url at MPD level. Can be used several times.\n"
+	        "                        WARNING: this does NOT modify generated files location (see segment template).\n"
 	        " -mpd-title string    sets MPD title.\n"
 	        " -mpd-source string   sets MPD source.\n"
 	        " -mpd-info-url string sets MPD info url.\n"
@@ -482,6 +495,7 @@ void PrintImportUsage()
 	        " \":trailing\"          keeps trailing 0-bytes in AVC/HEVC samples\n"
 	        " \":agg=VAL\"           same as -agg option\n"
 	        " \":dref\"              same as -dref option\n"
+	        " \":keep_refs\"         keeps track reference when importing a single track\n"
 	        " \":nodrop\"            same as -nodrop option\n"
 	        " \":packed\"            same as -packed option\n"
 	        " \":sbr\"               same as -sbr option\n"
@@ -2590,8 +2604,14 @@ u32 mp4box_parse_args_continue(int argc, char **argv, u32 *current_index)
 				return 2;
 			}
 			if (strstr(argv[i + 1], "end")) {
-				sscanf(argv[i + 1], "%lf:end", &split_start);
-				split_duration = -2;
+				if (strstr(argv[i + 1], "end-")) {
+					Double dur_end=0;
+					sscanf(argv[i + 1], "%lf:end-%lf", &split_start, &dur_end);
+					split_duration = -2 - dur_end;
+				} else {
+					sscanf(argv[i + 1], "%lf:end", &split_start);
+					split_duration = -2;
+				}
 			}
 			else {
 				sscanf(argv[i + 1], "%lf:%lf", &split_start, &split_duration);
