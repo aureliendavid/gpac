@@ -3018,6 +3018,7 @@ static GF_Err gf_isom_dump_srt_track(GF_ISOFile *the_file, u32 track, FILE *dump
 
 			for (j=0; j<len; j++) {
 				Bool is_new_line;
+				Bool close_color = GF_FALSE;
 
 				if (txt->styles) {
 					new_styles = txtd->default_style.style_flags;
@@ -3026,12 +3027,22 @@ static GF_Err gf_isom_dump_srt_track(GF_ISOFile *the_file, u32 track, FILE *dump
 						if (txt->styles->styles[k].startCharOffset>char_num) continue;
 						if (txt->styles->styles[k].endCharOffset<char_num+1) continue;
 
+						new_color = txt->styles->styles[k].text_color;
+
 						if (txt->styles->styles[k].style_flags & (GF_TXT_STYLE_ITALIC | GF_TXT_STYLE_BOLD | GF_TXT_STYLE_UNDERLINED)) {
 							new_styles = txt->styles->styles[k].style_flags;
-							new_color = txt->styles->styles[k].text_color;
 							break;
 						}
 					}
+				}
+				if (new_color != color) {
+					if (new_color == txtd->default_style.text_color) {
+						close_color = GF_TRUE;
+					}
+					else {
+						fprintf(dump, "<font color=\"%s\">", gf_color_get_name(new_color));
+					}
+					color = new_color;
 				}
 				if (new_styles != styles) {
 					if ((new_styles & GF_TXT_STYLE_BOLD) && !(styles & GF_TXT_STYLE_BOLD)) fprintf(dump, "<b>");
@@ -3044,13 +3055,8 @@ static GF_Err gf_isom_dump_srt_track(GF_ISOFile *the_file, u32 track, FILE *dump
 
 					styles = new_styles;
 				}
-				if (new_color != color) {
-					if (new_color ==txtd->default_style.text_color) {
-						fprintf(dump, "</font>");
-					} else {
-						fprintf(dump, "<font color=\"%s\">", gf_color_get_name(new_color) );
-					}
-					color = new_color;
+				if (close_color) {
+					fprintf(dump, "</font>");
 				}
 
 				/*not sure if styles must be reseted at line breaks in srt...*/
@@ -4157,9 +4163,9 @@ static void oinf_entry_dump(GF_OperatingPointsInformation *ptr, FILE * trace)
 		fprintf(trace, " maxPicWidth=\"%u\" maxPicHeight=\"%u\"", op->maxPicWidth, op->maxPicHeight);
 		fprintf(trace, " maxChromaFormat=\"%u\" maxBitDepth=\"%u\"", op->maxChromaFormat, op->maxBitDepth);
 		fprintf(trace, " frame_rate_info_flag=\"%u\" bit_rate_info_flag=\"%u\"", op->frame_rate_info_flag, op->bit_rate_info_flag);
-		if (op->frame_rate_info_flag) 
+		if (op->frame_rate_info_flag)
 			fprintf(trace, " avgFrameRate=\"%u\" constantFrameRate=\"%u\"", op->avgFrameRate, op->constantFrameRate);
-		if (op->bit_rate_info_flag) 
+		if (op->bit_rate_info_flag)
 			fprintf(trace, " maxBitRate=\"%u\" avgBitRate=\"%u\"", op->maxBitRate, op->avgBitRate);
 		fprintf(trace, "/>\n");
 	}
@@ -4261,14 +4267,14 @@ static void nalm_dump(FILE * trace, char *data, u32 data_size)
 		fprintf(trace, "</NALUMap>\n");
 		return;
 	}
-	
+
 	bs = gf_bs_new(data, data_size, GF_BITSTREAM_READ);
 	gf_bs_read_int(bs, 6);
 	large_size = gf_bs_read_int(bs, 1);
 	rle = gf_bs_read_int(bs, 1);
 	entry_count = gf_bs_read_int(bs, large_size ? 16 : 8);
 	fprintf(trace, "<NALUMap rle=\"%d\" large_size=\"%d\">\n", rle, large_size);
-	
+
 	while (entry_count) {
 		u32 ID;
 		fprintf(trace, "<NALUMapEntry ");
@@ -4338,7 +4344,7 @@ GF_Err sgpd_dump(GF_Box *a, FILE * trace)
 		case GF_ISOM_SAMPLE_GROUP_TRIF:
 			trif_dump(trace, (char *) ((GF_DefaultSampleGroupDescriptionEntry*)entry)->data,  ((GF_DefaultSampleGroupDescriptionEntry*)entry)->length);
 			break;
-			
+
 		case GF_ISOM_SAMPLE_GROUP_NALM:
 			nalm_dump(trace, (char *) ((GF_DefaultSampleGroupDescriptionEntry*)entry)->data,  ((GF_DefaultSampleGroupDescriptionEntry*)entry)->length);
 			break;
@@ -4507,7 +4513,7 @@ GF_Err tenc_dump(GF_Box *a, FILE * trace)
 		fprintf(trace, "\"  KID=\"");
 	}
 	dump_data_hex(trace, (char *) ptr->KID, 16);
-	if (ptr->version) 
+	if (ptr->version)
 		fprintf(trace, "\" crypt_byte_block=\"%d\" skip_byte_block=\"%d", ptr->crypt_byte_block, ptr->skip_byte_block);
 	fprintf(trace, "\">\n");
 	gf_isom_box_dump_done("TrackEncryptionBox", a, trace);

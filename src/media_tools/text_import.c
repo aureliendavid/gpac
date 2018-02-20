@@ -688,6 +688,8 @@ static GF_Err gf_text_import_srt(GF_MediaImporter *import)
 				set_start_char = GF_TRUE;
 				rec.startCharOffset = char_len + j;
 				rec.style_flags &= ~rem_styles;
+				rec.text_color = default_color;
+				rem_color = 0;
 			}
 
 			char_line = j;
