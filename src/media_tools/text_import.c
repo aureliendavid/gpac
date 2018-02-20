@@ -284,7 +284,7 @@ static GF_Err gf_text_import_srt(GF_MediaImporter *import)
 	GF_StyleRecord rec;
 	GF_TextSample * samp;
 	GF_ISOSample *s;
-	u32 sh, sm, ss, sms, eh, em, es, ems, txt_line, char_len, char_line, nb_samp, j, duration, rem_styles;
+	u32 sh, sm, ss, sms, eh, em, es, ems, txt_line, char_len, char_line, nb_samp, j, duration, rem_styles, style_depth;
 	Bool set_start_char, set_end_char, first_samp, rem_color;
 	u64 start, end, prev_end, file_size;
 	u32 state, curLine, line, len, ID, OCR_ES_ID, default_color;
@@ -418,6 +418,7 @@ static GF_Err gf_text_import_srt(GF_MediaImporter *import)
 	char_len = 0;
 	start = 0;
 	nb_samp = 0;
+	style_depth = 0;
 	samp = gf_isom_new_text_sample();
 
 	first_samp = GF_TRUE;
@@ -427,7 +428,9 @@ static GF_Err gf_text_import_srt(GF_MediaImporter *import)
 		if (sOK) REM_TRAIL_MARKS(szLine, "\r\n\t ")
 			if (!sOK || !strlen(szLine)) {
 				rec.style_flags = 0;
+				rec.text_color = default_color;
 				rec.startCharOffset = rec.endCharOffset = 0;
+				style_depth = 0;
 				if (txt_line) {
 					if (prev_end && (start != prev_end)) {
 						GF_TextSample * empty_samp = gf_isom_new_text_sample();
@@ -500,6 +503,8 @@ static GF_Err gf_text_import_srt(GF_MediaImporter *import)
 				nb_samp++;
 			}
 			rec.style_flags = 0;
+			rec.text_color = default_color;
+			style_depth = 0;
 			state = 2;
 			if (end<=prev_end) {
 				gf_import_message(import, GF_OK, "WARNING: overlapping SRT frame %d end "LLD" is at or before previous end "LLD" - removing", curLine, end, prev_end);
@@ -586,21 +591,21 @@ static GF_Err gf_text_import_srt(GF_MediaImporter *import)
 				/*start of new style*/
 				if (style_def_type==1)  {
 					/*store prev style*/
-					if (set_end_char) {
-						assert(set_start_char);
-						gf_isom_text_add_style(samp, &rec);
-						set_end_char = set_start_char = GF_FALSE;
-						rec.style_flags &= ~rem_styles;
-						rem_styles = 0;
-						if (rem_color) {
-							rec.text_color = default_color;
-							rem_color = 0;
-						}
-					}
-					if (set_start_char && (rec.startCharOffset != j)) {
-						rec.endCharOffset = char_len + j;
-						if (rec.style_flags) gf_isom_text_add_style(samp, &rec);
-					}
+					//if (set_end_char) {
+					//	assert(set_start_char);
+					//	gf_isom_text_add_style(samp, &rec);
+					//	set_end_char = set_start_char = GF_FALSE;
+					//	rec.style_flags &= ~rem_styles;
+					//	rem_styles = 0;
+					//	if (rem_color) {
+					//		rec.text_color = default_color;
+					//		rem_color = 0;
+					//	}
+					//}
+					//if (set_start_char && (rec.startCharOffset != j)) {
+					//	rec.endCharOffset = char_len + j;
+					//	if (rec.style_flags) gf_isom_text_add_style(samp, &rec);
+					//}
 					switch (uniLine[i+1]) {
 					case 'b':
 					case 'B':
@@ -628,6 +633,17 @@ static GF_Err gf_text_import_srt(GF_MediaImporter *import)
 							rec.startCharOffset = char_len + j;
 						}
 						break;
+					}
+					if (set_start_char) {
+						rec.endCharOffset = -1;
+						gf_isom_text_add_style(samp, &rec);
+						fprintf(stderr, "-->added style depth %d from %d to %d style %d color %d \n", style_depth, rec.startCharOffset, rec.endCharOffset, rec.style_flags, rec.text_color);						
+						set_start_char = GF_FALSE;
+						rec.style_flags = 0;
+						rec.text_color = default_color;
+						style_depth++;
+						fprintf(stderr, "-->ACTUAL ADDED style %p depth %d from %d to %d style %d color %d \n", &samp->styles->styles[samp->styles->entry_count - 1], style_depth, samp->styles->styles[samp->styles->entry_count - 1].startCharOffset, samp->styles->styles[samp->styles->entry_count - 1].endCharOffset, samp->styles->styles[style_depth - 1].style_flags, samp->styles->styles[samp->styles->entry_count - 1].text_color);
+						
 					}
 					i += style_nb_chars;
 					continue;
@@ -662,33 +678,60 @@ static GF_Err gf_text_import_srt(GF_MediaImporter *import)
 							rec.endCharOffset = char_len + j;
 						}
 					}
+					if (set_end_char) {
+						GF_StyleRecord* last_style;
+						
+						int i = samp->styles->entry_count - 1;
+						while (i >= 0 && samp->styles->styles[i].endCharOffset != (u16)-1)
+							i--;
+						if (i < 0)
+							fprintf(stderr, "NOT FOUND\n");
+						else
+							last_style = &samp->styles->styles[i];
+						
+						last_style->endCharOffset = rec.endCharOffset;
+						fprintf(stderr, "<--end style %p depth %d from %d to %d style %d color %d \n", last_style, style_depth, last_style->startCharOffset, last_style->endCharOffset, last_style->style_flags, last_style->text_color);
+						fprintf(stderr, "<--ACTUAL ENDED style %p depth %d from %d to %d style %d color %d \n", &samp->styles->styles[i], style_depth, samp->styles->styles[i].startCharOffset, samp->styles->styles[i].endCharOffset, samp->styles->styles[i].style_flags, samp->styles->styles[i].text_color);
+						//rec.style_flags &= ~rem_styles;
+						//rem_styles = 0;
+						//if (rem_color) {
+						//	rec.text_color = default_color;
+						//	rem_color = 0;
+						//}
+						rec.style_flags = 0;
+						rec.text_color = default_color;
+						style_depth--;
+						set_end_char = GF_FALSE;
+					}
 					i+=style_nb_chars;
 					continue;
 				}
 				/*store style*/
-				if (set_end_char) {
-					gf_isom_text_add_style(samp, &rec);
-					set_end_char = GF_FALSE;
-					set_start_char = GF_TRUE;
-					rec.startCharOffset = char_len + j;
-					rec.style_flags &= ~rem_styles;
-					rem_styles = 0;
-					rec.text_color = default_color;
-					rem_color = 0;
-				}
+				//if (set_end_char) {
+				//	gf_isom_text_add_style(samp, &rec);
+				//	set_end_char = GF_FALSE;
+				//	set_start_char = GF_TRUE;
+				//	rec.startCharOffset = char_len + j;
+				//	rec.style_flags &= ~rem_styles;
+				//	rem_styles = 0;
+				//	rec.text_color = default_color;
+				//	rem_color = 0;
+				//}
 
 				uniText[j] = uniLine[i];
 				j++;
 				i++;
 			}
 			/*store last style*/
-			if (set_end_char) {
-				gf_isom_text_add_style(samp, &rec);
-				set_end_char = GF_FALSE;
-				set_start_char = GF_TRUE;
-				rec.startCharOffset = char_len + j;
-				rec.style_flags &= ~rem_styles;
-			}
+			//if (set_end_char) {
+			//	gf_isom_text_add_style(samp, &rec);
+			//	set_end_char = GF_FALSE;
+			//	set_start_char = GF_TRUE;
+			//	rec.startCharOffset = char_len + j;
+			//	rec.style_flags &= ~rem_styles;
+			//	rec.text_color = default_color;
+			//	rem_color = 0;
+			//}
 
 			char_line = j;
 			uniText[j] = 0;
