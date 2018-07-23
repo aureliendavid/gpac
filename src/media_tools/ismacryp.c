@@ -1073,7 +1073,7 @@ static GF_Err gf_cenc_encrypt_sample_ctr(GF_Crypt *mc, GF_TrackCryptInfo *tci, G
 				if (e) return e;
 				gf_bs_seek(plaintext_bs, pos);
 
-				nalu_size = obu_size;
+				nalu_size = (u32)obu_size;
 				switch (obut) {
 				case OBU_TEMPORAL_DELIMITER:
 				case OBU_SEQUENCE_HEADER:
