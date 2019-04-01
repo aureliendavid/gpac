@@ -692,6 +692,7 @@ docc() {
 
 
 docxx() {
+ echo -- cxx ---
  $cc -o $TMPO $TMPC $@ 0>/dev/null 2>$TMPL
  dolog $@
 }
@@ -790,7 +791,7 @@ if test "$has_js" = "no" ; then
 
 cat > $TMPC << EOF
 #include <jsapi.h>
-int main( void ) { JSContext *cx=NULL; jsval rp; return JS_AddValueRoot(cx, &rp); }
+int main( void ) { JSContext *cx=NULL; jsval rp; return JS_AddRoot(cx, &rp); }
 EOF
 
     #try local
@@ -804,7 +805,7 @@ EOF
             mozjs_pkgcfg="mozjs"
         elif $pkg_config --exists mozjs185 ; then
             mozjs_pkgcfg="mozjs185"
-    elif docc $js_flags -L$local_lib -ljs -lpthread ; then
+    elif docc $js_flags -L$local_lib -ljs -lpthread -lm ; then
         has_js="local"
         #dc added
     fi
@@ -1010,7 +1011,7 @@ fi
 
 
 #end JS test
-
+set +x
 
 
 #look for platinum support
@@ -1212,7 +1213,7 @@ if test "$has_jpeg" = "no" ; then
 fi
 
 
-
+set -x
 #look for OpenJPEG support
 cat > $TMPC << EOF
 #include <stdio.h>
@@ -1222,12 +1223,16 @@ EOF
 
 if docc $LDFLAGS -lopenjpeg ; then
     has_openjpeg="system"
+    jp2_cflags=""
+    jp2_lflags="-lopenjpeg"
 fi
 if test "$cross_prefix" = "" ; then
     if test "$has_openjpeg" = "no" ; then
         if test "$alt_macosx_dir" != "" ; then
             if cc -o $TMPO $TMPC -I$alt_macosx_dir/include -L$alt_macosx_dir/lib $LDFLAGS -ljpeg 2>>$logs ; then
                 has_openjpeg="system"
+                jp2_cflags="-I$alt_macosx_dir/include"
+                jp2_lflags="-L$alt_macosx_dir/lib -ljpeg"
             fi
         fi
     fi
@@ -1236,9 +1241,20 @@ fi
 if test "$has_openjpeg" = "no" ; then
     if docc -I$local_inc/openjpeg -L$local_lib -lopenjpeg ; then
         has_openjpeg="local"
+        jp2_cflags="-I$local_inc/openjpeg"
+        jp2_lflags="-L$local_lib -lopenjpeg"
     fi
 fi
 
+# testing for newer openjp2
+if test "$has_openjpeg" = "no" ; then
+    if docc $(pkg-config --cflags --libs libopenjp2) ; then
+        has_openjpeg="system"
+        jp2_cflags="$(pkg-config --cflags libopenjp2)"
+        jp2_lflags="$(pkg-config --libs libopenjp2)"
+    fi
+fi
+set +x
 
 
 #look for PNG support
@@ -3119,6 +3135,11 @@ if test "$has_png" != "no" ; then
 fi
 
 echo "CONFIG_JP2=$has_openjpeg" >> config.mak
+if test "$has_openjpeg" != "no"
+then
+    echo "JP2_CFLAGS=$jp2_cflags" >> config.mak
+    echo "JP2_LFLAGS=$jp2_lflags" >> config.mak
+fi
 echo "CONFIG_FAAD=$has_faad" >> config.mak
 echo "CONFIG_MAD=$has_mad" >> config.mak
 echo "CONFIG_XVID=$has_xvid" >> config.mak
