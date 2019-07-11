@@ -79,7 +79,7 @@ typedef struct
 	GF_AVCConfig *avcc, *svcc;
 	GF_HEVCConfig *hvcc, *lvcc;
 
-	char *inband_hdr;
+	u8 *inband_hdr;
 	u32 inband_hdr_size;
 	u32 is_nalu;
 	Bool is_av1, is_vpx;
@@ -181,7 +181,8 @@ typedef struct
 	GF_AudioSampleEntryImportMode ase;
 	char *styp;
 	Bool sseg;
-
+	Bool noroll;
+	Bool saio32;
 
 	//internal
 	Bool owns_mov;
@@ -432,6 +433,7 @@ static GF_Err mp4_mux_setup_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is_tr
 	Bool use_gen_sample_entry = GF_FALSE;
 	Bool use_3gpp_config = GF_FALSE;
 	Bool use_ac3_entry = GF_FALSE;
+	Bool use_flac_entry = GF_FALSE;
 	Bool use_avc = GF_FALSE;
 	Bool use_hevc = GF_FALSE;
 	Bool use_hvt1 = GF_FALSE;
@@ -967,6 +969,8 @@ sample_entry_setup:
 	if (p) sr = p->value.uint;
 	p = gf_filter_pid_get_property(pid, GF_PROP_PID_NUM_CHANNELS);
 	if (p) nb_chan = p->value.uint;
+	p = gf_filter_pid_get_property(pid, GF_PROP_PID_AUDIO_BPS);
+	if (p) nb_bps = p->value.uint;
 
 	p = gf_filter_pid_get_property(pid, GF_PROP_PID_LANGUAGE);
 	if (p) lang_name = p->value.string;
@@ -1081,6 +1085,11 @@ sample_entry_setup:
 		m_subtype = GF_ISOM_SUBTYPE_AC3;
 		comp_name = "EAC-3";
 		use_ac3_entry = GF_TRUE;
+		break;
+	case GF_CODECID_FLAC:
+		m_subtype = GF_ISOM_SUBTYPE_FLAC;
+		comp_name = "FLAC";
+		use_flac_entry = GF_TRUE;
 		break;
 	case GF_CODECID_OPUS:
 		m_subtype = GF_ISOM_SUBTYPE_OPUS;
@@ -1663,6 +1672,13 @@ sample_entry_setup:
 			return e;
 		}
 		tkw->use_dref = src_url ? GF_TRUE : GF_FALSE;
+	} else if (use_flac_entry) {
+		e = gf_isom_flac_config_new(ctx->file, tkw->track_num, dsi ? dsi->value.data.ptr : NULL, dsi ? dsi->value.data.size : 0, (char *)src_url, NULL, &tkw->stsd_idx);
+		if (e) {
+			GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[MP4Mux] Error creating new FLAC audio sample description for stream type %d codecid %d: %s\n", tkw->stream_type, codec_id, gf_error_to_string(e) ));
+			return e;
+		}
+		tkw->use_dref = src_url ? GF_TRUE : GF_FALSE;
 	} else if (use_opus) {
 		GF_OpusSpecificBox *opus_cfg = NULL;
 		GF_BitStream *bs;
@@ -2001,6 +2017,16 @@ sample_entry_done:
 			gf_isom_hint_max_chunk_size(ctx->file, tkw->track_num, ctx->maxchunk);
 
 		if (sr) {
+			if (use_flac_entry) {
+				while (sr>65535) {
+					u32 val = sr/2;
+					if (val*2 != sr) {
+						sr=65535;
+						break;
+					}
+					sr = val;
+				}
+			}
 			gf_isom_set_audio_info(ctx->file, tkw->track_num, tkw->stsd_idx, sr, nb_chan, nb_bps, ctx->make_qt ? GF_IMPORT_AUDIO_SAMPLE_ENTRY_v1_QTFF : ase_mode);
 		}
 		else if (width) {
@@ -2409,11 +2435,11 @@ static GF_Err mp4_mux_cenc_update(GF_MP4MuxCtx *ctx, TrackWriter *tkw, GF_Filter
 	}
 
 	if (act_type==CENC_ADD_FRAG) {
-		e = gf_isom_fragment_set_cenc_sai(ctx->file, tkw->track_id, IV_size, sai, sai_size, tkw->cenc_subsamples);
+		e = gf_isom_fragment_set_cenc_sai(ctx->file, tkw->track_id, IV_size, sai, sai_size, tkw->cenc_subsamples, ctx->saio32);
 		if (e) return e;
 	} else {
 		if (sai) {
-			e = gf_isom_track_cenc_add_sample_info(ctx->file, tkw->track_num, GF_ISOM_BOX_TYPE_SENC, IV_size, sai, sai_size, tkw->cenc_subsamples, NULL);
+			e = gf_isom_track_cenc_add_sample_info(ctx->file, tkw->track_num, GF_ISOM_BOX_TYPE_SENC, IV_size, sai, sai_size, tkw->cenc_subsamples, NULL, ctx->saio32);
 			if (e) return e;
 		}
 	}
@@ -2630,19 +2656,21 @@ static GF_Err mp4_mux_process_sample(GF_MP4MuxCtx *ctx, TrackWriter *tkw, GF_Fil
 		}
 		tkw->has_open_gop = GF_TRUE;
 	}
-	if ((sap_type==4) || tkw->has_gdr) {
-		s16 roll = gf_filter_pck_get_roll_info(pck);
-		if (for_fragment) {
-			e = gf_isom_fragment_set_sample_roll_group(ctx->file, tkw->track_id, tkw->samples_in_frag, (sap_type==4) ? GF_TRUE : GF_FALSE, roll);
-		} else {
-			e = gf_isom_set_sample_roll_group(ctx->file, tkw->track_num, tkw->nb_samples, (sap_type==4) ? GF_TRUE : GF_FALSE, roll);
+	if (!ctx->noroll) {
+		if ((sap_type==4) || tkw->has_gdr) {
+			s16 roll = gf_filter_pck_get_roll_info(pck);
+			if (for_fragment) {
+				e = gf_isom_fragment_set_sample_roll_group(ctx->file, tkw->track_id, tkw->samples_in_frag, (sap_type==4) ? GF_TRUE : GF_FALSE, roll);
+			} else {
+				e = gf_isom_set_sample_roll_group(ctx->file, tkw->track_num, tkw->nb_samples, (sap_type==4) ? GF_TRUE : GF_FALSE, roll);
+			}
+			if (e) {
+				GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[MP4Mux] Failed to set sample DTS "LLU" SAP 4 roll %s in roll group: %s\n", tkw->sample.DTS, roll, gf_error_to_string(e) ));
+			}
+			tkw->has_gdr = GF_TRUE;
 		}
-		if (e) {
-			GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[MP4Mux] Failed to set sample DTS "LLU" SAP 4 roll %s in roll group: %s\n", tkw->sample.DTS, roll, gf_error_to_string(e) ));
-		}
-		tkw->has_gdr = GF_TRUE;
 	}
-
+	
 	if (subs) {
 		//if no AUDelim nal and inband header injection, push new subsample
 		if (!first_nal_is_audelim && insert_subsample_dsi) {
@@ -3220,7 +3248,8 @@ static GF_Err mp4_mux_initialize_movie(GF_MP4MuxCtx *ctx)
 
 		if (!ctx->cache) {
 			GF_BitStream *bs;
-			char *output, *msg;
+			u8 *output;
+			char *msg;
 			GF_FilterPacket *pck;
 			u32 len, nb_segs = (u32) ( ctx->media_dur / ctx->dash_dur);
 			//always add an extra segment
@@ -3304,7 +3333,7 @@ static GF_Err mp4_mux_start_fragment(GF_MP4MuxCtx *ctx)
 static GF_Err mp4_mux_flush_fragmented(GF_Filter *filter, GF_MP4MuxCtx *ctx)
 {
 	GF_FilterPacket *pck;
-	char *output;
+	u8 *output;
 	u32 nb_read, blocksize = ctx->block_size;
 	if (ctx->flush_done + blocksize>ctx->flush_size) {
 		blocksize = (u32) (ctx->flush_size - ctx->flush_done);
@@ -3516,7 +3545,7 @@ static GF_Err mp4_mux_process_fragmented(GF_Filter *filter, GF_MP4MuxCtx *ctx)
 		}
 		//done with this track - if single track per moof, request new fragment but don't touch the
 		//fragmentation state of the track writers
-		if (ctx->straf && (i+1==count)) {
+		if (ctx->straf && (i+1 < count)) {
 			e = gf_isom_start_fragment(ctx->file, ctx->moof_first);
 			if (e) {
 				GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[MP4Mux] Unable to start new fragment: %s\n", gf_error_to_string(e) ));
@@ -3875,10 +3904,10 @@ GF_Err mp4_mux_process(GF_Filter *filter)
 	return GF_OK;
 }
 
-static GF_Err mp4_mux_on_data_patch(void *cbk, char *data, u32 block_size, u64 file_offset)
+static GF_Err mp4_mux_on_data_patch(void *cbk, u8 *data, u32 block_size, u64 file_offset)
 {
 	GF_Filter *filter = (GF_Filter *) cbk;
-	char *output;
+	u8 *output;
 	GF_MP4MuxCtx *ctx = gf_filter_get_udta(filter);
 
 	GF_FilterPacket *pck = gf_filter_pck_new_alloc(ctx->opid, block_size, &output);
@@ -3890,10 +3919,10 @@ static GF_Err mp4_mux_on_data_patch(void *cbk, char *data, u32 block_size, u64 f
 	return GF_OK;
 }
 
-static GF_Err mp4_mux_on_data(void *cbk, char *data, u32 block_size)
+static GF_Err mp4_mux_on_data(void *cbk, u8 *data, u32 block_size)
 {
 	GF_Filter *filter = (GF_Filter *) cbk;
-	char *output;
+	u8 *output;
 	GF_MP4MuxCtx *ctx = gf_filter_get_udta(filter);
 
 	ctx->total_bytes_out += block_size;
@@ -4176,6 +4205,8 @@ static GF_Err mp4_mux_done(GF_Filter *filter, GF_MP4MuxCtx *ctx)
 			mp4_mux_update_edit_list_for_bframes(ctx, tkw);
 
 			has_bframes = GF_TRUE;
+		} else if (tkw->ts_delay) {
+			gf_isom_update_edit_list_duration(ctx->file, tkw->track_num);
 		}
 
 		/*this is plain ugly but since some encoders (divx) don't use the video PL correctly
@@ -4401,7 +4432,7 @@ static const GF_FilterArgs MP4MuxArgs[] =
 	"- no: disables import\n"
 	"- yes: clones all extension boxes\n"
 	"- udta: only loads udta", GF_PROP_UINT, "yes", "no|yes|udta", GF_FS_ARG_HINT_EXPERT},
-	{ OFFS(tmpd), "set temp dire for intermediate file(s)", GF_PROP_STRING, NULL, NULL, 0},
+	{ OFFS(tmpd), "set temp directory for intermediate file(s)", GF_PROP_STRING, NULL, NULL, 0},
 	{ OFFS(mvex), "set mvex after tracks", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_ADVANCED},
 	{ OFFS(tkid), "track ID of created track for single track. Default 0 uses next available trackID", GF_PROP_UINT, "0", NULL, GF_FS_ARG_HINT_ADVANCED},
 	{ OFFS(fdur), "fragment based on fragment duration rather than CTS. Mostly used for MP4Box -frag option", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_ADVANCED},
@@ -4417,7 +4448,8 @@ static const GF_FilterArgs MP4MuxArgs[] =
 	{ OFFS(ssix), "create ssix when sidx is present, level 1 mappping I-frames byte ranges, level 0xFF mapping the rest", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_ADVANCED},
 	{ OFFS(ccst), "insert coding constraint box for video tracks", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_ADVANCED},
 	{ OFFS(maxchunk), "set max chunk size in bytes for runs (only used in non-fragmented mode). 0 means no constraints", GF_PROP_UINT, "0", NULL, GF_FS_ARG_HINT_ADVANCED},
-
+	{ OFFS(noroll), "disable roll sample grouping", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_EXPERT},
+	{ OFFS(saio32), "set single segment mode for dash", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_EXPERT},
 	{ OFFS(sseg), "set single segment mode for dash", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_HIDE},
 
 	{ OFFS(block_size), "target output block size, 0 for default internal value (10k)", GF_PROP_UINT, "10000", NULL, GF_FS_ARG_HINT_ADVANCED},

@@ -2128,7 +2128,7 @@ static GF_Err swf_def_bits_jpeg(SWFReader *read, u32 version)
 		osize = w*h*4;
 		raw = gf_malloc(sizeof(char)*osize);
 		memset(raw, 0, sizeof(char)*osize);
-		e = gf_img_jpeg_dec( (char *) buf+skip, size-skip, &w, &h, &pf, raw, &osize, 4);
+		e = gf_img_jpeg_dec(buf+skip, size-skip, &w, &h, &pf, raw, &osize, 4);
 		if (e != GF_OK) {
 			swf_report(read, e, "Cannopt decode JPEG image");
 		}
@@ -2566,8 +2566,8 @@ SWFReader *gf_swf_reader_new(const char *localPath, const char *inputName)
 }
 
 GF_Err gf_swf_reader_set_user_mode(SWFReader *read, void *user,
-                                   GF_Err (*add_sample)(void *user, const char *data, u32 length, u64 timestamp, Bool isRap),
-                                   GF_Err (*add_header)(void *user, const char *data, u32 length, Bool isHeader))
+                                   GF_Err (*add_sample)(void *user, const u8 *data, u32 length, u64 timestamp, Bool isRap),
+                                   GF_Err (*add_header)(void *user, const u8 *data, u32 length, Bool isHeader))
 {
 	if (!read) return GF_BAD_PARAM;
 	read->user = user;

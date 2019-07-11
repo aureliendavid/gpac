@@ -120,7 +120,7 @@ static GF_Err gf_dump_to_ogg(GF_MediaExporter *dumper, char *szName, u32 track)
 		}
 		gf_isom_box_del((GF_Box*)dops);
 
-		gf_bs_get_content(bs_out, (char **) &op.packet, &op.bytes);
+		gf_bs_get_content(bs_out, &op.packet, &op.bytes);
 		gf_bs_del(bs_out);
 		ogg_stream_packetin(&os, &op);
 		gf_free(op.packet);
@@ -365,7 +365,8 @@ static GF_Err gf_export_isom_copy_track(GF_MediaExporter *dumper, GF_ISOFile *in
 {
 	GF_ESD *esd;
 	GF_InitialObjectDescriptor *iod;
-	u32 TrackID, newTk, descIndex, i, ts, rate, pos, di, count, msubtype;
+	GF_ISOTrackID TrackID;
+	u32 newTk, descIndex, i, ts, rate, pos, di, count, msubtype;
 	u64 dur;
 	GF_ISOSample *samp;
 
@@ -672,8 +673,7 @@ GF_Err gf_media_export_webvtt_metadata(GF_MediaExporter *dumper)
 			fprintf(vtt, "height:%d\n", h);
 		}
 		else if (mtype==GF_ISOM_MEDIA_AUDIO) {
-			u32 sr, nb_ch;
-			u8 bps;
+			u32 sr, nb_ch, bps;
 			gf_isom_get_audio_info(dumper->file, track, 1, &sr, &nb_ch, &bps);
 			fprintf(vtt, "sampleRate: %d\n", sr);
 			fprintf(vtt, "numChannels: %d\n", nb_ch);
@@ -943,7 +943,7 @@ GF_Err gf_media_export_saf(GF_MediaExporter *dumper)
 	u32 count, i, s_count, di, tot_samp, samp_done;
 	char out_file[GF_MAX_PATH];
 	GF_SAFMuxer *mux;
-	char *data;
+	u8 *data;
 	u32 size;
 	Bool is_stdout = 0;
 	FILE *saf_f;
@@ -1360,6 +1360,8 @@ static GF_Err gf_media_export_filters(GF_MediaExporter *dumper)
 	if (e>GF_OK) e = GF_OK;
 	if (!e) e = gf_fs_get_last_connect_error(fsess);
 	if (!e) e = gf_fs_get_last_process_error(fsess);
+	if (dumper->print_stats_graph & 1) gf_fs_print_stats(fsess);
+	if (dumper->print_stats_graph & 2) gf_fs_print_connections(fsess);
 	gf_fs_del(fsess);
 	return e;
 }

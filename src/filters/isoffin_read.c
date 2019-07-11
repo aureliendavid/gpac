@@ -165,7 +165,8 @@ static GF_Err isoffin_reconfigure(GF_Filter *filter, ISOMReader *read, const cha
 	u32 i, count;
 	Bool is_new_mov = GF_FALSE;
 	u64 tfdt;
-	u32 trackID, flags=0;
+	GF_ISOTrackID trackID;
+	u32 flags=0;
 	GF_Err e;
 
 	prop = gf_filter_pid_get_property(read->pid, GF_PROP_PID_FILE_CACHED);
@@ -470,7 +471,7 @@ void isor_set_crypt_config(ISOMChannel *ch)
 	if (plainTextLen) gf_filter_pid_set_property(ch->pid, GF_PROP_PID_OMA_CLEAR_LEN, &PROP_LONGUINT(plainTextLen) );
 
 	if (ch->is_cenc) {
-		char *psshd;
+		u8 *psshd;
 		GF_BitStream *pssh_bs = gf_bs_new(NULL, 0, GF_BITSTREAM_WRITE);
 		u32 i, s, container_type;
 
@@ -883,7 +884,7 @@ static GF_Err isoffin_process(GF_Filter *filter)
 	}
 
 	for (i=0; i<count; i++) {
-		char *data;
+		u8 *data;
 		ISOMChannel *ch;
 		ch = gf_list_get(read->channels, i);
 		if (ch->play_state != 1) continue;

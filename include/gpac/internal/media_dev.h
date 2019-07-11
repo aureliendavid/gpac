@@ -60,8 +60,8 @@ u32 gf_media_nalu_next_start_code_bs(GF_BitStream *bs);
 returns data_len if no startcode found and sets sc_size to 0 (last nal in payload)*/
 u32 gf_media_nalu_next_start_code(const u8 *data, u32 data_len, u32 *sc_size);
 
-u32 gf_media_nalu_emulation_bytes_remove_count(const char *buffer, u32 nal_size);
-u32 gf_media_nalu_remove_emulation_bytes(const char *buffer_src, char *buffer_dst, u32 nal_size);
+u32 gf_media_nalu_emulation_bytes_remove_count(const u8 *buffer, u32 nal_size);
+u32 gf_media_nalu_remove_emulation_bytes(const u8 *buffer_src, u8 *buffer_dst, u32 nal_size);
 
 u32 gf_bs_get_ue(GF_BitStream *bs);
 s32 gf_bs_get_se(GF_BitStream *bs);
@@ -257,10 +257,10 @@ typedef struct
 
 
 /*return sps ID or -1 if error*/
-s32 gf_media_avc_read_sps(const char *sps_data, u32 sps_size, AVCState *avc, u32 subseq_sps, u32 *vui_flag_pos);
+s32 gf_media_avc_read_sps(const u8 *sps_data, u32 sps_size, AVCState *avc, u32 subseq_sps, u32 *vui_flag_pos);
 s32 gf_media_avc_read_sps_bs(GF_BitStream *bs, AVCState *avc, u32 subseq_sps, u32 *vui_flag_pos);
 /*return pps ID or -1 if error*/
-s32 gf_media_avc_read_pps(const char *pps_data, u32 pps_size, AVCState *avc);
+s32 gf_media_avc_read_pps(const u8 *pps_data, u32 pps_size, AVCState *avc);
 s32 gf_media_avc_read_pps_bs(GF_BitStream *bs, AVCState *avc);
 
 /*is slice containing intra MB only*/
@@ -273,7 +273,7 @@ Bool gf_media_avc_slice_is_intra(AVCState *avc);
 s32 gf_media_avc_parse_nalu(GF_BitStream *bs, AVCState *avc);
 /*remove SEI messages not allowed in MP4*/
 /*nota: 'buffer' remains unmodified but cannot be set const*/
-u32 gf_media_avc_reformat_sei(char *buffer, u32 nal_size, Bool isobmf_rewrite, AVCState *avc);
+u32 gf_media_avc_reformat_sei(u8 *buffer, u32 nal_size, Bool isobmf_rewrite, AVCState *avc);
 
 #ifndef GPAC_DISABLE_ISOM
 GF_Err gf_media_avc_change_par(GF_AVCConfig *avcc, s32 ar_n, s32 ar_d);
@@ -347,8 +347,24 @@ typedef struct
 	Bool video_full_range_flag;
 	Bool colour_description_present_flag;
 	u8 colour_primaries, transfer_characteristic, matrix_coeffs;
-
 	u32 rep_format_idx;
+
+	u8 sps_ext_or_max_sub_layers_minus1, max_sub_layers_minus1, update_rep_format_flag, sub_layer_ordering_info_present_flag, scaling_list_enable_flag, infer_scaling_list_flag, scaling_list_ref_layer_id, scaling_list_data_present_flag, asymmetric_motion_partitions_enabled_flag, pcm_enabled_flag, strong_intra_smoothing_enable_flag, vui_parameters_present_flag;
+	u32 log2_diff_max_min_luma_coding_block_size;
+	u32 log2_min_transform_block_size, log2_min_luma_coding_block_size, log2_max_transform_block_size;
+	u32 max_transform_hierarchy_depth_inter, max_transform_hierarchy_depth_intra;
+
+	u8 pcm_sample_bit_depth_luma_minus1, pcm_sample_bit_depth_chroma_minus1, pcm_loop_filter_disable_flag;
+	u32 log2_min_pcm_luma_coding_block_size_minus3, log2_diff_max_min_pcm_luma_coding_block_size;
+	u8 overscan_info_present, overscan_appropriate, video_signal_type_present_flag, video_format;
+
+	u8 chroma_loc_info_present_flag;
+	u32 chroma_sample_loc_type_top_field, chroma_sample_loc_type_bottom_field;
+
+	u8 neutra_chroma_indication_flag, field_seq_flag, frame_field_info_present_flag;
+	u8 default_display_window_flag;
+	u32 left_offset, right_offset, top_offset, bottom_offset;
+	u8 hrd_parameters_present_flag;
 } HEVC_SPS;
 
 typedef struct
@@ -367,6 +383,13 @@ typedef struct
 	s32 pic_init_qp_minus26;
 	u32 num_tile_columns, num_tile_rows;
 	u32 column_width[22], row_height[20];
+
+	Bool sign_data_hiding_flag, constrained_intra_pred_flag, transform_skip_enabled_flag, cu_qp_delta_enabled_flag, transquant_bypass_enable_flag;
+	u32 diff_cu_qp_delta_depth, pic_cb_qp_offset, pic_cr_qp_offset;
+
+	Bool deblocking_filter_control_present_flag, pic_disable_deblocking_filter_flag, pic_scaling_list_data_present_flag;
+	u32 beta_offset_div2, tc_offset_div2, log2_parallel_merge_level_minus2;
+
 } HEVC_PPS;
 
 typedef struct RepFormat
@@ -500,21 +523,21 @@ enum
 	GF_HEVC_SLICE_TYPE_P = 1,
 	GF_HEVC_SLICE_TYPE_I = 2,
 };
-s32 gf_media_hevc_read_vps(char *data, u32 size, HEVCState *hevc);
+s32 gf_media_hevc_read_vps(u8 *data, u32 size, HEVCState *hevc);
 s32 gf_media_hevc_read_vps_bs(GF_BitStream *bs, HEVCState *hevc);
-s32 gf_media_hevc_read_sps(char *data, u32 size, HEVCState *hevc);
+s32 gf_media_hevc_read_sps(u8 *data, u32 size, HEVCState *hevc);
 s32 gf_media_hevc_read_sps_bs(GF_BitStream *bs, HEVCState *hevc);
-s32 gf_media_hevc_read_pps(char *data, u32 size, HEVCState *hevc);
+s32 gf_media_hevc_read_pps(u8 *data, u32 size, HEVCState *hevc);
 s32 gf_media_hevc_read_pps_bs(GF_BitStream *bs, HEVCState *hevc);
-s32 gf_media_hevc_parse_nalu(char *data, u32 size, HEVCState *hevc, u8 *nal_unit_type, u8 *temporal_id, u8 *layer_id);
+s32 gf_media_hevc_parse_nalu(u8 *data, u32 size, HEVCState *hevc, u8 *nal_unit_type, u8 *temporal_id, u8 *layer_id);
 Bool gf_media_hevc_slice_is_intra(HEVCState *hevc);
 Bool gf_media_hevc_slice_is_IDR(HEVCState *hevc);
 //parses VPS and rewrites data buffer after removing VPS extension
-s32 gf_media_hevc_read_vps_ex(char *data, u32 *size, HEVCState *hevc, Bool remove_extensions);
+s32 gf_media_hevc_read_vps_ex(u8 *data, u32 *size, HEVCState *hevc, Bool remove_extensions);
 
 s32 gf_media_hevc_parse_nalu_bs(GF_BitStream *bs, HEVCState *hevc, u8 *nal_unit_type, u8 *temporal_id, u8 *layer_id);
 
-GF_Err gf_hevc_get_sps_info_with_state(HEVCState *hevc_state, char *sps_data, u32 sps_size, u32 *sps_id, u32 *width, u32 *height, s32 *par_n, s32 *par_d);
+GF_Err gf_hevc_get_sps_info_with_state(HEVCState *hevc_state, u8 *sps_data, u32 sps_size, u32 *sps_id, u32 *width, u32 *height, s32 *par_n, s32 *par_d);
 
 
 
@@ -577,7 +600,7 @@ typedef struct
 	//if set, frame OBUs are not pushed to the frame_obus OBU list but are written in the below bitstream
 	Bool mem_mode;
 	GF_BitStream *bs;
-	char *frame_obus;
+	u8 *frame_obus;
 	u32 frame_obus_alloc;
 
 	/*general sequence information*/
@@ -679,7 +702,7 @@ GP_RTPPacketizer *gf_rtp_packetizer_create_and_init_from_file(GF_ISOFile *file,
         void (*OnNewPacket)(void *cbk, GF_RTPHeader *header),
         void (*OnPacketDone)(void *cbk, GF_RTPHeader *header),
         void (*OnDataReference)(void *cbk, u32 payload_size, u32 offset_from_orig),
-        void (*OnData)(void *cbk, char *data, u32 data_size, Bool is_head),
+        void (*OnData)(void *cbk, u8 *data, u32 data_size, Bool is_head),
         u32 Path_MTU,
         u32 max_ptime,
         u32 default_rtp_rate,

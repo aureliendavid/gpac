@@ -53,7 +53,7 @@ void isor_reset_reader(ISOMChannel *ch)
 
 void isor_check_producer_ref_time(ISOMReader *read)
 {
-	u32 trackID;
+	GF_ISOTrackID trackID;
 	u64 ntp;
 	u64 timestamp;
 
@@ -122,8 +122,11 @@ static void init_reader(ISOMChannel *ch)
 		/*take care of seeking out of the track range*/
 		if (!ch->owner->frag_type && (ch->duration<ch->start)) {
 			ch->last_state = gf_isom_get_sample_for_movie_time(ch->owner->mov, ch->track, ch->duration, &sample_desc_index, mode, &ch->static_sample, &ch->sample_num, NULL);
-		} else {
+		} else if (ch->start || ch->has_edit_list) {
 			ch->last_state = gf_isom_get_sample_for_movie_time(ch->owner->mov, ch->track, ch->start, &sample_desc_index, mode, &ch->static_sample, &ch->sample_num, NULL);
+		} else {
+			ch->sample_num = 1;
+			ch->sample = gf_isom_get_sample_ex(ch->owner->mov, ch->track, ch->sample_num, &sample_desc_index, ch->static_sample);
 		}
 		if (ch->last_state) {
 			ch->sample = NULL;
@@ -625,7 +628,7 @@ void isor_reader_check_config(ISOMChannel *ch)
 	}
 
 	if (reset_state) {
-		char *dsi=NULL;
+		u8 *dsi=NULL;
 		u32 dsi_size=0;
 		if (ch->check_avc_ps) {
 			gf_odf_avc_cfg_write(ch->avcc, &dsi, &dsi_size);

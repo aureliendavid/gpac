@@ -58,7 +58,7 @@ typedef struct
 
 GF_Err set_file_udta(GF_ISOFile *dest, u32 tracknum, u32 udta_type, char *src, Bool is_box_array)
 {
-	char *data = NULL;
+	u8 *data = NULL;
 	GF_Err res = GF_OK;
 	u32 size;
 	bin128 uuid;
@@ -75,7 +75,7 @@ GF_Err set_file_udta(GF_ISOFile *dest, u32 tracknum, u32 udta_type, char *src, B
 		src += 7;
 		size = (u32) strlen(src);
 		data = gf_malloc(sizeof(char) * size);
-		size = gf_base64_decode(src, size, data, size);
+		size = gf_base64_decode((u8 *)src, size, data, size);
 	} else
 #endif
 	{
@@ -99,10 +99,11 @@ GF_Err set_file_udta(GF_ISOFile *dest, u32 tracknum, u32 udta_type, char *src, B
 extern u32 swf_flags;
 extern Float swf_flatten_angle;
 extern Bool keep_sys_tracks;
+extern u32 fs_dump_flags;
 
 void scene_coding_log(void *cbk, GF_LOG_Level log_level, GF_LOG_Tool log_tool, const char *fmt, va_list vlist);
 
-void convert_file_info(char *inName, u32 trackID)
+void convert_file_info(char *inName, GF_ISOTrackID trackID)
 {
 	GF_Err e;
 	u32 i;
@@ -112,6 +113,8 @@ void convert_file_info(char *inName, u32 trackID)
 	import.trackID = trackID;
 	import.in_name = inName;
 	import.flags = GF_IMPORT_PROBE_ONLY;
+	import.print_stats_graph = fs_dump_flags;
+
 	e = gf_media_import(&import);
 	if (e) {
 		fprintf(stderr, "Error probing file %s: %s\n", inName, gf_error_to_string(e));
@@ -182,28 +185,19 @@ void convert_file_info(char *inName, u32 trackID)
 		}
 		fprintf(stderr, "\n");
 
-		if (gf_isom_is_video_subtype(import.tk_info[i].stream_type) && import.tk_info[i].video_info.width && import.tk_info[i].video_info.height
+		if (import.tk_info[i].video_info.width && import.tk_info[i].video_info.height
 		   ) {
 			fprintf(stderr, "\tSize %dx%d", import.tk_info[i].video_info.width, import.tk_info[i].video_info.height);
 			if (import.tk_info[i].video_info.FPS) fprintf(stderr, " @ %g FPS", import.tk_info[i].video_info.FPS);
-			if (import.tk_info[i].video_info.par) fprintf(stderr, " PAR: %d:%d", import.tk_info[i].video_info.par >> 16, import.tk_info[i].video_info.par & 0xFFFF);
+			if (import.tk_info[i].stream_type==GF_STREAM_VISUAL) {
+				if (import.tk_info[i].video_info.par) fprintf(stderr, " PAR: %d:%d", import.tk_info[i].video_info.par >> 16, import.tk_info[i].video_info.par & 0xFFFF);
+			}
+
 			fprintf(stderr, "\n");
 		}
 		else if ((import.tk_info[i].stream_type==GF_STREAM_AUDIO) && import.tk_info[i].audio_info.sample_rate) {
 			fprintf(stderr, "\tSampleRate %d - %d channels\n", import.tk_info[i].audio_info.sample_rate, import.tk_info[i].audio_info.nb_channels);
 		}
-
-
-		fprintf(stderr, "\nImport Capabilities:\n");
-		if (import.tk_info[i].flags & GF_IMPORT_USE_DATAREF) fprintf(stderr, "\tCan use data referencing\n");
-		if (import.tk_info[i].flags & GF_IMPORT_NO_FRAME_DROP) fprintf(stderr, "\tCan use fixed FPS import\n");
-		if (import.tk_info[i].flags & GF_IMPORT_FORCE_PACKED) fprintf(stderr, "\tCan force packed bitstream import\n");
-		if (import.tk_info[i].flags & GF_IMPORT_OVERRIDE_FPS) fprintf(stderr, "\tCan override source frame rate\n");
-		if (import.tk_info[i].flags & (GF_IMPORT_SBR_IMPLICIT|GF_IMPORT_SBR_EXPLICIT)) fprintf(stderr, "\tCan use AAC-SBR signaling\n");
-		if (import.tk_info[i].flags & (GF_IMPORT_PS_IMPLICIT|GF_IMPORT_PS_EXPLICIT)) fprintf(stderr, "\tCan use AAC-PS signaling\n");
-		if (import.tk_info[i].flags & GF_IMPORT_FORCE_MPEG4) fprintf(stderr, "\tCan force MPEG-4 Systems signaling\n");
-		if (import.tk_info[i].flags & GF_IMPORT_3GPP_AGGREGATION) fprintf(stderr, "\tCan use 3GPP frame aggregation\n");
-		if (import.tk_info[i].flags & GF_IMPORT_NO_DURATION) fprintf(stderr, "\tCannot use duration-based import\n");
 
 		if (trackID) {
 			found = 1;
@@ -211,6 +205,7 @@ void convert_file_info(char *inName, u32 trackID)
 		}
 	}
 	fprintf(stderr, "\n");
+	fprintf(stderr, "For more details, use `gpac -i %s inspect[:deep][:analyze]`\n", gf_file_basename(inName));
 	if (!found && trackID) fprintf(stderr, "Cannot find track %d in file\n", trackID);
 }
 
@@ -240,12 +235,13 @@ GF_Err import_file(GF_ISOFile *dest, char *inName, u32 import_flags, GF_Fraction
 	u32 track_id, i, j, timescale, track, stype, profile, level, new_timescale, rescale, svc_mode, txt_flags, split_tile_mode, temporal_mode;
 	s32 par_d, par_n, prog_id, delay, force_rate, moov_timescale;
 	s32 tw, th, tx, ty, txtw, txth, txtx, txty;
-	Bool do_audio, do_video, do_auxv,do_pict, do_all, disable, track_layout, text_layout, chap_ref, is_chap, is_chap_file, keep_handler, negative_cts_offset, rap_only, refs_only, print_stats_graph=0, force_par;
+	Bool do_audio, do_video, do_auxv,do_pict, do_all, disable, track_layout, text_layout, chap_ref, is_chap, is_chap_file, keep_handler, negative_cts_offset, rap_only, refs_only, force_par;
 	u32 group, handler, rvc_predefined, check_track_for_svc, check_track_for_lhvc, check_track_for_hevc;
 	const char *szLan;
 	GF_Err e;
 	u32 tmcd_track = 0;
 	Bool keep_audelim = GF_FALSE;
+	u32 print_stats_graph=fs_dump_flags;
 	GF_MediaImporter import;
 	char *ext, szName[1000], *handler_name, *rvc_config, *chapter_name;
 	GF_List *kinds;
@@ -264,7 +260,7 @@ GF_Err import_file(GF_ISOFile *dest, char *inName, u32 import_flags, GF_Fraction
 	u32 clr_full_range=GF_FALSE;
 	Bool fmt_ok = GF_TRUE;
 	u32 icc_size=0;
-	char *icc_data = NULL;
+	u8 *icc_data = NULL;
 	char *ext_start;
 	u32 xps_inband=0;
 	char *opt_src = NULL;
@@ -595,8 +591,8 @@ GF_Err import_file(GF_ISOFile *dest, char *inName, u32 import_flags, GF_Fraction
 			print_stats_graph |= 2;
 		else if (!strncmp(ext+1, "sopt", 4) || !strncmp(ext+1, "dopt", 4) || !strncmp(ext+1, "@@", 2)) {
 			if (ext2) ext2[0] = ':';
-			opt_src = strstr(ext, ":sopt=");
-			opt_dst = strstr(ext, ":dopt=");
+			opt_src = strstr(ext, ":sopt:");
+			opt_dst = strstr(ext, ":dopt:");
 			fchain = strstr(ext, ":@@");
 			if (opt_src) opt_src[0] = 0;
 			if (opt_dst) opt_dst[0] = 0;
@@ -1080,7 +1076,7 @@ GF_Err import_file(GF_ISOFile *dest, char *inName, u32 import_flags, GF_Fraction
 			}
 
 			if (rvc_config) {
-				char *data;
+				u8 *data;
 				u32 size;
 				e = gf_file_load_data(rvc_config, (u8 **) &data, &size);
 				if (e) {
@@ -1263,7 +1259,7 @@ typedef struct
 	u32 stop_state;
 } TKInfo;
 
-GF_Err split_isomedia_file(GF_ISOFile *mp4, Double split_dur, u64 split_size_kb, char *inName, Double InterleavingTime, Double chunk_start_time, Bool adjust_split_end, char *outName, const char *tmpdir)
+GF_Err split_isomedia_file(GF_ISOFile *mp4, Double split_dur, u64 split_size_kb, char *inName, Double InterleavingTime, Double chunk_start_time, Bool adjust_split_end, char *outName, const char *tmpdir, Bool force_rap_split)
 {
 	u32 i, count, nb_tk, needs_rap_sync, cur_file, conv_type, nb_tk_done, nb_samp, nb_done, di;
 	Double max_dur, cur_file_time;
@@ -1284,6 +1280,8 @@ GF_Err split_isomedia_file(GF_ISOFile *mp4, Double split_dur, u64 split_size_kb,
 		split_size_kb = 0;
 		split_until_end = 1;
 	}
+	else if (force_rap_split)
+		rap_split = 1;
 
 	if (rap_split) {
 		split_size_kb = 0;
@@ -2395,8 +2393,9 @@ GF_Err cat_isomedia_file(GF_ISOFile *dest, char *fileName, u32 import_flags, GF_
 		}
 		/*scene description and text: compute last sample duration based on original media duration*/
 		if (!use_ts_dur) {
-			insert_dts = gf_isom_get_media_duration(orig, i+1) - last_DTS;
-			gf_isom_set_last_sample_duration(dest, dst_tk, (u32) insert_dts);
+			u64 extend_dur = gf_isom_get_media_duration(orig, i+1) - last_DTS;
+			//extend the duration of the last sample, but don't insert any edit list entry
+			gf_isom_set_last_sample_duration(dest, dst_tk, (u32) (ts_scale*extend_dur) );
 		}
 
 		if (new_track && insert_dts) {
@@ -2828,7 +2827,7 @@ static u32 GetNbBits(u32 MaxVal)
 GF_Err EncodeBIFSChunk(GF_SceneManager *ctx, char *bifsOutputFile, GF_Err (*AUCallback)(GF_ISOSample *))
 {
 	GF_Err			e;
-	char *data;
+	u8 *data;
 	u32 data_len;
 	GF_BifsEncoder *bifsenc;
 	GF_InitialObjectDescriptor *iod;
@@ -2946,7 +2945,7 @@ GF_Err EncodeBIFSChunk(GF_SceneManager *ctx, char *bifsOutputFile, GF_Err (*AUCa
 		esd->decoderConfig->objectTypeIndication = gf_bifs_encoder_get_version(bifsenc, sc->ESID);
 
 		for (j=1; j<gf_list_count(sc->AUs); j++) {
-			char *data;
+			u8 *data;
 			u32 data_len;
 			au = gf_list_get(sc->AUs, j);
 			e = gf_bifs_encode_au(bifsenc, sc->ESID, au->commands, &data, &data_len);

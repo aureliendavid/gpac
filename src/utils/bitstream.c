@@ -63,7 +63,7 @@ struct __tag_bitstream
 	Bool remove_emul_prevention_byte;
 	u32 nb_zeros;
 
-	GF_Err (*on_block_out)(void *cbk, char *data, u32 block_size);
+	GF_Err (*on_block_out)(void *cbk, u8 *data, u32 block_size);
 	void *usr_data;
 	u64 bytes_out;
 	Bool prevent_dispatch;
@@ -71,7 +71,7 @@ struct __tag_bitstream
 	u64 cookie;
 };
 
-GF_Err gf_bs_reassign_buffer(GF_BitStream *bs, const char *buffer, u64 BufferSize)
+GF_Err gf_bs_reassign_buffer(GF_BitStream *bs, const u8 *buffer, u64 BufferSize)
 {
 	if (!bs) return GF_BAD_PARAM;
 	if (bs->bsmode == GF_BITSTREAM_READ) {
@@ -81,6 +81,7 @@ GF_Err gf_bs_reassign_buffer(GF_BitStream *bs, const char *buffer, u64 BufferSiz
 		bs->current = 0;
 		bs->nbBits = 8;
 		bs->current = 0;
+		bs->nb_zeros = 0;
 		return GF_OK;
 	}
 	if (bs->bsmode==GF_BITSTREAM_WRITE) {
@@ -113,7 +114,7 @@ GF_Err gf_bs_reassign_buffer(GF_BitStream *bs, const char *buffer, u64 BufferSiz
 }
 
 GF_EXPORT
-GF_BitStream *gf_bs_new(const char *buffer, u64 BufferSize, u32 mode)
+GF_BitStream *gf_bs_new(const u8 *buffer, u64 BufferSize, u32 mode)
 {
 	GF_BitStream *tmp;
 	if ( (buffer && ! BufferSize)) return NULL;
@@ -191,7 +192,7 @@ GF_BitStream *gf_bs_from_file(FILE *f, u32 mode)
 	return tmp;
 }
 
-GF_BitStream *gf_bs_new_cbk(GF_Err (*on_block_out)(void *cbk, char *data, u32 block_size), void *usr_data, u32 block_size)
+GF_BitStream *gf_bs_new_cbk(GF_Err (*on_block_out)(void *cbk, u8 *data, u32 block_size), void *usr_data, u32 block_size)
 {
 	GF_BitStream *tmp;
 
@@ -221,6 +222,13 @@ GF_BitStream *gf_bs_new_cbk(GF_Err (*on_block_out)(void *cbk, char *data, u32 bl
 void gf_bs_prevent_dispatch(GF_BitStream *bs, Bool prevent_dispatch)
 {
 	if (bs) bs->prevent_dispatch = prevent_dispatch;
+	if (bs->on_block_out && !bs->prevent_dispatch) {
+		assert(bs->position >= bs->bytes_out);
+		if (bs->position > bs->bytes_out) {
+			bs->on_block_out(bs->usr_data, bs->original, (u32) (bs->position - bs->bytes_out));
+			bs->bytes_out = bs->position;
+		}
+	}
 }
 
 static void bs_flush_cache(GF_BitStream *bs)
@@ -275,7 +283,10 @@ void gf_bs_del(GF_BitStream *bs)
 GF_EXPORT
 void gf_bs_enable_emulation_byte_removal(GF_BitStream *bs, Bool do_remove)
 {
-	if (bs) bs->remove_emul_prevention_byte = do_remove;
+	if (bs) {
+		bs->remove_emul_prevention_byte = do_remove;
+		bs->nb_zeros = 0;
+	}
 }
 
 /*returns 1 if aligned wrt current mode, 0 otherwise*/
@@ -522,7 +533,7 @@ Double gf_bs_read_double(GF_BitStream *bs)
 }
 
 GF_EXPORT
-u32 gf_bs_read_data(GF_BitStream *bs, char *data, u32 nbBytes)
+u32 gf_bs_read_data(GF_BitStream *bs, u8 *data, u32 nbBytes)
 {
 	u64 orig = bs->position;
 
@@ -790,7 +801,7 @@ void gf_bs_write_double (GF_BitStream *bs, Double value)
 
 
 GF_EXPORT
-u32 gf_bs_write_data(GF_BitStream *bs, const char *data, u32 nbBytes)
+u32 gf_bs_write_data(GF_BitStream *bs, const u8 *data, u32 nbBytes)
 {
 	/*we need some feedback for this guy...*/
 	u64 begin = bs->position;
@@ -950,7 +961,7 @@ static s32 BS_CutBuffer(GF_BitStream *bs)
 
 /*For DYN mode, this gets the content out without cutting the buffer to the number of written bytes*/
 GF_EXPORT
-void gf_bs_get_content_no_truncate(GF_BitStream *bs, char **output, u32 *outSize, u32 *alloc_size)
+void gf_bs_get_content_no_truncate(GF_BitStream *bs, u8 **output, u32 *outSize, u32 *alloc_size)
 {
 	/*only in WRITE MEM mode*/
 	if (bs->bsmode != GF_BITSTREAM_WRITE_DYN) return;
@@ -986,7 +997,7 @@ void gf_bs_get_content_no_truncate(GF_BitStream *bs, char **output, u32 *outSize
 
 /*For DYN mode, this gets the content out*/
 GF_EXPORT
-void gf_bs_get_content(GF_BitStream *bs, char **output, u32 *outSize)
+void gf_bs_get_content(GF_BitStream *bs, u8 **output, u32 *outSize)
 {
 	gf_bs_get_content_no_truncate(bs, output, outSize, NULL);
 }
@@ -1311,7 +1322,7 @@ void gf_bs_truncate(GF_BitStream *bs)
 GF_EXPORT
 GF_Err gf_bs_transfer(GF_BitStream *dst, GF_BitStream *src, Bool keep_src)
 {
-	char *data;
+	u8 *data;
 	u32 data_len, written;
 
 	data = NULL;

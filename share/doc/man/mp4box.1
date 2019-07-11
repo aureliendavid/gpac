@@ -253,7 +253,7 @@ print the set of supported iTunes tags
 .TP
 .B \-split (string)
 .br
-split in files of given max duration, starting each file at RAP
+split in files of given max duration. Set [-rap] to start each file at RAP
 .br
 .TP
 .B \-split-size -splits (string)
@@ -343,6 +343,20 @@ set udta for given track or movie if ID is 0. OPTS is a colon separated list of:
 * src=base64,DATA: base64 encoded udta data (will be stored in a single box of type CODE)
 .br
 Note: If no source is set, UDTA of type CODE will be removed
+.br
+
+.br
+.TP
+.B \-patch (string)
+.br
+apply box patch in the given file
+.br
+
+.br
+.TP
+.B \-bo (boolean)
+.br
+freeze the order of boxes in input file
 .br
 
 .br
@@ -445,7 +459,7 @@ Input media files to dash can use the following modifiers
 .br
 * #trackID=N: only use the track ID N from the source file
 .br
-* #N: only use the track ID N from the source file - mapped to -tkid
+* #N: only use the track ID N from the source file (mapped to -tkid)
 .br
 * #video: only use the first video track from the source file
 .br
@@ -482,6 +496,12 @@ Warning: This does not modify generated files location (see segment template).
 * :sscale: force movie timescale to match media timescale of the first track in the segment.
 .br
 * :trackID=N: only use the track ID N from the source file
+.br
+* @@f1[:args][@@fN:args]: set a filter chain to insert between the source and the dasher. Each filter in the chain is formatted as a regular filter, see filter doc `gpac -h doc`. If several filters are set, they will be chained in the given order.
+.br
+
+.br
+Note: @@f must be placed after all other options.
 .br
 
 .br
@@ -926,12 +946,12 @@ same as -dts but does not print offset
 .TP
 .B \-dtsc (boolean)
 .br
-same as -dts but analyse each sample for duplicated dts/cts - slow !
+same as -dts but analyse each sample for duplicated dts/cts (slow !)
 .br
 .TP
 .B \-dtsxc (boolean)
 .br
-same as -dtsc but does not print offset - slow !
+same as -dtsc but does not print offset (slow !)
 .br
 .TP
 .B \-dnal (int)
@@ -1039,7 +1059,7 @@ generate node/field statistics for scene after each AU
 generate SHA-1 Hash of the input file
 .br
 .TP
-.B \--comp (string)
+.B \-comp (string)
 .br
 replace with compressed version all top level box types given as parameter, formated as orig_4cc_1=comp_4cc_1[,orig_4cc_2=comp_4cc_2]
 .br
@@ -1058,7 +1078,7 @@ Syntax is -add / -cat filename[#FRAGMENT][:opt1...:optN=val]
 .br
 This process will create the destination file if not existing, and add the track(s) to it. If you wish to always create a new destination file, add -new.
 .br
-The supported input media types depend on your installation, check [filters documentation)[Filters] for more info.
+The supported input media types depend on your installation, check filters documentation for more info.
 .br
   
 .br
@@ -1186,7 +1206,9 @@ Allowed per-file options:
 .br
 * :forcesync: force non IDR samples with I slices to be marked as sync points (AVC GDR)
 .br
-Warning: RESULTING FILE IS NOT COMPLIANT WITH THE SPEC but will fix seeking in most players- :xps_inband: set xPS inband for AVC/H264 and HEVC (for reverse operation, re-import from raw media)
+Warning: RESULTING FILE IS NOT COMPLIANT WITH THE SPEC but will fix seeking in most players
+.br
+* :xps_inband: set xPS inband for AVC/H264 and HEVC (for reverse operation, re-import from raw media)
 .br
 * :xps_inbandx: same as xps_inband and also keep first xPS in sample desciption
 .br
@@ -1298,9 +1320,11 @@ Warning: RESULTING FILE IS NOT COMPLIANT WITH THE SPEC but will fix seeking in m
 .br
 * :dopt:[OPTS]: set OPTS as additionnal arguments to destination filter. OPTS can be any usual filter argument, see filter doc `gpac -h doc`
 .br
-* @@f1[[:args]@@fN[/args]]: set a filter chain to insert before the muxer. Each filter in the chain is formatted as a regular filter, see filter doc `gpac -h doc`. If several filters are set, they will be chained in the given order. The last filter shall not have any ID specified
+* @@f1[:args][@@fN:args]: set a filter chain to insert before the muxer. Each filter in the chain is formatted as a regular filter, see filter doc `gpac -h doc`. If several filters are set, they will be chained in the given order. The last filter shall not have any Filter ID specified
 .br
 
+.br
+Note: sopt, dopt and @@f must be placed after all other options.
 .br
 .SH Global import options
 .LP
@@ -1395,7 +1419,7 @@ force frame rate for video and SUB subtitles import to the given value, expresse
 .br
 Note: For raw H263 import, default FPS is 15, otherwise 25
 .br
-Warning: THIS IS IGNORED FOR IsoMedia IMPORT
+Warning: This is ignored for ISOBMFF import, use :rescale option for that
 .br
 .TP
 .B \-mpeg4 (boolean)
@@ -1635,7 +1659,11 @@ IsoMedia files can be used as generic meta-data containers, for examples storing
 .br
   
 .br
-These information can be stored at the file root level, as is the case for MPEG-21 file format, or at the moovie or track level for a regular movie..TP
+These information can be stored at the file root level, as is the case for HEIF/IFF and MPEG-21 file formats, or at the moovie or track level for a regular movie.  
+.br
+  
+.br
+.TP
 .B \-set-meta  ABCD[:tk=ID] (string)
 .br
 set meta box type, with ABCD the four char meta type (NULL or 0 to remove meta)
@@ -1814,7 +1842,7 @@ Options
 .TP
 .B \-atsc (boolean)
 .br
-enable ATSC 3.O reader
+enable ATSC 3.0 reader
 .br
 .TP
 .B \-ifce (string)
@@ -1937,7 +1965,7 @@ Authors: GPAC developers, see git repo history (-log)
 .br
 For bug reports, feature requests, more information and source code, visit http://github.com/gpac/gpac
 .br
-build: 0.9.0-DEV-rev2444-gfcd72ae23-filters
+build: 0.9.0-DEV-rev2539-g4b02a7f9a-filters
 .br
 Copyright: (c) 2000-2019 Telecom ParisTech distributed under LGPL v2.1+ - http://gpac.io
 .br

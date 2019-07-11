@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2012
+ *			Copyright (c) Telecom ParisTech 2000-2019
  *					All rights reserved
  *
  *  This file is part of GPAC / ISO Media File Format sub-project
@@ -75,7 +75,7 @@ void gf_isom_datamap_close(GF_MediaInformationBox *minf)
 	if (!minf || !minf->dataHandler) return;
 
 	if (minf->dataInformation && minf->dataInformation->dref) {
-		ent = (GF_DataEntryBox*)gf_list_get(minf->dataInformation->dref->other_boxes, minf->dataEntryIndex - 1);
+		ent = (GF_DataEntryBox*)gf_list_get(minf->dataInformation->dref->child_boxes, minf->dataEntryIndex - 1);
 	}
 
 	//if ent NULL, the data entry was not used (smooth)
@@ -220,15 +220,15 @@ GF_Err gf_isom_datamap_open(GF_MediaBox *mdia, u32 dataRefIndex, u8 Edit)
 
 	minf = mdia->information;
 
-	count = gf_list_count(minf->dataInformation->dref->other_boxes);
+	count = gf_list_count(minf->dataInformation->dref->child_boxes);
 	if (!count) {
 		SelfCont = 1;
 		ent = NULL;
 	} else {
-		if (dataRefIndex > gf_list_count(minf->dataInformation->dref->other_boxes))
+		if (dataRefIndex > gf_list_count(minf->dataInformation->dref->child_boxes))
 			return GF_BAD_PARAM;
 
-		ent = (GF_DataEntryBox*)gf_list_get(minf->dataInformation->dref->other_boxes, dataRefIndex - 1);
+		ent = (GF_DataEntryBox*)gf_list_get(minf->dataInformation->dref->child_boxes, dataRefIndex - 1);
 		if (ent == NULL) return GF_ISOM_INVALID_MEDIA;
 
 		//if the current dataEntry is the desired one, and not self contained, return
@@ -278,7 +278,7 @@ GF_Err gf_isom_datamap_open(GF_MediaBox *mdia, u32 dataRefIndex, u8 Edit)
 }
 
 //return the NB of bytes actually read (used for HTTP, ...) in case file is uncomplete
-u32 gf_isom_datamap_get_data(GF_DataMap *map, char *buffer, u32 bufferLength, u64 Offset)
+u32 gf_isom_datamap_get_data(GF_DataMap *map, u8 *buffer, u32 bufferLength, u64 Offset)
 {
 	if (!map || !buffer) return 0;
 
@@ -325,7 +325,7 @@ u64 gf_isom_datamap_get_offset(GF_DataMap *map)
 }
 
 
-GF_Err gf_isom_datamap_add_data(GF_DataMap *ptr, char *data, u32 dataSize)
+GF_Err gf_isom_datamap_add_data(GF_DataMap *ptr, u8 *data, u32 dataSize)
 {
 	if (!ptr || !data|| !dataSize) return GF_BAD_PARAM;
 
@@ -498,7 +498,7 @@ void gf_isom_fdm_del(GF_FileDataMap *ptr)
 	gf_free(ptr);
 }
 
-u32 gf_isom_fdm_get_data(GF_FileDataMap *ptr, char *buffer, u32 bufferLength, u64 fileOffset)
+u32 gf_isom_fdm_get_data(GF_FileDataMap *ptr, u8 *buffer, u32 bufferLength, u64 fileOffset)
 {
 	u32 bytesRead;
 
@@ -667,7 +667,7 @@ void gf_isom_fmo_del(GF_FileMappingDataMap *ptr)
 }
 
 
-u32 gf_isom_fmo_get_data(GF_FileMappingDataMap *ptr, char *buffer, u32 bufferLength, u64 fileOffset)
+u32 gf_isom_fmo_get_data(GF_FileMappingDataMap *ptr, u8 *buffer, u32 bufferLength, u64 fileOffset)
 {
 	//can we seek till that point ???
 	if (fileOffset > ptr->file_size) return 0;
@@ -689,7 +689,7 @@ void gf_isom_fmo_del(GF_FileMappingDataMap *ptr)
 	gf_isom_fdm_del((GF_FileDataMap *)ptr);
 }
 
-u32 gf_isom_fmo_get_data(GF_FileMappingDataMap *ptr, char *buffer, u32 bufferLength, u64 fileOffset)
+u32 gf_isom_fmo_get_data(GF_FileMappingDataMap *ptr, u8 *buffer, u32 bufferLength, u64 fileOffset)
 {
 	return gf_isom_fdm_get_data((GF_FileDataMap *)ptr, buffer, bufferLength, fileOffset);
 }

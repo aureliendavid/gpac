@@ -458,7 +458,7 @@ static void txtin_probe_duration(GF_TXTIn *ctx)
 static GF_Err txtin_setup_srt(GF_Filter *filter, GF_TXTIn *ctx)
 {
 	u32 ID, OCR_ES_ID, dsi_len, file_size;
-	char *dsi;
+	u8 *dsi;
 	GF_TextSampleDescriptor *sd;
 
 	ctx->src = gf_fopen(ctx->file_name, "rt");
@@ -536,7 +536,7 @@ static GF_Err txtin_setup_srt(GF_Filter *filter, GF_TXTIn *ctx)
 static void txtin_process_send_text_sample(GF_TXTIn *ctx, GF_TextSample *txt_samp, u64 ts, u32 duration, Bool is_rap)
 {
 	GF_FilterPacket *dst_pck;
-	char *pck_data;
+	u8 *pck_data;
 	u32 size;
 
 	if (ctx->seek_state==2) {
@@ -596,6 +596,29 @@ static GF_Err txtin_process_srt(GF_Filter *filter, GF_TXTIn *ctx)
 		if (sOK) REM_TRAIL_MARKS(szLine, "\r\n\t ")
 
 		if (!sOK || !strlen(szLine)) {
+			u32 nb_empty = 1;
+			u32 pos = (u32) gf_ftell(ctx->src);
+			if (ctx->state) {
+				while (!feof(ctx->src)) {
+					sOK = gf_text_get_utf8_line(szLine+nb_empty, 2048-nb_empty, ctx->src, ctx->unicode_type);
+					if (sOK) REM_TRAIL_MARKS((szLine+nb_empty), "\r\n\t ")
+
+					if (!sOK) {
+						gf_fseek(ctx->src, pos, SEEK_SET);
+						break;
+					} else if (!strlen(szLine+nb_empty)) {
+						nb_empty++;
+						continue;
+					} else if (	sscanf(szLine+nb_empty, "%u", &line) == 1) {
+						gf_fseek(ctx->src, pos, SEEK_SET);
+						break;
+					} else {
+						u32 k;
+						for (k=0; k<nb_empty; k++) szLine[k] = '\n';
+						goto force_line;
+					}
+				}
+			}
 			ctx->style.style_flags = 0;
 			ctx->style.startCharOffset = ctx->style.endCharOffset = 0;
 			if (txt_line) {
@@ -622,6 +645,7 @@ static GF_Err txtin_process_srt(GF_Filter *filter, GF_TXTIn *ctx)
 			continue;
 		}
 
+force_line:
 		switch (ctx->state) {
 		case 0:
 			if (sscanf(szLine, "%u", &line) != 1) {
@@ -922,7 +946,7 @@ static void gf_webvtt_flush_sample(void *user, GF_WebVTTSample *samp)
 	s = gf_isom_webvtt_to_sample(samp);
 	if (s) {
 		GF_FilterPacket *pck;
-		char *pck_data;
+		u8 *pck_data;
 
 		pck = gf_filter_pck_new_alloc(ctx->opid, s->dataLength, &pck_data);
 		memcpy(pck_data, s->data, s->dataLength);
@@ -1373,7 +1397,7 @@ static GF_Err gf_text_process_ttml(GF_Filter *filter, GF_TXTIn *ctx)
 
 		if ((ts_begin != -1) && (ts_end != -1) && samp_text) {
 			GF_FilterPacket *pck;
-			char *pck_data;
+			u8 *pck_data;
 			Bool skip_pck = GF_FALSE;
 			u32 txt_len;
 			char *txt_str;
@@ -1451,10 +1475,10 @@ exit:
 
 #ifndef GPAC_DISABLE_SWF_IMPORT
 
-static GF_Err swf_svg_add_iso_sample(void *user, const char *data, u32 length, u64 timestamp, Bool isRap)
+static GF_Err swf_svg_add_iso_sample(void *user, const u8 *data, u32 length, u64 timestamp, Bool isRap)
 {
 	GF_FilterPacket *pck;
-	char *pck_data;
+	u8 *pck_data;
 	GF_TXTIn *ctx = (GF_TXTIn *)user;
 
 	if (ctx->seek_state==2) {
@@ -1477,7 +1501,7 @@ static GF_Err swf_svg_add_iso_sample(void *user, const char *data, u32 length, u
 	return GF_OK;
 }
 
-static GF_Err swf_svg_add_iso_header(void *user, const char *data, u32 length, Bool isHeader)
+static GF_Err swf_svg_add_iso_header(void *user, const u8 *data, u32 length, Bool isHeader)
 {
 	GF_TXTIn *ctx = (GF_TXTIn *)user;
 
@@ -1488,7 +1512,7 @@ static GF_Err swf_svg_add_iso_header(void *user, const char *data, u32 length, B
 		}
 	} else if (!ctx->seek_state) {
 		GF_FilterPacket *pck;
-		char *pck_data;
+		u8 *pck_data;
 		pck = gf_filter_pck_new_alloc(ctx->opid, length, &pck_data);
 		memcpy(pck_data, data, length);
 		gf_filter_pck_set_framing(pck, GF_FALSE, GF_TRUE);
@@ -2330,7 +2354,7 @@ static GF_Err txtin_process_texml(GF_Filter *filter, GF_TXTIn *ctx)
 			if (desc->type) continue;
 
 			if (!strcmp(desc->name, "description")) {
-				char *dsi;
+				u8 *dsi;
 				u32 dsi_len, k, stsd_idx;
 				GF_XMLNode *sub;
 				memset(&td, 0, sizeof(GF_TextSampleDescriptor));

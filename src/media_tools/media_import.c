@@ -163,7 +163,6 @@ static GF_Err gf_import_afx_sc3dmc(GF_MediaImporter *import, Bool mult_desc_allo
 		import->tk_info[0].track_num = 1;
 		import->tk_info[0].stream_type = GF_STREAM_SCENE;
 		import->tk_info[0].codecid = GF_CODECID_AFX;
-		import->tk_info[0].flags = GF_IMPORT_USE_DATAREF | GF_IMPORT_NO_DURATION;
 		import->nb_tracks = 1;
 		return GF_OK;
 	}
@@ -257,10 +256,9 @@ GF_Err gf_import_isomedia(GF_MediaImporter *import)
 	GF_Err e;
 	u64 offset, sampDTS, duration, dts_offset;
 	Bool is_nalu_video=GF_FALSE, has_seig;
-	u32 track, di, trackID, track_in, i, num_samples, mtype, w, h, sr, sbr_sr, ch, mstype, cur_extract_mode, cdur;
+	u32 track, di, trackID, track_in, i, num_samples, mtype, w, h, sr, sbr_sr, ch, mstype, cur_extract_mode, cdur, bps;
 	s32 trans_x, trans_y;
 	s16 layer;
-	u8 bps;
 	char *lang;
 	const char *orig_name = gf_url_get_resource_name(gf_isom_get_filename(import->orig));
 	Bool sbr, ps;
@@ -292,7 +290,6 @@ GF_Err gf_import_isomedia(GF_MediaImporter *import)
 				import->tk_info[i].stream_type = mtype;
 				break;
 			}
-			import->tk_info[i].flags = GF_IMPORT_USE_DATAREF;
 			if (import->tk_info[i].stream_type == GF_STREAM_VISUAL) {
 				gf_isom_get_visual_info(import->orig, i+1, 1, &import->tk_info[i].video_info.width, &import->tk_info[i].video_info.height);
 			} else if (import->tk_info[i].stream_type == GF_STREAM_AUDIO) {
@@ -574,7 +571,7 @@ GF_Err gf_import_isomedia(GF_MediaImporter *import)
 			u8 constant_IV_size;
 			bin128 constant_IV;
 			GF_BitStream *bs;
-			char *buffer;
+			u8 *buffer;
 
 			sai = NULL;
 			e = gf_isom_cenc_get_sample_aux_info(import->orig, track_in, i+1, &sai, &container_type);
@@ -597,10 +594,10 @@ GF_Err gf_import_isomedia(GF_MediaImporter *import)
 				gf_isom_cenc_samp_aux_info_del(sai);
 				gf_bs_get_content(bs, &buffer, &len);
 				gf_bs_del(bs);
-				e = gf_isom_track_cenc_add_sample_info(import->dest, track, container_type, IV_size, buffer, len, is_nalu_video, NULL);
+				e = gf_isom_track_cenc_add_sample_info(import->dest, track, container_type, IV_size, buffer, len, is_nalu_video, NULL, GF_FALSE);
 				gf_free(buffer);
 			} else {
-				e = gf_isom_track_cenc_add_sample_info(import->dest, track, container_type, IV_size, NULL, 0, is_nalu_video, NULL);
+				e = gf_isom_track_cenc_add_sample_info(import->dest, track, container_type, IV_size, NULL, 0, is_nalu_video, NULL, GF_FALSE);
 			}
 			if (e) goto exit;
 
@@ -1070,8 +1067,6 @@ GF_Err gf_media_import(GF_MediaImporter *importer)
 			tki->stream_type = p ? p->value.uint : GF_STREAM_UNKNOWN;
 			p = gf_filter_pid_get_property(pid, GF_PROP_PID_CODECID);
 			tki->codecid = p ? p->value.uint : GF_CODECID_NONE;
-			//todo
-			tki->flags=0;
 			p = gf_filter_pid_get_property(pid, GF_PROP_PID_LANGUAGE);
 			if (p && p->value.string) tki->lang = GF_4CC(p->value.string[0], p->value.string[1], p->value.string[2], ' ');
 			p = gf_filter_pid_get_property(pid, GF_PROP_PID_ID);
@@ -1111,9 +1106,6 @@ GF_Err gf_media_import(GF_MediaImporter *importer)
 				if (p) tki->audio_info.samples_per_frame = p->value.uint;
 			}
 			p = gf_filter_pid_get_property(pid, GF_PROP_PID_CAN_DATAREF);
-
-			if (p && p->value.boolean) tki->flags |= GF_IMPORT_USE_DATAREF;
-
 			p = gf_filter_pid_get_property(pid, GF_PROP_PID_SUBTYPE);
 			if (p) tki->media_subtype = p->value.uint;
 
@@ -1284,10 +1276,9 @@ GF_Err gf_media_import(GF_MediaImporter *importer)
 			}
 			if (esd) gf_odf_desc_del((GF_Descriptor *) esd);
 		}
-
-		if (importer->print_stats_graph & 1) gf_fs_print_stats(fsess);
-		if (importer->print_stats_graph & 2) gf_fs_print_connections(fsess);
 	}
+	if (importer->print_stats_graph & 1) gf_fs_print_stats(fsess);
+	if (importer->print_stats_graph & 2) gf_fs_print_connections(fsess);
 	gf_fs_del(fsess);
 	return GF_OK;
 }

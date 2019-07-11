@@ -269,8 +269,6 @@ struct __track_import_info
 	/*! GF_ISOM_MEDIA_* : vide, auxv, pict*/
 	u32 media_subtype;
 	Bool is_chapter;
-	/*! import flags supported by the importer*/
-	u32 flags;
 	/*! video format info*/
 	struct __track_video_info video_info;
 	/*! audio format info*/
@@ -603,8 +601,10 @@ typedef struct
 	Bool sscale;
 	/*! only imports this track from the source*/
 	u32 track_id;
-	/*! non legacy options passed to dasher */
-	char *other_opts;
+	/*! non legacy options passed to dasher for source */
+	char *source_opts;
+	/*filter chain to instantiate between this source and the dasher*/
+	char *filter_chain;
 } GF_DashSegmenterInput;
 
 /*!
@@ -1006,6 +1006,15 @@ u32 gf_dasher_next_update_time(GF_DASHSegmenter *dasher, u64 *ms_ins_session);
 */
 void gf_dasher_set_start_date(GF_DASHSegmenter *dasher, const char *dash_utc_start_date);
 
+
+/*!
+ Sets print flags for filter session
+ *	\param dasher the DASH segmenter object
+ *  \param fs_print_flags flags for statistics (1) and graph (2) printing
+ *	\return error if any
+*/
+GF_Err gf_dasher_print_session_info(GF_DASHSegmenter *dasher, u32 fs_print_flags);
+
 #ifndef GPAC_DISABLE_ISOM_FRAGMENTS
 /*!
  save file as fragmented movie
@@ -1092,7 +1101,7 @@ typedef struct __track_exporter
 {
 	/*! source ISOBMF file */
 	GF_ISOFile *file;
-	/*! ID of track to be dumped*/
+	/*! ID of track/PID/... to be dumped*/
 	u32 trackID;
 	/*! sample number to export for GF_EXPORT_RAW_SAMPLES only*/
 	u32 sample_num;
@@ -1104,6 +1113,7 @@ typedef struct __track_exporter
 	char *in_name;
 	/*! optionnal FILE for output*/
 	FILE *dump_file;
+	u32 print_stats_graph;
 } GF_MediaExporter;
 
 /*!
@@ -1231,7 +1241,7 @@ GF_Err gf_hinter_finalize(GF_ISOFile *file, GF_SDP_IODProfile IOD_Profile, u32 b
  \param streamType systems stream type needed to signal data mime-type (OD, BIFS or any)
  \return GF_TRUE if the encoded data fits in an ESD url
  */
-Bool gf_hinter_can_embbed_data(char *data, u32 data_size, u32 streamType);
+Bool gf_hinter_can_embbed_data(u8 *data, u32 data_size, u32 streamType);
 
 #endif /*GPAC_DISABLE_ISOM_HINTING*/
 
@@ -1300,7 +1310,7 @@ GF_Err gf_saf_mux_add_au(GF_SAFMuxer *mux, u32 stream_id, u32 CTS, char *data, u
  \param out_size output SAF data size
  \return error if any
  */
-GF_Err gf_saf_mux_for_time(GF_SAFMuxer *mux, u32 time_ms, Bool force_end_of_session, char **out_data, u32 *out_size);
+GF_Err gf_saf_mux_for_time(GF_SAFMuxer *mux, u32 time_ms, Bool force_end_of_session, u8 **out_data, u32 *out_size);
 
 /*!
   Gets timescale and TS increment from double FPS value.

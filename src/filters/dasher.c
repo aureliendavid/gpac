@@ -57,12 +57,20 @@ enum
 	DASHER_NTP_KEEP,
 };
 
+enum
+{
+	DASHER_SAP_OFF=0,
+	DASHER_SAP_SIG,
+	DASHER_SAP_ON,
+};
+
 typedef struct
 {
 	u32 bs_switch, profile, cp, ntp;
 	s32 subs_sidx;
 	s32 buf, timescale;
-	Bool forcep, sfile, sseg, no_sar, mix_codecs, stl, tpl, align, sap, no_frag_def, sidx, split, hlsc, strict_cues, strict_sap;
+	Bool forcep, sfile, sseg, no_sar, mix_codecs, stl, tpl, align, sap, no_frag_def, sidx, split, hlsc, strict_cues;
+	u32 strict_sap;
 	u32 pssh;
 	Double dur;
 	u32 dmode;
@@ -130,6 +138,8 @@ typedef struct
 
 	Bool force_period_switch;
 	Bool streams_not_ready;
+
+	Bool update_report;
 } GF_DasherCtx;
 
 
@@ -275,6 +285,8 @@ typedef struct _dash_stream
 	Bool dcd_not_ready;
 
 	Bool reschedule;
+
+	GF_Fraction duration;
 } GF_DashStream;
 
 static void dasher_flush_segment(GF_DasherCtx *ctx, GF_DashStream *ds);
@@ -511,6 +523,7 @@ static GF_Err dasher_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is
 		CHECK_PROP(GF_PROP_PID_ID, ds->id, GF_EOS)
 		CHECK_PROP(GF_PROP_PID_DEPENDENCY_ID, ds->dep_id, GF_EOS)
 		CHECK_PROP(GF_PROP_PID_NB_FRAMES, ds->nb_samples_in_source, GF_EOS)
+		CHECK_PROP_FRAC(GF_PROP_PID_DURATION, ds->duration, GF_EOS)
 
 		dc_crc = 0;
 		dsi = p = gf_filter_pid_get_property(pid, GF_PROP_PID_DECODER_CONFIG);
@@ -1345,7 +1358,7 @@ static GF_List *dasher_get_content_protection_desc(GF_DasherCtx *ctx, GF_DashStr
 				bin128 sysID;
 				GF_XMLNode *node, *pnode;
 				u32 version, k_count;
-				char *pssh_data=NULL;
+				u8 *pssh_data=NULL;
 				u32 pssh_len, size_64;
 				GF_BitStream *bs_w = gf_bs_new(NULL, 0, GF_BITSTREAM_WRITE);
 
@@ -2721,7 +2734,7 @@ static void dasher_transfer_file(FILE *f, GF_FilterPid *opid, const char *name)
 {
 	GF_FilterPacket *pck;
 	u32 size, nb_read;
-	char *output;
+	u8 *output;
 
 	gf_fseek(f, 0, SEEK_END);
 	size = (u32) gf_ftell(f);
@@ -4570,6 +4583,74 @@ static Bool dasher_check_streams_ready(GF_DasherCtx *ctx)
 	return GF_TRUE;
 }
 
+void dasher_format_report(GF_Filter *filter, GF_DasherCtx *ctx)
+{
+	u32 i, count;
+	Double max_ts=0;
+	u32 total_pc = 0;
+	char szDS[200];
+	char *szStatus = NULL;
+
+	if (!gf_filter_reporting_enabled(filter))
+		return;
+	if (!ctx->update_report)
+		return;
+	ctx->update_report = GF_FALSE;
+
+	sprintf(szDS, "P%s", ctx->current_period->period->ID ? ctx->current_period->period->ID : "1");
+	gf_dynstrcat(&szStatus, szDS, NULL);
+
+	count = gf_list_count(ctx->current_period->streams);
+	for (i=0; i<count; i++) {
+		s32 pc=-1;
+		Double mpdtime;
+		u32 set_idx;
+		u32 rep_idx;
+		u8 stype;
+		GF_DashStream *ds = gf_list_get(ctx->current_period->streams, i);
+		if (ds->muxed_base) continue;
+
+		set_idx = 1 + gf_list_find(ctx->current_period->period->adaptation_sets, ds->set);
+		rep_idx = 1 + gf_list_find(ds->set->representations, ds->rep);
+		if (ds->stream_type==GF_STREAM_VISUAL) stype='V';
+		else if (ds->stream_type==GF_STREAM_AUDIO) stype='A';
+		else if (ds->stream_type==GF_STREAM_TEXT) stype='T';
+		else stype='M';
+
+		if (ds->done || ds->subdur_done) {
+			sprintf(szDS, "AS#%d.%d(%c) done (%d segs)", set_idx, rep_idx, stype, ds->seg_number);
+			pc = 10000;
+		} else {
+			Double done = (Double) (ds->adjusted_next_seg_start - ds->last_dts);
+			done /= ds->timescale;
+			done = ds->dash_dur-done;
+			Double pcent = done / ds->dash_dur;
+			pc = done * 10000;
+			snprintf(szDS, 200, "AS#%d.%d(%c) seg #%d %.2fs (%.2f %%)", set_idx, rep_idx, stype, ds->seg_number, done, 100*pcent);
+
+			if (ds->duration.den && ds->duration.num) {
+				done = (Double) (ds->last_dts - ds->first_cts);
+				done *= ds->duration.den;
+				done /= ds->timescale;
+				done /= ds->duration.num;
+				pc = (u32) (10000*done);
+			}
+			mpdtime = (Double) (ds->last_dts - ds->first_cts);
+			mpdtime /= ds->timescale;
+			if (max_ts<mpdtime)
+				max_ts = mpdtime;
+		}
+		if (pc>total_pc) total_pc = pc;
+		gf_dynstrcat(&szStatus, szDS, " ");
+	}
+	if (total_pc!=10000) {
+		sprintf(szDS, " / MPD %.2fs %d %%", max_ts, total_pc/100);
+		gf_dynstrcat(&szStatus, szDS, NULL);
+	}
+	gf_filter_update_status(filter, total_pc, szStatus);
+	gf_free(szStatus);
+}
+
 static GF_Err dasher_process(GF_Filter *filter)
 {
 	u32 i, count, nb_init, has_init;
@@ -4640,6 +4721,7 @@ static GF_Err dasher_process(GF_Filter *filter)
 
 					ds->clamp_done = GF_FALSE;
 
+					ctx->update_report = GF_TRUE;
 					gf_filter_pid_set_eos(ds->opid);
 					if (!ds->done) ds->done = ds_done;
 					ds->seg_done = GF_TRUE;
@@ -4715,6 +4797,11 @@ static GF_Err dasher_process(GF_Filter *filter)
 				if (!ds->muxed_base) {
 					//set AS sap type
 					if (!set_start_with_sap) {
+
+						if ((ds->stream_type!=GF_STREAM_VISUAL) && (ctx->strict_sap==DASHER_SAP_OFF) ) {
+							sap_type = 1;
+						}
+
 						//don't set SAP type if not a base rep - could be further checked
 						//if (!gf_list_count(ds->complementary_streams) )
 						{
@@ -4873,7 +4960,7 @@ static GF_Err dasher_process(GF_Filter *filter)
 						&& (ctx->profile != GF_DASH_PROFILE_FULL)
 						/*TODO: store at DS level whether the usage of sap4 is ok or not (eg roll info for AAC is OK, not for xHEAAC-v2)
 						for now we only complain for video*/
-						&& ((ds->stream_type==GF_STREAM_VISUAL) || ctx->strict_sap)
+						&& ((ds->stream_type==GF_STREAM_VISUAL) || (ctx->strict_sap==DASHER_SAP_ON) )
 					) {
 						GF_LOG(GF_LOG_WARNING, GF_LOG_DASH, ("[Dasher] WARNING! Max SAP type %d detected - switching to FULL profile\n", ds->nb_sap_4 ? 4 : 3));
 						ctx->profile = GF_DASH_PROFILE_FULL;
@@ -4932,7 +5019,7 @@ static GF_Err dasher_process(GF_Filter *filter)
 						&& (ds->nb_sap_4 || (ds->nb_sap_3 > 1))
 						/*TODO: store at DS level whether the usage of sap4 is ok or not (eg roll info for AAC is OK, not for xHEAAC-v2)
 						for now we only complain for video*/
-						&& ((ds->stream_type==GF_STREAM_VISUAL) || ctx->strict_sap)
+						&& ((ds->stream_type==GF_STREAM_VISUAL) || (ctx->strict_sap==DASHER_SAP_ON) )
 					) {
 						GF_LOG(GF_LOG_WARNING, GF_LOG_DASH, ("[Dasher] WARNING! Max SAP type %d detected - switching to FULL profile\n", ds->nb_sap_4 ? 4 : 3));
 						ctx->profile = GF_DASH_PROFILE_FULL;
@@ -5058,6 +5145,8 @@ static GF_Err dasher_process(GF_Filter *filter)
 			//send packet
 			gf_filter_pck_send(dst);
 
+			ctx->update_report = GF_TRUE;
+
 			//drop packet if not spliting
 			if (!ds->split_dur_next)
 				gf_filter_pid_drop_packet(ds->ipid);
@@ -5074,6 +5163,9 @@ static GF_Err dasher_process(GF_Filter *filter)
 			ds->done = 1;
 		}
 	}
+
+	dasher_format_report(filter, ctx);
+
 	//still some running steams in period
 	if (count && (nb_init<count)) {
 		gf_filter_post_process_task(filter);
@@ -5568,7 +5660,10 @@ static const GF_FilterArgs DasherArgs[] =
 	{ OFFS(hlsc), "insert clock reference in variant playlist in live HLS", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_EXPERT},
 	{ OFFS(cues), "set cue file - see filter help", GF_PROP_STRING, NULL, NULL, GF_FS_ARG_HINT_EXPERT},
 	{ OFFS(strict_cues), "strict mode for cues, complains if spliting is not on SAP type 1/2/3 or if unused cue is found", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_EXPERT},
-	{ OFFS(strict_sap), "strict mode for sap, complains if any PID uses SAP 3 or 4 but dasher not in FULL profile. If not set, only complains for video PIDs", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_EXPERT},
+	{ OFFS(strict_sap), "strict mode for sap"
+	"- off: ignore SAP types for PID other than video, enforcing _startsWithSAP=1_\n"
+	"- sig: same as [-off]() but keep _startsWithSAP_ to the true SAP value\n"
+	"- on: warn if any PID uses SAP 3 or 4 and switch to FULL profile", GF_PROP_UINT, "off", "off|sig|on", GF_FS_ARG_HINT_EXPERT},
 
 	{ OFFS(subs_sidx), "number of subsegments per sidx. negative value disables sidx. Only used to inherit sidx option of destination", GF_PROP_SINT, "-1", NULL, GF_FS_ARG_HINT_EXPERT},
 	{ OFFS(cmpd), "skip line feed and spaces in MPD XML for more compacity", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_EXPERT},

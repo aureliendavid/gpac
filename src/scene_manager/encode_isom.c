@@ -274,7 +274,7 @@ static GF_Err gf_sm_import_stream(GF_SceneManager *ctx, GF_ISOFile *mp4, GF_ESD 
 	import.esd = src;
 	import.duration = mux->duration;
 	import.flags = mux->import_flags | GF_IMPORT_FORCE_MPEG4;
-	import.video_fps.num = 1000*mux->frame_rate;
+	import.video_fps.num = (s32) (1000*mux->frame_rate);
 	import.video_fps.den = 1000;
 	import.in_name = szName;
 	import.initial_time_offset = imp_time;
@@ -439,7 +439,7 @@ static GF_ESD *gf_sm_locate_esd(GF_SceneManager *ctx, u16 ES_ID)
 
 static GF_Err gf_sm_encode_scene(GF_SceneManager *ctx, GF_ISOFile *mp4, GF_SMEncodeOptions *opts, u32 scene_type)
 {
-	char *data;
+	u8 *data;
 	Bool is_in_iod, delete_desc;
 	u32 i, j, di, rate, init_offset, data_len, count, track, rap_delay, flags, rap_mode;
 	u64 last_rap, dur, time_slice, avg_rate, prev_dts;

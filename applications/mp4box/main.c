@@ -158,7 +158,7 @@ GF_GPACArg m4b_gen_args[] =
  	GF_DEF_ARG("name `ID=NAME`", NULL, "set track handler name to NAME (UTF-8 string)", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_ADVANCED),
  	GF_DEF_ARG("itags `tag1[:tag2]`", NULL, "set iTunes tags to file, see [-tag-list]()", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_ADVANCED),
  	GF_DEF_ARG("tag-list", NULL, "print the set of supported iTunes tags", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_ADVANCED),
- 	GF_DEF_ARG("split", NULL, "split in files of given max duration, starting each file at RAP", NULL, NULL, GF_ARG_STRING, 0),
+ 	GF_DEF_ARG("split", NULL, "split in files of given max duration. Set [-rap] to start each file at RAP", NULL, NULL, GF_ARG_STRING, 0),
 	GF_DEF_ARG("split-size", "splits", "split in files of given max size (in kb)", NULL, NULL, GF_ARG_STRING, 0),
 	GF_DEF_ARG("split-rap", "splitr", "split in files at each new RAP", NULL, NULL, GF_ARG_STRING, 0),
 	GF_DEF_ARG("split-chunk `S:E`", "splitx", "extract a new file from `S` (number of seconds) to `E` with `E` a number (in seconds), `end` or `end-N`, N being the desired number of seconds before the end", NULL, NULL, GF_ARG_STRING, 0),
@@ -186,6 +186,8 @@ GF_GPACArg m4b_gen_args[] =
 	        "- src=FILE: location of the udta data (will be stored in a single box of type CODE)\n"
 	        "- src=base64,DATA: base64 encoded udta data (will be stored in a single box of type CODE)\n"
 	        "Note: If no source is set, UDTA of type CODE will be removed\n", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_ADVANCED),
+	GF_DEF_ARG("patch", NULL, "apply box patch in the given file\n", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_ADVANCED),
+	GF_DEF_ARG("bo", NULL, "freeze the order of boxes in input file\n", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_ADVANCED),
 	{0}
 };
 
@@ -321,7 +323,7 @@ void PrintDASHUsage()
 		"# Specifying input files\n"
 		"Input media files to dash can use the following modifiers\n"
 		"- #trackID=N: only use the track ID N from the source file\n"
-		"- #N: only use the track ID N from the source file - mapped to [-tkid](mp4dmx)\n"
+		"- #N: only use the track ID N from the source file (mapped to [-tkid](mp4dmx))\n"
 		"- #video: only use the first video track from the source file\n"
 		"- #audio: only use the first audio track from the source file\n"
 		"- :id=NAME: set the representation ID to NAME\n"
@@ -339,6 +341,9 @@ void PrintDASHUsage()
 		"- :desc_rep=VALUE: add a descriptor at the Representation level. Value must be a properly formatted XML element. Value is ignored while creating AdaptationSet elements.\n"
 		"- :sscale: force movie timescale to match media timescale of the first track in the segment.\n"
 		"- :trackID=N: only use the track ID N from the source file\n"
+		"- @@f1[:args][@@fN:args]: set a filter chain to insert between the source and the dasher. Each filter in the chain is formatted as a regular filter, see [filter doc `gpac -h doc`](filters_general). If several filters are set, they will be chained in the given order.\n"
+		"\n"
+		"Note: `@@f` must be placed after all other options.\n"
 		"\n"
 		"# Options\n"
 		);
@@ -369,7 +374,7 @@ GF_GPACArg m4b_imp_args[] =
  	GF_DEF_ARG("ps", NULL, "backward compatible signaling of AAC-PS", NULL, NULL, GF_ARG_BOOL, 0),
  	GF_DEF_ARG("psx", NULL, "non-backward compatible signaling of AAC-PS", NULL, NULL, GF_ARG_BOOL, 0),
  	GF_DEF_ARG("ovsbr", NULL, "oversample SBR import (SBR AAC, PS AAC and oversampled SBR cannot be detected at import time)", NULL, NULL, GF_ARG_BOOL, 0),
- 	GF_DEF_ARG("fps", NULL, "force frame rate for video and SUB subtitles import to the given value, expressed as a number or as `timescale-increment`.\nNote: For raw H263 import, default FPS is `15`, otherwise `25`\nWarning: THIS IS IGNORED FOR IsoMedia IMPORT", "25", NULL, GF_ARG_STRING, 0),
+ 	GF_DEF_ARG("fps", NULL, "force frame rate for video and SUB subtitles import to the given value, expressed as a number or as `timescale-increment`.\nNote: For raw H263 import, default FPS is `15`, otherwise `25`\nWarning: This is ignored for ISOBMFF import, use `:rescale` option for that", "25", NULL, GF_ARG_STRING, 0),
  	GF_DEF_ARG("mpeg4", NULL, "force MPEG-4 sample descriptions when possible. For AAC, forces MPEG-4 AAC signaling even if MPEG-2", NULL, NULL, GF_ARG_BOOL, 0),
  	GF_DEF_ARG("agg", NULL, "aggregate N audio frames in 1 sample (3GP media only).\nNote: Maximum value is 15", NULL, NULL, GF_ARG_INT, 0),
 	{0}
@@ -382,7 +387,7 @@ void PrintImportUsage()
 		"# File importing\n"
 		"Syntax is [-add]() / [-cat]() `filename[#FRAGMENT][:opt1...:optN=val]`\n"
 		"This process will create the destination file if not existing, and add the track(s) to it. If you wish to always create a new destination file, add [-new](MP4B_GEN).\n"
-		"The supported input media types depend on your installation, check [filters documentation)[Filters] for more info.\n"
+		"The supported input media types depend on your installation, check [filters documentation](Filters) for more info.\n"
 		"  \n"
 		"To select a desired media track, the following syntax is used:\n"
 		"- `-add inputFile#video`: adds the first video track in `inputFile`. DOES NOT WORK for IsoMedia nor MPEG-2 TS files.\n"
@@ -448,7 +453,7 @@ void PrintImportUsage()
 		"- :deps: import sample dependency information for AVC and HEVC\n"
 		"- :ccst: add default HEIF ccst box to visual sample entry\n"
 		"- :forcesync: force non IDR samples with I slices to be marked as sync points (AVC GDR)\n"
-		"Warning: RESULTING FILE IS NOT COMPLIANT WITH THE SPEC but will fix seeking in most players"
+		"Warning: RESULTING FILE IS NOT COMPLIANT WITH THE SPEC but will fix seeking in most players\n"
 		"- :xps_inband: set xPS inband for AVC/H264 and HEVC (for reverse operation, re-import from raw media)\n"
 		"- :xps_inbandx: same as xps_inband and also keep first xPS in sample desciption\n"
 		"- :au_delim: keep AU delimiter NAL units in the imported file\n"
@@ -507,8 +512,9 @@ void PrintImportUsage()
 		"- :fgraph: print filter session graph after import\n"
 		"- :sopt:[OPTS]: set `OPTS` as additionnal arguments to source filter. `OPTS` can be any usual filter argument, see [filter doc `gpac -h doc`](Filters)\n"
 		"- :dopt:[OPTS]: set `OPTS` as additionnal arguments to [destination filter](mp4mx). OPTS can be any usual filter argument, see [filter doc `gpac -h doc`](Filters)\n"
-		"- @@f1[[:args]@@fN[/args]]: set a filter chain to insert before the muxer. Each filter in the chain is formatted as a regular filter, see [filter doc `gpac -h doc`](Filters). If several filters are set, they will be chained in the given order. The last filter shall not have any ID specified\n"
+		"- @@f1[:args][@@fN:args]: set a filter chain to insert before the muxer. Each filter in the chain is formatted as a regular filter, see [filter doc `gpac -h doc`](Filters). If several filters are set, they will be chained in the given order. The last filter shall not have any Filter ID specified\n"
 		"\n"
+		"Note: `sopt`, `dopt` and `@@f` must be placed after all other options.\n"
 		"# Global import options\n"
 	);
 	while (m4b_imp_args[i].name) {
@@ -677,8 +683,8 @@ GF_GPACArg m4b_dump_args[] =
  	GF_DEF_ARG("drtp", NULL, "dump rtp hint samples structure to XML output", NULL, NULL, GF_ARG_BOOL, 0),
  	GF_DEF_ARG("dts", NULL, "print sample timing, size and position in file to text output", NULL, NULL, GF_ARG_BOOL, 0),
  	GF_DEF_ARG("dtsx", NULL, "same as [-dts]() but does not print offset", NULL, NULL, GF_ARG_BOOL, 0),
- 	GF_DEF_ARG("dtsc", NULL, "same as [-dts]() but analyse each sample for duplicated dts/cts - slow !", NULL, NULL, GF_ARG_BOOL, 0),
- 	GF_DEF_ARG("dtsxc", NULL, "same as [-dtsc]() but does not print offset - slow !", NULL, NULL, GF_ARG_BOOL, 0),
+ 	GF_DEF_ARG("dtsc", NULL, "same as [-dts]() but analyse each sample for duplicated dts/cts (__slow !__)", NULL, NULL, GF_ARG_BOOL, 0),
+ 	GF_DEF_ARG("dtsxc", NULL, "same as [-dtsc]() but does not print offset (__slow !__)", NULL, NULL, GF_ARG_BOOL, 0),
  	GF_DEF_ARG("dnal", NULL, "print NAL sample info of given track", NULL, NULL, GF_ARG_INT, 0),
  	GF_DEF_ARG("dnalc", NULL, "print NAL sample info of given track, adding CRC for each nal", NULL, NULL, GF_ARG_INT, 0),
  	GF_DEF_ARG("sdp", NULL, "dump SDP description of hinted file", NULL, NULL, GF_ARG_BOOL, 0),
@@ -700,7 +706,7 @@ GF_GPACArg m4b_dump_args[] =
  	GF_DEF_ARG("stats", NULL, "generate node/field statistics per Access Unit", NULL, NULL, GF_ARG_BOOL, 0),
  	GF_DEF_ARG("statx", NULL, "generate node/field statistics for scene after each AU", NULL, NULL, GF_ARG_BOOL, 0),
  	GF_DEF_ARG("hash", NULL, "generate SHA-1 Hash of the input file", NULL, NULL, GF_ARG_BOOL, 0),
- 	GF_DEF_ARG("-comp", NULL, "replace with compressed version all top level box types given as parameter, formated as `orig_4cc_1=comp_4cc_1[,orig_4cc_2=comp_4cc_2]`", NULL, NULL, GF_ARG_STRING, 0),
+ 	GF_DEF_ARG("comp", NULL, "replace with compressed version all top level box types given as parameter, formated as `orig_4cc_1=comp_4cc_1[,orig_4cc_2=comp_4cc_2]`", NULL, NULL, GF_ARG_STRING, 0),
  	GF_DEF_ARG("bin", NULL, "convert input XML file using NHML bitstream syntax to binary", NULL, NULL, GF_ARG_BOOL, 0),
  	{0}
 };
@@ -765,8 +771,8 @@ void PrintMetaUsage()
 	gf_sys_format_help(helpout, help_flags, "# Meta and HEIF Options\n"
 	"IsoMedia files can be used as generic meta-data containers, for examples storing XML information and sample images for a movie. The resulting file may not always contain a movie as is the case with some HEIF files or MPEG-21 files.\n"
 	"  \n"
-	"These information can be stored at the file root level, as is the case for MPEG-21 file format, or at the moovie or track level for a regular movie."
-	"");
+	"These information can be stored at the file root level, as is the case for HEIF/IFF and MPEG-21 file formats, or at the moovie or track level for a regular movie."
+	"  \n  \n");
 	while (m4b_meta_args[i].name) {
 		GF_GPACArg *arg = &m4b_meta_args[i];
 		i++;
@@ -807,7 +813,7 @@ void PrintSWFUsage()
 
 GF_GPACArg m4b_atsc_args[] =
 {
- 	GF_DEF_ARG("atsc", NULL, "enable ATSC 3.O reader", NULL, NULL, GF_ARG_BOOL, 0),
+ 	GF_DEF_ARG("atsc", NULL, "enable ATSC 3.0 reader", NULL, NULL, GF_ARG_BOOL, 0),
  	GF_DEF_ARG("ifce", NULL, "IP address of network interface to use", NULL, NULL, GF_ARG_STRING, 0),
  	GF_DEF_ARG("dir", NULL, "local filesystem path to which the files are written. If not set, nothing is written to disk", NULL, NULL, GF_ARG_STRING, 0),
  	GF_DEF_ARG("service", NULL, "ID of the service to grab\n"
@@ -912,6 +918,8 @@ GF_GPACArg m4b_usage_args[] =
  	GF_DEF_ARG("snodes", NULL, "list supported SVG nodes", NULL, NULL, GF_ARG_BOOL, 0),
  	GF_DEF_ARG("languages", NULL, "list supported ISO 639 languages", NULL, NULL, GF_ARG_BOOL, 0),
  	GF_DEF_ARG("boxes", NULL, "list all supported ISOBMF boxes and their syntax", NULL, NULL, GF_ARG_BOOL, 0),
+ 	GF_DEF_ARG("fstat", NULL, "print filter session statistics (import/export/encrypt/decrypt/dashing)", NULL, NULL, GF_ARG_BOOL, 0),
+ 	GF_DEF_ARG("fgraph", NULL, "print filter session graph (import/export/encrypt/decrypt/dashing)", NULL, NULL, GF_ARG_BOOL, 0),
  	GF_DEF_ARG("v", NULL, "verbose mode", NULL, NULL, GF_ARG_BOOL, 0),
  	GF_DEF_ARG("version", NULL, "get build version", NULL, NULL, GF_ARG_BOOL, 0),
  	GF_DEF_ARG("-- INPUT", NULL, "escape option if INPUT starts with `-` character", NULL, NULL, GF_ARG_BOOL, 0),
@@ -1284,7 +1292,7 @@ GF_FileType get_file_type_by_ext(char *inName)
 
 typedef struct
 {
-	u32 trackID;
+	GF_ISOTrackID trackID;
 	char *line;
 } SDPLine;
 
@@ -1305,7 +1313,7 @@ typedef struct
 {
 	MetaActionType act_type;
 	Bool root_meta, use_dref;
-	u32 trackID;
+	GF_ISOTrackID trackID;
 	u32 meta_4cc;
 	char *szPath, *szName, *mime_type, *enc_type;
 	u32 item_id;
@@ -1497,9 +1505,9 @@ typedef enum {
 typedef struct
 {
 	TSELActionType act_type;
-	u32 trackID;
+	GF_ISOTrackID trackID;
 
-	u32 refTrackID;
+	GF_ISOTrackID refTrackID;
 	u32 criteria[30];
 	u32 nb_criteria;
 	Bool is_switchGroup;
@@ -1508,7 +1516,7 @@ typedef struct
 
 static Bool parse_tsel_args(TSELAction **__tsel_list, char *opts, u32 *nb_tsel_act, TSELActionType act)
 {
-	u32 refTrackID = 0;
+	GF_ISOTrackID refTrackID = 0;
 	Bool has_switch_id;
 	u32 switch_id = 0;
 	u32 criteria[30];
@@ -1606,7 +1614,7 @@ typedef enum {
 typedef struct
 {
 	TrackActionType act_type;
-	u32 trackID;
+	GF_ISOTrackID trackID;
 	char lang[10];
 	s32 delay_ms;
 	const char *kms;
@@ -1680,7 +1688,8 @@ GF_DashSegmenterInput *set_dash_input(GF_DashSegmenterInput *dash_inputs, char *
 				        !strnicmp(sep, ":sn=", 4) ||
 				        !strnicmp(sep, ":tpl=", 5) ||
 				        !strnicmp(sep, ":hls=", 5) ||
-				        !strnicmp(sep, ":trackID=", 9)
+				        !strnicmp(sep, ":trackID=", 9) ||
+				        !strnicmp(sep, ":@@", 3)
 				        ) {
 					break;
 				} else {
@@ -1696,7 +1705,7 @@ GF_DashSegmenterInput *set_dash_input(GF_DashSegmenterInput *dash_inputs, char *
 					sep = strchr(sep+1, ':');
 				}
 			}
-			if (sep && !strncmp(sep, "://", 3)) sep = strchr(sep+3, ':');
+			if (sep && !strncmp(sep, "://", 3) && strnicmp(sep, ":@@", 3)) sep = strchr(sep+3, ':');
 			if (sep) sep[0] = 0;
 
 			if (!strnicmp(opts, "id=", 3)) {
@@ -1766,6 +1775,11 @@ GF_DashSegmenterInput *set_dash_input(GF_DashSegmenterInput *dash_inputs, char *
 			else if (!strnicmp(opts, "tpl=", 4)) di->seg_template = gf_strdup(opts+4);
 			else if (!strnicmp(opts, "hls=", 4)) di->hls_pl = gf_strdup(opts+4);
 			else if (!strnicmp(opts, "trackID=", 8)) di->track_id = atoi(opts+8);
+			else if (!strnicmp(opts, "@@", 2)) {
+				di->filter_chain = gf_strdup(opts+2);
+				if (sep) sep[0] = ':';
+				sep = NULL;
+			}
 
 			if (!sep) break;
 			sep[0] = ':';
@@ -1774,7 +1788,7 @@ GF_DashSegmenterInput *set_dash_input(GF_DashSegmenterInput *dash_inputs, char *
 		first_opt[0] = '\0';
 	}
 	di->file_name = name;
-	di->other_opts = other_opts;
+	di->source_opts = other_opts;
 
 	if (!di->representationID) {
 		char szRep[100];
@@ -1843,7 +1857,7 @@ static GF_Err xml_bs_to_bin(char *inName, char *outName, u32 dump_std)
 {
 	GF_Err e;
 	GF_XMLNode *root;
-	char *data = NULL;
+	u8 *data = NULL;
 	u32 data_size;
 
 	GF_DOMParser *dom = gf_xml_dom_new();
@@ -1898,7 +1912,7 @@ static GF_Err xml_bs_to_bin(char *inName, char *outName, u32 dump_std)
 static GF_Err do_compress_top_boxes(char *inName, char *outName, char *compress_top_boxes, u32 comp_top_box_version, Bool use_lzma)
 {
 	FILE *in, *out;
-	char *buf;
+	u8 *buf;
 	u32 buf_alloc, comp_size, start_offset;
 	s32 bytes_comp=0;
 	s32 bytes_uncomp=0;
@@ -2004,7 +2018,7 @@ static GF_Err do_compress_top_boxes(char *inName, char *outName, char *compress_
 		u32 size = gf_bs_read_u32(bs_in);
 		u32 type = gf_bs_read_u32(bs_in);
 		const char *b4cc = gf_4cc_to_str(type);
-		const char *replace = strstr(compress_top_boxes, b4cc);
+		const u8 *replace = (const u8 *) strstr(compress_top_boxes, b4cc);
 		if (!strcmp(b4cc, "moov")) has_mov = GF_TRUE;
 
 		if (!replace && !replace_all) {
@@ -2190,14 +2204,17 @@ GF_SceneDumpFormat dump_mode;
 #endif
 Double mpd_live_duration = 0;
 Bool HintIt, needSave, FullInter, Frag, HintInter, dump_rtp, regular_iod, remove_sys_tracks, remove_hint, force_new, remove_root_od;
-Bool print_sdp, print_info, open_edit, dump_cr, force_ocr, encode, do_log, do_flat, dump_srt, dump_ttxt, do_saf, dump_m2ts, dump_cart, do_hash, verbose, force_cat, align_cat, pack_wgt, single_group, clean_groups, dash_live, no_fragments_defaults, single_traf_per_moof, tfdt_per_traf, dump_nal_crc, hls_clock, do_mpd_rip, merge_vtt_cues;
-char *inName, *outName, *arg, *mediaSource, *tmpdir, *input_ctx, *output_ctx, *drm_file, *avi2raw, *cprt, *chap_file, *pes_dump, *itunes_tags, *pack_file, *raw_cat, *seg_name, *dash_ctx_file, *compress_top_boxes, *high_dynamc_range_filename, *use_init_seg;
+Bool print_sdp, print_info, open_edit, dump_cr, force_ocr, encode, do_log, dump_srt, dump_ttxt, do_saf, dump_m2ts, dump_cart, do_hash, verbose, force_cat, align_cat, pack_wgt, single_group, clean_groups, dash_live, no_fragments_defaults, single_traf_per_moof, tfdt_per_traf, dump_nal_crc, hls_clock, do_mpd_rip, merge_vtt_cues;
+char *inName, *outName, *arg, *mediaSource, *tmpdir, *input_ctx, *output_ctx, *drm_file, *avi2raw, *cprt, *chap_file, *pes_dump, *itunes_tags, *pack_file, *raw_cat, *seg_name, *dash_ctx_file, *compress_top_boxes, *high_dynamc_range_filename, *use_init_seg, *box_patch_filename;
 u32 track_dump_type, dump_isom, dump_timestamps;
-u32 trackID;
+GF_ISOTrackID trackID;
+u32 do_flat, box_patch_trackID=0;
 Bool comp_lzma=GF_FALSE;
+Bool freeze_box_order=GF_FALSE;
 Double min_buffer = 1.5;
 u32 comp_top_box_version = 0;
 s32 ast_offset_ms = 0;
+u32 fs_dump_flags = 0;
 u32 dump_chap = 0;
 u32 dump_udta_type = 0;
 u32 dump_udta_track = 0;
@@ -2362,7 +2379,8 @@ u32 mp4box_cleanup(u32 ret_code) {
 			if (di->xlink) gf_free(di->xlink);
 			if (di->seg_template) gf_free(di->seg_template);
 			if (di->hls_pl) gf_free(di->hls_pl);
-			if (di->other_opts) gf_free(di->other_opts);
+			if (di->source_opts) gf_free(di->source_opts);
+			if (di->filter_chain) gf_free(di->filter_chain);
 
 			if (di->roles) {
 				for (j = 0; j<di->nb_roles; j++) {
@@ -2513,7 +2531,7 @@ u32 mp4box_parse_args_continue(int argc, char **argv, u32 *current_index)
 		else if (!stricmp(arg, "-iod")) regular_iod = 1;
 		else if (!stricmp(arg, "-flat")) {
 			open_edit = GF_TRUE;
-			do_flat = GF_TRUE;
+			do_flat = 1;
 		}
 		else if (!stricmp(arg, "-keep-utc")) keep_utc = GF_TRUE;
 		else if (!stricmp(arg, "-new")) force_new = GF_TRUE;
@@ -2699,6 +2717,22 @@ u32 mp4box_parse_args_continue(int argc, char **argv, u32 *current_index)
 			high_dynamc_range_filename = argv[i + 1];
 			i++;
 		}
+		else if (!stricmp(arg, "-bo")) {
+			freeze_box_order = GF_TRUE;
+		}
+		else if (!stricmp(arg, "-patch")) {
+			CHECK_NEXT_ARG
+			box_patch_filename = argv[i + 1];
+			char *sep = strchr(box_patch_filename, '=');
+			if (sep) {
+				sep[0] = 0;
+				box_patch_trackID = atoi(box_patch_filename);
+				sep[0] = '=';
+				box_patch_filename = sep+1;
+			}
+ 			open_edit = GF_TRUE;
+			i++;
+		}
 		else if (!stricmp(arg, "-lang")) {
 			char szTK[20], *ext;
 			CHECK_NEXT_ARG
@@ -2872,7 +2906,7 @@ u32 mp4box_parse_args_continue(int argc, char **argv, u32 *current_index)
 				import_fps.num = ticks;
 				import_fps.den = dts_inc;
 			} else {
-				import_fps.num = 1000 * atof(argv[i + 1]);
+				import_fps.num = (s32) (1000 * atof(argv[i + 1]));
 				import_fps.den = 0;
 			}
 			i++;
@@ -3232,8 +3266,18 @@ u32 mp4box_parse_args_continue(int argc, char **argv, u32 *current_index)
 
 	 		fprintf(helpout, "[**HOME**](Home) » [**MP4Box**](MP4Box) » General");
 	 		fprintf(helpout, "<!-- automatically generated - do not edit, patch gpac/applications/mp4box/main.c -->\n");
+			fprintf(helpout, "# Syntax\n");
+			gf_sys_format_help(helpout, help_flags, "MP4Box [option] input [option] [other_dash_inputs]\n"
+				"  \n"
+			);
 			PrintGeneralUsage();
 			PrintEncryptUsage();
+			fprintf(helpout, "# Help Options\n");
+			while (m4b_usage_args[i].name) {
+				GF_GPACArg *arg = &m4b_usage_args[i];
+				i++;
+				gf_sys_print_arg(helpout, help_flags, arg, "mp4box-general");
+			}
 
 			gf_fclose(helpout);
 
@@ -3562,6 +3606,8 @@ Bool mp4box_parse_args(int argc, char **argv)
 		}
 		else if (!stricmp(arg, "-std")) dump_std = 2;
 		else if (!stricmp(arg, "-stdb")) dump_std = 1;
+		else if (!stricmp(arg, "-fstat")) fs_dump_flags |= 1;
+		else if (!stricmp(arg, "-fgraph")) fs_dump_flags |= 1<<1;
 
 #if !defined(GPAC_DISABLE_MEDIA_EXPORT) && !defined(GPAC_DISABLE_SCENE_DUMP)
 		else if (!stricmp(arg, "-bt")) dump_mode = GF_SM_DUMP_BT;
@@ -3775,7 +3821,7 @@ Bool mp4box_parse_args(int argc, char **argv)
 		else if (!stricmp(arg, "-inter") || !stricmp(arg, "-old-inter")) {
 			CHECK_NEXT_ARG
 			interleaving_time = atof(argv[i + 1]) / 1000;
-			if (!interleaving_time) do_flat = GF_TRUE;
+			if (!interleaving_time) do_flat = 2;
 			open_edit = GF_TRUE;
 			needSave = GF_TRUE;
 			if (!stricmp(arg, "-old-inter")) old_interleave = 1;
@@ -4116,8 +4162,8 @@ int mp4boxMain(int argc, char **argv)
 	trackID = stat_level = hint_flags = 0;
 	program_number = 0;
 	info_track_id = 0;
-	do_flat = GF_FALSE;
-	inName = outName = mediaSource = input_ctx = output_ctx = drm_file = avi2raw = cprt = chap_file = pack_file = raw_cat = high_dynamc_range_filename = use_init_seg = NULL;
+	do_flat = 0;
+	inName = outName = mediaSource = input_ctx = output_ctx = drm_file = avi2raw = cprt = chap_file = pack_file = raw_cat = high_dynamc_range_filename = use_init_seg = box_patch_filename = NULL;
 
 #ifndef GPAC_DISABLE_SWF_IMPORT
 	swf_flags = GF_SM_SWF_SPLIT_TIMELINE;
@@ -4291,7 +4337,7 @@ int mp4boxMain(int argc, char **argv)
 		if (sep) sep[0] = ':';
 		if (e) fprintf(stderr, "Failed to bind socket to %s: %s\n", udp_dest, gf_error_to_string(e) );
 		else {
-			e = gf_sk_send(sock, inName, (u32)strlen(inName));
+			e = gf_sk_send(sock, (u8 *) inName, (u32)strlen(inName));
 			if (e) fprintf(stderr, "Failed to send datagram: %s\n", gf_error_to_string(e) );
 		}
 		gf_sk_del(sock);
@@ -4488,6 +4534,8 @@ int mp4boxMain(int argc, char **argv)
 			fprintf(stderr, "Cannot open destination file %s: %s\n", inName, gf_error_to_string(gf_isom_last_error(NULL)) );
 			return mp4box_cleanup(1);
 		}
+		if (freeze_box_order)
+			gf_isom_freeze_order(file);
 
 		for (i=0; i<(u32) argc; i++) {
 			if (!strcmp(argv[i], "-add")) {
@@ -4545,6 +4593,8 @@ int mp4boxMain(int argc, char **argv)
 				fprintf(stderr, "Cannot open destination file %s: %s\n", inName, gf_error_to_string(gf_isom_last_error(NULL)) );
 				return mp4box_cleanup(1);
 			}
+			if (freeze_box_order)
+				gf_isom_freeze_order(file);
 		}
 		for (i=0; i<(u32)argc; i++) {
 			if (!strcmp(argv[i], "-cat") || !strcmp(argv[i], "-catx") || !strcmp(argv[i], "-catpl")) {
@@ -4747,6 +4797,7 @@ int mp4boxMain(int argc, char **argv)
 		if (!e) e = gf_dasher_set_split_on_closest(dasher, split_on_closest);
 		if (!e) e = gf_dasher_set_hls_clock(dasher, hls_clock);
 		if (!e && dash_cues) e = gf_dasher_set_cues(dasher, dash_cues, strict_cues);
+		if (!e && fs_dump_flags) e = gf_dasher_print_session_info(dasher, fs_dump_flags);
 
 		for (i=0; i < nb_dash_inputs; i++) {
 			if (!e) e = gf_dasher_add_input(dasher, &dash_inputs[i]);
@@ -4902,6 +4953,8 @@ int mp4boxMain(int argc, char **argv)
 					return mp4box_cleanup(1);
 				}
 			}
+			if (freeze_box_order)
+					gf_isom_freeze_order(file);
 			break;
 		/*allowed for bt<->xmt*/
 		case 2:
@@ -5034,6 +5087,7 @@ int mp4boxMain(int argc, char **argv)
 			mdump.out_name = szFile;
 		}
 
+		mdump.print_stats_graph = fs_dump_flags;
 		e = gf_media_export(&mdump);
 		if (e) goto err_exit;
 		goto exit;
@@ -5058,6 +5112,7 @@ int mp4boxMain(int argc, char **argv)
 			} else {
 				mdump.out_name = outfile;
 			}
+			mdump.print_stats_graph = fs_dump_flags;
 			e = gf_media_export(&mdump);
 			if (e) goto err_exit;
 		}
@@ -5151,7 +5206,7 @@ int mp4boxMain(int argc, char **argv)
 			if (!iodf) {
 				fprintf(stderr, "Cannot open destination %s\n", szName);
 			} else {
-				char *desc;
+				u8 *desc;
 				u32 size;
 				bs = gf_bs_from_file(iodf, GF_BITSTREAM_WRITE);
 				if (gf_odf_desc_write((GF_Descriptor *)iod, &desc, &size)==GF_OK) {
@@ -5169,7 +5224,7 @@ int mp4boxMain(int argc, char **argv)
 
 #if !defined(GPAC_DISABLE_ISOM_WRITE) && !defined(GPAC_DISABLE_MEDIA_IMPORT)
 	if (split_duration || split_size) {
-		split_isomedia_file(file, split_duration, split_size, inName, interleaving_time, split_start, adjust_split_end, outName, tmpdir);
+		split_isomedia_file(file, split_duration, split_size, inName, interleaving_time, split_start, adjust_split_end, outName, tmpdir, seg_at_rap);
 		/*never save file when splitting is desired*/
 		open_edit = GF_FALSE;
 		needSave = GF_FALSE;
@@ -5206,10 +5261,12 @@ int mp4boxMain(int argc, char **argv)
 					mdump.trackID = gf_isom_get_track_id(file, j+1);
 					sprintf(szFile, "%s_track%d", outfile, mdump.trackID);
 					mdump.out_name = szFile;
+					mdump.print_stats_graph = fs_dump_flags;
 					e = gf_media_export(&mdump);
 					if (e) goto err_exit;
 				}
 			} else {
+				mdump.print_stats_graph = fs_dump_flags;
 				e = gf_media_export(&mdump);
 				if (e) goto err_exit;
 			}
@@ -5220,6 +5277,7 @@ int mp4boxMain(int argc, char **argv)
 		mdump.file = file;
 		mdump.flags = GF_EXPORT_SAF;
 		mdump.out_name = outfile;
+		mdump.print_stats_graph = fs_dump_flags;
 		e = gf_media_export(&mdump);
 		if (e) goto err_exit;
 	}
@@ -5746,8 +5804,9 @@ int mp4boxMain(int argc, char **argv)
 			switch (itag) {
 			case GF_ISOM_ITUNE_COVER_ART:
 			{
-				char *d, *ext;
-				d=NULL;
+				u8 *d=NULL;
+				char *ext;
+
 				if (val) {
 					gf_file_load_data(val, (u8 **) &d, &tlen);
 
@@ -5768,7 +5827,7 @@ int mp4boxMain(int argc, char **argv)
 					gf_isom_apple_set_tag(file, itag, NULL, _v);
 				} else {
 					if (!val) val="";
-					gf_isom_apple_set_tag(file, itag, val, (u32) strlen(val) );
+					gf_isom_apple_set_tag(file, itag, (u8 *) val, (u32) strlen(val) );
 				}
 			}
 			break;
@@ -5793,20 +5852,20 @@ int mp4boxMain(int argc, char **argv)
 					}
 					else tlen = 0;
 				}
-				if (!val || tlen) gf_isom_apple_set_tag(file, itag, val ? _t : NULL, tlen);
+				if (!val || tlen) gf_isom_apple_set_tag(file, itag, val ? (u8 *)_t : NULL, tlen);
 			}
 			break;
 			case GF_ISOM_ITUNE_GAPLESS:
 			case GF_ISOM_ITUNE_COMPILATION:
 			{
-				char _t[1];
+				u8 _t[1];
 				if (val && !stricmp(val, "yes")) _t[0] = 1;
 				else  _t[0] = 0;
 				gf_isom_apple_set_tag(file, itag, _t, 1);
 			}
 			break;
 			default:
-				gf_isom_apple_set_tag(file, itag, val, tlen);
+				gf_isom_apple_set_tag(file, itag, (u8 *)val, tlen);
 				break;
 			}
 			needSave = GF_TRUE;
@@ -5856,6 +5915,14 @@ int mp4boxMain(int argc, char **argv)
 		gf_isom_modify_alternate_brand(file, brand_rem[i], 0);
 		needSave = GF_TRUE;
 	}
+	if (box_patch_filename) {
+		e = gf_isom_apply_box_patch(file, box_patch_trackID, box_patch_filename);
+		if (e) {
+			fprintf(stderr, "Failed to apply box patch %s: %s\n", box_patch_filename, gf_error_to_string(e) );
+			goto err_exit;
+		}
+		needSave = GF_TRUE;
+	}
 
 #ifndef GPAC_DISABLE_CRYPTO
 	if (crypt) {
@@ -5871,12 +5938,12 @@ int mp4boxMain(int argc, char **argv)
 		}
 		if (crypt == 1) {
 			if (use_init_seg) {
-				e = gf_crypt_fragment(file, drm_file, outfile, inName);
+				e = gf_crypt_fragment(file, drm_file, outfile, inName, fs_dump_flags);
 			} else {
-				e = gf_crypt_file(file, drm_file, outfile, interleaving_time);
+				e = gf_crypt_file(file, drm_file, outfile, interleaving_time, fs_dump_flags);
 			}
 		} else if (crypt ==2) {
-			e = gf_decrypt_file(file, drm_file, outfile, interleaving_time);
+			e = gf_decrypt_file(file, drm_file, outfile, interleaving_time, fs_dump_flags);
 		}
 		if (e) goto err_exit;
 		needSave = outName ? GF_FALSE : GF_TRUE;
@@ -5959,11 +6026,8 @@ int mp4boxMain(int argc, char **argv)
 	/*full interleave (sample-based) if just hinted*/
 	if (FullInter) {
 		e = gf_isom_set_storage_mode(file, GF_ISOM_STORE_TIGHT);
-	} else if (!interleaving_time) {
-		e = gf_isom_set_storage_mode(file, GF_ISOM_STORE_STREAMABLE);
-		needSave = GF_TRUE;
 	} else if (do_flat) {
-		e = gf_isom_set_storage_mode(file, GF_ISOM_STORE_FLAT);
+		e = gf_isom_set_storage_mode(file, (do_flat==1) ? GF_ISOM_STORE_FLAT : GF_ISOM_STORE_STREAMABLE);
 		needSave = GF_TRUE;
 	} else {
 		e = gf_isom_make_interleave(file, interleaving_time);

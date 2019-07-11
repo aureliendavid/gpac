@@ -708,6 +708,7 @@
 #endif
 #pragma comment (linker, EXPORT_SYMBOL(gf_isom_open_progressive) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_isom_get_missing_bytes) )
+#pragma comment (linker, EXPORT_SYMBOL(gf_isom_freeze_order) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_isom_is_fragmented) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_isom_get_fragmented_duration) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_isom_get_fragments_count) )
@@ -1042,7 +1043,7 @@
 #pragma comment (linker, EXPORT_SYMBOL(gf_isom_remove_sample_group) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_isom_set_track_group) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_isom_set_progress_callback) )
-
+#pragma comment (linker, EXPORT_SYMBOL(gf_isom_apply_box_patch) )
 
 #ifndef GPAC_DISABLE_ISOM_HINTING
 #pragma comment (linker, EXPORT_SYMBOL(gf_isom_setup_hint_track) )
@@ -1116,7 +1117,6 @@
 
 #pragma comment (linker, EXPORT_SYMBOL(gf_isom_av1_config_get) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_isom_av1_config_new) )
-#pragma comment (linker, EXPORT_SYMBOL(gf_isom_box_add_default) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_isom_box_equal) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_isom_box_write_header) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_isom_cenc_is_pattern_mode) )
@@ -2034,6 +2034,8 @@
 #pragma comment (linker, EXPORT_SYMBOL(gf_dasher_set_split_on_bound) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_dasher_set_split_on_closest) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_dasher_set_cues) )
+#pragma comment (linker, EXPORT_SYMBOL(gf_dasher_print_session_info) )
+
 
 #pragma comment (linker, EXPORT_SYMBOL(gf_dasher_next_update_time) )
 
@@ -2345,6 +2347,7 @@
 #pragma comment (linker, EXPORT_SYMBOL(gf_filter_pid_resolve_file_template ) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_filter_pid_set_discard ) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_filter_pid_get_destination ) )
+#pragma comment (linker, EXPORT_SYMBOL(gf_filter_pid_get_source ) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_filter_pid_get_property ) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_filter_pid_get_property_str ) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_filter_pid_get_info) )

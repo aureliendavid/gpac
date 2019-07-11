@@ -124,7 +124,7 @@ static GF_Err ffdec_process_video(GF_Filter *filter, struct _gf_ffdec_ctx *ctx)
 	Bool seek_flag = GF_FALSE;
 	u32 i, count;
 	u32 size=0, pix_fmt, outsize, pix_out, stride, stride_uv, uv_height, nb_planes;
-	char *out_buffer;
+	u8 *out_buffer;
 	GF_FilterPacket *pck_src;
 	GF_FilterPacket *dst_pck;
 	GF_FilterPacket *pck = gf_filter_pid_get_packet(ctx->in_pid);
@@ -352,7 +352,7 @@ static GF_Err ffdec_process_audio(GF_Filter *filter, struct _gf_ffdec_ctx *ctx)
 	s32 len, in_size, i;
 	u32 output_size;
 	Bool is_eos=GF_FALSE;
-	char *data;
+	u8 *data;
 	AVFrame *frame;
 	GF_FilterPacket *dst_pck, *src_pck;
 	GF_FilterPacket *pck = gf_filter_pid_get_packet(ctx->in_pid);
@@ -690,9 +690,17 @@ static GF_Err ffdec_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is_
 		//we may have a dsi here!
 		prop = gf_filter_pid_get_property(pid, GF_PROP_PID_DECODER_CONFIG);
 		if (prop && prop->value.data.ptr && prop->value.data.size) {
-			ctx->decoder->extradata_size = prop->value.data.size;
-			ctx->decoder->extradata = gf_malloc(sizeof(char) * prop->value.data.size);
-			memcpy(ctx->decoder->extradata, prop->value.data.ptr, prop->value.data.size);
+			//looks loke ffmpeg wants the fLaC keyword
+			if (gpac_codecid==GF_CODECID_FLAC) {
+				ctx->decoder->extradata_size = prop->value.data.size+4;
+				ctx->decoder->extradata = gf_malloc(sizeof(char) * prop->value.data.size+4);
+				memcpy(ctx->decoder->extradata, "fLaC", 4);
+				memcpy(ctx->decoder->extradata+4, prop->value.data.ptr, prop->value.data.size);
+			} else {
+				ctx->decoder->extradata_size = prop->value.data.size;
+				ctx->decoder->extradata = gf_malloc(sizeof(char) * prop->value.data.size);
+				memcpy(ctx->decoder->extradata, prop->value.data.ptr, prop->value.data.size);
+			}
 			ctx->extra_data_crc = gf_crc_32(prop->value.data.ptr, prop->value.data.size);
 		}
 
@@ -702,6 +710,15 @@ static GF_Err ffdec_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is_
 			return GF_NON_COMPLIANT_BITSTREAM;
 		}
 	}
+
+	AVDictionaryEntry *prev_e = NULL;
+	while (1) {
+		prev_e = av_dict_get(ctx->options, "", prev_e, AV_DICT_IGNORE_SUFFIX);
+		if (!prev_e) break;
+		GF_LOG(GF_LOG_WARNING, GF_LOG_CODEC, ("[FFDEC] meta-filter option %s=%s set but not used, see gpac -h ffdec and gpac -h ffdec:%s for allowed options\n", prev_e->key, prev_e->value, ctx->decoder->codec->priv_class->class_name));
+		gf_filter_report_unused_meta_option(filter, prev_e->key);
+	}
+
 
 	//we're good to go, declare our output pid
 	ctx->in_pid = pid;

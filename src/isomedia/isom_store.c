@@ -86,6 +86,8 @@ typedef struct
 	GF_SampleToChunkBox *stsc;
 	/*we don't know if it's a large offset or not*/
 	GF_Box *stco;
+	//track uses a box requiring seeking into the moov during write, we cannot dispatch blocks
+	Bool prevent_dispatch;
 } TrackWriter;
 
 typedef struct
@@ -156,6 +158,9 @@ GF_Err SetupWriters(MovieWriter *mw, GF_List *writers, u8 interleaving)
 		writer->stbl = trak->Media->information->sampleTable;
 		writer->timeScale = trak->Media->mediaHeader->timeScale;
 		writer->all_dref_mode = Media_SelfContainedType(writer->mdia);
+
+		if (trak->sample_encryption)
+			writer->prevent_dispatch = GF_TRUE;
 
 		writer->isDone = 0;
 		writer->DTSprev = 0;
@@ -312,21 +317,36 @@ static GF_Err WriteMoovAndMeta(GF_ISOFile *movie, GF_List *writers, GF_BitStream
 	}
 
 	if (movie->moov) {
+		Bool prevent_dispatch = GF_FALSE;
 		//switch all our tables
 		i=0;
 		while ((writer = (TrackWriter*)gf_list_enum(writers, &i))) {
 			//don't delete them !!!
 			stsc = writer->stbl->SampleToChunk;
 			stco = writer->stbl->ChunkOffset;
+			s32 stsc_pos = gf_list_del_item(writer->stbl->child_boxes, stsc);
+			s32 stco_pos = gf_list_del_item(writer->stbl->child_boxes, stco);
 			writer->stbl->SampleToChunk = writer->stsc;
 			writer->stbl->ChunkOffset = writer->stco;
+			gf_list_insert(writer->stbl->child_boxes, writer->stsc, stsc_pos);
+			gf_list_insert(writer->stbl->child_boxes, writer->stco, stco_pos);
 			writer->stco = stco;
 			writer->stsc = stsc;
+			if (writer->prevent_dispatch)
+				prevent_dispatch = GF_TRUE;
+		}
+		if (prevent_dispatch) {
+			gf_bs_prevent_dispatch(bs, GF_TRUE);
 		}
 		//write the moov box...
 		e = gf_isom_box_size((GF_Box *)movie->moov);
 		if (e) return e;
 		e = gf_isom_box_write((GF_Box *)movie->moov, bs);
+
+		if (prevent_dispatch) {
+			gf_bs_prevent_dispatch(bs, GF_FALSE);
+		}
+
 		//and re-switch our table. We have to do it that way because it is
 		//needed when the moov is written first
 		i=0;
@@ -336,8 +356,13 @@ static GF_Err WriteMoovAndMeta(GF_ISOFile *movie, GF_List *writers, GF_BitStream
 			stco = writer->stco;
 			writer->stsc = writer->stbl->SampleToChunk;
 			writer->stco = writer->stbl->ChunkOffset;
+			s32 stsc_pos = gf_list_del_item(writer->stbl->child_boxes, writer->stsc);
+			s32 stco_pos = gf_list_del_item(writer->stbl->child_boxes, writer->stco);
+
 			writer->stbl->SampleToChunk = stsc;
 			writer->stbl->ChunkOffset = stco;
+			gf_list_insert(writer->stbl->child_boxes, stsc, stsc_pos);
+			gf_list_insert(writer->stbl->child_boxes, stco, stco_pos);
 		}
 		if (e) return e;
 	}
@@ -716,10 +741,10 @@ static GF_Err WriteFlat(MovieWriter *mw, u8 moovFirst, GF_BitStream *bs, Bool no
 	GF_Err e;
 	u32 i;
 	u64 offset, finalOffset, totSize, begin, firstSize, finalSize;
-	GF_Box *a;
+	GF_Box *a, *cprt_box=NULL;
 	GF_List *writers = gf_list_new();
 	GF_ISOFile *movie = mw->movie;
-
+	s32 moov_meta_pos=-1;
 	begin = totSize = 0;
 
 	//first setup the writers
@@ -789,6 +814,7 @@ static GF_Err WriteFlat(MovieWriter *mw, u8 moovFirst, GF_BitStream *bs, Bool no
 			/*written by hand*/
 			case GF_ISOM_BOX_TYPE_MOOV:
 			case GF_ISOM_BOX_TYPE_META:
+				moov_meta_pos = i-1;
 			case GF_ISOM_BOX_TYPE_FTYP:
 			case GF_ISOM_BOX_TYPE_PDIN:
 #ifndef GPAC_DISABLE_ISOM_ADOBE
@@ -833,11 +859,27 @@ static GF_Err WriteFlat(MovieWriter *mw, u8 moovFirst, GF_BitStream *bs, Bool no
 					totSize = gf_bs_get_position(bs) - begin;
 				}
 				break;
+
+			case GF_ISOM_BOX_TYPE_FREE:
+				//for backward compat with old arch, keep copyright before moov
+				if (((GF_FreeSpaceBox*)a)->dataSize>4) {
+					GF_FreeSpaceBox *fr = (GF_FreeSpaceBox*) a;
+					if ((fr->dataSize>20) && !strncmp(fr->data, "IsoMedia File", 13)) {
+						e = gf_isom_box_size(a);
+						if (e) goto exit;
+						e = gf_isom_box_write(a, bs);
+						if (e) goto exit;
+						cprt_box = a;
+						break;
+					}
+				}
 			default:
-				e = gf_isom_box_size(a);
-				if (e) goto exit;
-				e = gf_isom_box_write(a, bs);
-				if (e) goto exit;
+				if (moov_meta_pos < 0) {
+					e = gf_isom_box_size(a);
+					if (e) goto exit;
+					e = gf_isom_box_write(a, bs);
+					if (e) goto exit;
+				}
 				break;
 			}
 		}
@@ -876,6 +918,26 @@ static GF_Err WriteFlat(MovieWriter *mw, u8 moovFirst, GF_BitStream *bs, Bool no
 			e = gf_bs_seek(bs, offset);
 			movie->mdat->size = totSize;
 		}
+
+		//then the rest
+		i = (u32) (moov_meta_pos + 1);
+		while ((a = (GF_Box*)gf_list_enum(movie->TopBoxes, &i))) {
+			if (a==cprt_box) continue;
+
+			switch (a->type) {
+			case GF_ISOM_BOX_TYPE_MOOV:
+			case GF_ISOM_BOX_TYPE_META:
+			case GF_ISOM_BOX_TYPE_FTYP:
+			case GF_ISOM_BOX_TYPE_PDIN:
+			case GF_ISOM_BOX_TYPE_MDAT:
+				break;
+			default:
+				e = gf_isom_box_size(a);
+				if (e) goto exit;
+				e = gf_isom_box_write(a, bs);
+				if (e) goto exit;
+			}
+		}
 		goto exit;
 	}
 
@@ -902,6 +964,39 @@ static GF_Err WriteFlat(MovieWriter *mw, u8 moovFirst, GF_BitStream *bs, Bool no
 		e = gf_isom_box_write((GF_Box *)movie->pdin, bs);
 		if (e) goto exit;
 	}
+
+	//write all boxes before moov
+	i=0;
+	while ((a = (GF_Box*)gf_list_enum(movie->TopBoxes, &i))) {
+		switch (a->type) {
+		case GF_ISOM_BOX_TYPE_MOOV:
+		case GF_ISOM_BOX_TYPE_META:
+			moov_meta_pos = i-1;
+			break;
+		case GF_ISOM_BOX_TYPE_FTYP:
+		case GF_ISOM_BOX_TYPE_PDIN:
+		case GF_ISOM_BOX_TYPE_MDAT:
+			break;
+		//for backward compat with old arch keep out copyright after moov
+		case GF_ISOM_BOX_TYPE_FREE:
+			if (((GF_FreeSpaceBox*)a)->dataSize>4) {
+				GF_FreeSpaceBox *fr = (GF_FreeSpaceBox*) a;
+				if ((fr->dataSize>20) && !strncmp(fr->data, "IsoMedia File", 13)) {
+					cprt_box = a;
+					break;
+				}
+			}
+		default:
+			if (moov_meta_pos<0) {
+				e = gf_isom_box_size(a);
+				if (e) goto exit;
+				e = gf_isom_box_write(a, bs);
+				if (e) goto exit;
+			}
+			break;
+		}
+	}
+
 	//What we will do is first emulate the write from the beginning...
 	//note: this will set the size of the mdat
 	e = DoWrite(mw, writers, bs, 1, gf_bs_get_position(bs));
@@ -934,9 +1029,11 @@ static GF_Err WriteFlat(MovieWriter *mw, u8 moovFirst, GF_BitStream *bs, Bool no
 	ResetWriters(writers);
 	e = DoWrite(mw, writers, bs, 0, 0);
 	if (e) goto exit;
+
 	//then the rest
 	i=0;
 	while ((a = (GF_Box*)gf_list_enum(movie->TopBoxes, &i))) {
+		if ((i-1<= (u32) moov_meta_pos) && (a!=cprt_box)) continue;
 		switch (a->type) {
 		case GF_ISOM_BOX_TYPE_MOOV:
 		case GF_ISOM_BOX_TYPE_META:
@@ -1322,7 +1419,8 @@ static GF_Err WriteInterleaved(MovieWriter *mw, GF_BitStream *bs, Bool drift_int
 {
 	GF_Err e;
 	u32 i;
-	GF_Box *a;
+	s32 moov_meta_pos=-1;
+	GF_Box *a, *cprt_box;
 	u64 firstSize, finalSize, offset, finalOffset;
 	GF_List *writers = gf_list_new();
 	GF_ISOFile *movie = mw->movie;
@@ -1348,6 +1446,38 @@ static GF_Err WriteInterleaved(MovieWriter *mw, GF_BitStream *bs, Bool drift_int
 		if (e) goto exit;
 		e = gf_isom_box_write((GF_Box *)movie->pdin, bs);
 		if (e) goto exit;
+	}
+
+	//write all boxes before moov
+	i=0;
+	while ((a = (GF_Box*)gf_list_enum(movie->TopBoxes, &i))) {
+		switch (a->type) {
+		case GF_ISOM_BOX_TYPE_MOOV:
+		case GF_ISOM_BOX_TYPE_META:
+			moov_meta_pos = i-1;
+			break;
+		case GF_ISOM_BOX_TYPE_FTYP:
+		case GF_ISOM_BOX_TYPE_PDIN:
+		case GF_ISOM_BOX_TYPE_MDAT:
+			break;
+		case GF_ISOM_BOX_TYPE_FREE:
+			//for backward compat with old arch, keep copyright before moov
+			if (((GF_FreeSpaceBox*)a)->dataSize>4) {
+				GF_FreeSpaceBox *fr = (GF_FreeSpaceBox*) a;
+				if ((fr->dataSize>20) && !strncmp(fr->data, "IsoMedia File", 13)) {
+					cprt_box = a;
+					break;
+				}
+			}
+		default:
+			if (moov_meta_pos<0) {
+				e = gf_isom_box_size(a);
+				if (e) goto exit;
+				e = gf_isom_box_write(a, bs);
+				if (e) goto exit;
+			}
+			break;
+		}
 	}
 
 	e = DoInterleave(mw, writers, bs, 1, gf_bs_get_position(bs), drift_inter);
@@ -1388,9 +1518,12 @@ static GF_Err WriteInterleaved(MovieWriter *mw, GF_BitStream *bs, Bool drift_int
 	e = DoInterleave(mw, writers, bs, 0, 0, drift_inter);
 	if (e) goto exit;
 
+
 	//then the rest
 	i=0;
 	while ((a = (GF_Box*)gf_list_enum(movie->TopBoxes, &i))) {
+		if ((i-1 < (u32) moov_meta_pos) && (a != cprt_box))
+			continue;
 		switch (a->type) {
 		case GF_ISOM_BOX_TYPE_MOOV:
 		case GF_ISOM_BOX_TYPE_META:

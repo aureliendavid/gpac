@@ -118,6 +118,11 @@ GF_Err av1dmx_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is_remove
 		gf_filter_pid_copy_properties(ctx->opid, ctx->ipid);
 		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_UNFRAMED, NULL);
 	}
+	if (ctx->timescale) {
+		//if we have a FPS prop, use it
+		p = gf_filter_pid_get_property(pid, GF_PROP_PID_FPS);
+		if (p) ctx->cur_fps = p->value.frac;
+	}
 	return GF_OK;
 }
 
@@ -437,7 +442,7 @@ static GFINLINE void av1dmx_update_cts(GF_AV1DmxCtx *ctx)
 
 static void av1dmx_check_pid(GF_Filter *filter, GF_AV1DmxCtx *ctx)
 {
-	char *dsi;
+	u8 *dsi;
 	u32 dsi_size, crc;
 
 	//no config or no config change
@@ -518,7 +523,7 @@ GF_Err av1dmx_parse_ivf(GF_Filter *filter, GF_AV1DmxCtx *ctx)
 	u64 frame_size = 0, pts = GF_FILTER_NO_TS;
 	GF_FilterPacket *pck;
 	u64 pos, pos_ivf_hdr;
-	char *output;
+	u8 *output;
 
 	pos_ivf_hdr = gf_bs_get_position(ctx->bs);
 	e = gf_media_parse_ivf_frame_header(ctx->bs, &frame_size, &pts);
@@ -576,7 +581,7 @@ GF_Err av1dmx_parse_vp9(GF_Filter *filter, GF_AV1DmxCtx *ctx)
 	u32 width = 0, height = 0, renderWidth, renderHeight;
 	u32 num_frames_in_superframe = 0, superframe_index_size = 0, i = 0;
 	u32 frame_sizes[VP9_MAX_FRAMES_IN_SUPERFRAME];
-	char *output;
+	u8 *output;
 	GF_Err e;
 
 	pos_ivf_hdr = gf_bs_get_position(ctx->bs);
@@ -660,7 +665,7 @@ GF_Err av1dmx_parse_av1(GF_Filter *filter, GF_AV1DmxCtx *ctx)
 	GF_Err e;
 	u32 pck_size;
 	GF_FilterPacket *pck;
-	char *output;
+	u8 *output;
 
 	/*we process each TU and extract only the necessary OBUs*/
 	switch (ctx->bsmode) {

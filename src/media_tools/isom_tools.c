@@ -876,8 +876,7 @@ GF_Err gf_media_check_qt_prores(GF_ISOFile *mp4)
 		gf_isom_update_bitrate(mp4, i+1, 1, 0, 0, 0);
 		
 		if (mtype==GF_ISOM_MEDIA_AUDIO) {
-			u32 sr, nb_ch;
-			u8 bps;
+			u32 sr, nb_ch, bps;
 			gf_isom_get_audio_info(mp4, i+1, 1, &sr, &nb_ch, &bps);
 			gf_isom_set_audio_info(mp4, i+1, 1, sr, nb_ch, bps, GF_IMPORT_AUDIO_SAMPLE_ENTRY_v1_QTFF);
 			continue;
@@ -2794,7 +2793,7 @@ exit:
 	for (j=0; j<=max_layer_id; j++) {
 		GF_BitStream *bs;
 		u32 count, data_size;
-		char *data=NULL;
+		u8 *data=NULL;
 		if (sti[j].lhvccfg) gf_odf_hevc_cfg_del(sti[j].lhvccfg);
 		//set linf group
 		bs = gf_bs_new(NULL, 0, GF_BITSTREAM_WRITE);
@@ -3255,7 +3254,7 @@ GF_Err gf_media_split_hevc_tiles(GF_ISOFile *file, u32 signal_mode)
 				if (e) goto err_exit;
 			}
 		} else {
-			char *data=NULL;
+			u8 *data=NULL;
 			u32 size=0;
 			u32 sdesc;
 			gf_bs_get_content(bs, &data, &size);

@@ -101,9 +101,23 @@ const char *gf_filter_get_dst_args(GF_Filter *filter)
 char *gf_filter_get_dst_name(GF_Filter *filter)
 {
 	char szDst[5];
-	char *dst, *arg_sep, *res;
+	char *dst, *arg_sep, *res, *dst_args;
 	sprintf(szDst, "dst%c", filter->session->sep_name);
-	dst = strstr(filter->dst_args, szDst);
+
+	dst_args = filter->dst_args;
+	if (!dst_args) {
+		GF_FilterPid *outpid = gf_list_get(filter->output_pids, 0);
+		if (outpid) dst_args = outpid->filter->dst_args;
+
+		if (!dst_args) {
+			GF_Filter *outf = gf_list_get(filter->destination_links, 0);
+			if (!outf || !outf->dst_args)
+				outf = gf_list_get(filter->destination_filters, 0);
+			if (outf)
+				dst_args = filter->dst_args;
+		}
+	}
+	dst = dst_args ? strstr(dst_args, szDst) : NULL;
 	if (!dst) return NULL;
 
 	arg_sep = (char*) gf_fs_path_escape_colon(filter->session, dst+4);
@@ -1171,6 +1185,11 @@ static void gf_filter_parse_args(GF_Filter *filter, const char *args, GF_FilterA
 				internal_arg = GF_TRUE;
 			} else if (!strcmp("N", szArg)) {
 				gf_filter_set_name(filter, value);
+				found = GF_TRUE;
+				internal_arg = GF_TRUE;
+			}
+			//codec for generic enc load
+			else if (!strcmp("gfreg", szArg)) {
 				found = GF_TRUE;
 				internal_arg = GF_TRUE;
 			}
@@ -2678,7 +2697,7 @@ Bool gf_filter_block_enabled(GF_Filter *filter)
 }
 
 GF_EXPORT
-GF_Err gf_filter_pid_raw_new(GF_Filter *filter, const char *url, const char *local_file, const char *mime_type, const char *fext, char *probe_data, u32 probe_size, Bool trust_mime, GF_FilterPid **out_pid)
+GF_Err gf_filter_pid_raw_new(GF_Filter *filter, const char *url, const char *local_file, const char *mime_type, const char *fext, u8 *probe_data, u32 probe_size, Bool trust_mime, GF_FilterPid **out_pid)
 {
 	char *sep;
 	char tmp_ext[50];
@@ -3108,7 +3127,7 @@ GF_Err gf_filter_update_status(GF_Filter *filter, u32 percent, char *szStatus)
 	evt.type = GF_EVENT_PROGRESS;
 	evt.progress.progress_type = 3;
 	evt.progress.done = percent;
-	evt.progress.total = percent ? 10000 : 0;
+	evt.progress.total = ((s32)percent>0) ? 10000 : 0;
 	evt.progress.filter_idx = gf_list_find(filter->session->filters, filter);
 	gf_fs_ui_event(filter->session, &evt);
 	return GF_OK;

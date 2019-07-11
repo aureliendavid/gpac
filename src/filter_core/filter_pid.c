@@ -688,7 +688,12 @@ static GF_Err gf_filter_pid_configure(GF_Filter *filter, GF_FilterPid *pid, GF_P
 	//failure on reconfigure, try reloading a filter chain
 	else if ((ctype==GF_PID_CONF_RECONFIG) && (e != GF_FILTER_NOT_SUPPORTED)) {
 		GF_LOG(GF_LOG_ERROR, GF_LOG_FILTER, ("Failed to reconfigure PID %s:%s in filter %s: %s, reloading filter graph\n", pid->filter->name, pid->name, filter->name, gf_error_to_string(e) ));
-		gf_filter_relink_dst(pidinst);
+
+		if (e==GF_BAD_PARAM) {
+			filter->session->last_connect_error = e;
+		} else {
+			gf_filter_relink_dst(pidinst);
+		}
 	} else {
 
 		//error, remove from input and output
@@ -1047,11 +1052,14 @@ GF_EXPORT
 const char *gf_filter_pid_orig_src_args(GF_FilterPid *pid)
 {
 	u32 i;
-	const char *args = pid->pid->filter->src_args;
+	const char *args;
+	//move to true source pid
+	pid = pid->pid;
+	args = pid->filter->src_args;
 	if (args && strstr(args, "src")) return args;
 	if (!pid->filter->num_input_pids) return args;
-	for (i=0; i<pid->pid->filter->num_input_pids; i++) {
-		GF_FilterPidInst *pidi = gf_list_get(pid->pid->filter->input_pids, i);
+	for (i=0; i<pid->filter->num_input_pids; i++) {
+		GF_FilterPidInst *pidi = gf_list_get(pid->filter->input_pids, i);
 		const char *arg_src = gf_filter_pid_orig_src_args(pidi->pid);
 		if (arg_src) return arg_src;
 	}
@@ -2041,7 +2049,7 @@ static Bool gf_filter_out_caps_solved_by_connection(const GF_FilterRegister *fre
 	return GF_FALSE;
 }
 
-static s32 gf_filter_reg_get_output_stream_type(const GF_FilterRegister *freg, u32 out_cap_idx)
+static s32 gf_filter_reg_get_bundle_stream_type(const GF_FilterRegister *freg, u32 cap_idx, Bool for_output)
 {
 	u32 i, cur_bundle, stype=0, nb_stype=0;
 
@@ -2053,9 +2061,12 @@ static s32 gf_filter_reg_get_output_stream_type(const GF_FilterRegister *freg, u
 			cur_bundle++;
 			continue;
 		}
-		if (!(cap->flags & GF_CAPFLAG_OUTPUT)) continue;
-
-		if ((cur_bundle != out_cap_idx) && !(cap->flags & GF_CAPFLAG_STATIC) ) continue;
+		if (for_output) {
+			if (!(cap->flags & GF_CAPFLAG_OUTPUT)) continue;
+		} else {
+			if (!(cap->flags & GF_CAPFLAG_INPUT)) continue;
+		}
+		if ((cur_bundle != cap_idx) && !(cap->flags & GF_CAPFLAG_STATIC) ) continue;
 		//output type is file or same media type, allow looking for filter chains
 		if (cap->flags & GF_CAPFLAG_EXCLUDED) continue;
 		if (cap->code == GF_PROP_PID_STREAM_TYPE) cap_stype = cap->val.value.uint;
@@ -2079,7 +2090,7 @@ static s32 gf_filter_reg_get_output_stream_type(const GF_FilterRegister *freg, u
 	returns 1 if subgraph shall be enabled (will marke edge at the root of the subgraph enabled)
 	returns 2 if no decision can be taken because the subgraph is too deep. We don't mark the parent edge as disabled because the same subgraph/edge can be used at other places in a shorter path
 */
-static u32 gf_filter_pid_enable_edges(GF_FilterSession *fsess, GF_FilterRegDesc *reg_desc, u32 src_cap_idx, const GF_FilterRegister *src_freg, u32 rlevel, s32 dst_stream_type, GF_FilterRegDesc *parent_desc)
+static u32 gf_filter_pid_enable_edges(GF_FilterSession *fsess, GF_FilterRegDesc *reg_desc, u32 src_cap_idx, const GF_FilterRegister *src_freg, u32 rlevel, s32 dst_stream_type, GF_FilterRegDesc *parent_desc, GF_FilterPid *pid, u32 pid_stream_type)
 {
 	u32 i=0;
 	Bool enable_graph = GF_FALSE;
@@ -2119,6 +2130,12 @@ static u32 gf_filter_pid_enable_edges(GF_FilterSession *fsess, GF_FilterRegDesc 
 		if (edge->status == EDGE_STATUS_DISABLED)
 			continue;
 
+		//if source is not edge origin and edge is only valid for explicitly loaded filters, disable edge
+		if (edge->loaded_filter_only && (edge->src_reg->freg != pid->filter->freg) ) {
+			edge->status = EDGE_STATUS_DISABLED;
+			continue;
+		}
+
 		//edge is already enabled (the subgraph matches our source), don't test it but remember to indicate the graph is valid
 		if (edge->status == EDGE_STATUS_ENABLED) {
 			enable_graph = GF_TRUE;
@@ -2127,6 +2144,9 @@ static u32 gf_filter_pid_enable_edges(GF_FilterSession *fsess, GF_FilterRegDesc 
 
 		//candidate edge, check stream type
 		source_stream_type = edge->src_stream_type;
+
+		if (pid->filter->freg == edge->src_reg->freg)
+			source_stream_type = pid_stream_type;
 
 		//source edge cap indicates multiple stream types (demuxer/encoder/decoder dundle)
 		if (source_stream_type<0) {
@@ -2152,7 +2172,7 @@ static u32 gf_filter_pid_enable_edges(GF_FilterSession *fsess, GF_FilterRegDesc 
 			continue;
 		}
 
-		res = gf_filter_pid_enable_edges(fsess, edge->src_reg, edge->src_cap_idx, src_freg, rlevel+1, source_stream_type, reg_desc);
+		res = gf_filter_pid_enable_edges(fsess, edge->src_reg, edge->src_cap_idx, src_freg, rlevel+1, source_stream_type, reg_desc, pid, pid_stream_type);
 		//if subgraph matches our source reg, mark the edge towards this subgraph as enabled
 		if (res==1) {
 			edge->status = EDGE_STATUS_ENABLED;
@@ -2231,8 +2251,7 @@ static GF_FilterRegDesc *gf_filter_reg_build_graph(GF_List *links, const GF_Filt
 							edge->loaded_filter_only |= EDGE_LOADED_DEST_ONLY;
 						if (loaded_filter_only_flags & EDGE_LOADED_DEST_ONLY)
 							edge->loaded_filter_only |= EDGE_LOADED_SOURCE_ONLY;
-					 	edge->src_stream_type = gf_filter_reg_get_output_stream_type(edge->src_reg->freg, edge->src_cap_idx);
-
+					 	edge->src_stream_type = gf_filter_reg_get_bundle_stream_type(edge->src_reg->freg, edge->src_cap_idx, GF_TRUE);
 						reg_desc->nb_edges++;
 					}
 				}
@@ -2254,8 +2273,7 @@ static GF_FilterRegDesc *gf_filter_reg_build_graph(GF_List *links, const GF_Filt
 						edge->dst_cap_idx = (u16) k;
 						edge->priority = 0;
 						edge->loaded_filter_only = loaded_filter_only_flags;
-					 	edge->src_stream_type = gf_filter_reg_get_output_stream_type(edge->src_reg->freg, edge->src_cap_idx);
-
+					 	edge->src_stream_type = gf_filter_reg_get_bundle_stream_type(edge->src_reg->freg, edge->src_cap_idx, GF_TRUE);
 						a_reg->nb_edges++;
 					}
 				}
@@ -2361,15 +2379,19 @@ static void gf_filter_pid_resolve_link_dijkstra(GF_FilterPid *pid, GF_Filter *ds
 	u32 i, dijsktra_node_count, dijsktra_edge_count, count = gf_list_count(fsess->registry);
 	GF_CapsBundleStore capstore;
 	Bool first;
-	u32 path_weight, max_weight=0;
+	u32 path_weight, pid_stream_type, max_weight=0;
 	u64 dijkstra_time_us, sort_time_us, start_time_us = gf_sys_clock_high_res();
-
+	const GF_PropertyValue *p;
 	if (!fsess->links || ! gf_list_count( fsess->links))
 	 	gf_filter_sess_build_graph(fsess, NULL);
 
 	dijkstra_nodes = gf_list_new();
 
 	result = NULL;
+
+	pid_stream_type = 0;
+	p = gf_filter_pid_get_property(pid, GF_PROP_PID_STREAM_TYPE);
+	if (p) pid_stream_type = p->value.uint;
 
 	//1: select all elligible filters for the graph resolution: exclude sources, sinks, explicits, blacklisted and not reconfigurable if we reconfigure
 	count = gf_list_count( fsess->links);
@@ -2516,7 +2538,7 @@ static void gf_filter_pid_resolve_link_dijkstra(GF_FilterPid *pid, GF_Filter *ds
 		//enable edge and propagate down the graph
 		edge->status = EDGE_STATUS_ENABLED;
 
-		gf_filter_pid_enable_edges(fsess, edge->src_reg, edge->src_cap_idx, pid->filter->freg, 1, edge->src_stream_type, reg_dst);
+		gf_filter_pid_enable_edges(fsess, edge->src_reg, edge->src_cap_idx, pid->filter->freg, 1, edge->src_stream_type, reg_dst, pid, pid_stream_type);
 	}
 
 	if (capstore.bundles_cap_found) gf_free(capstore.bundles_cap_found);
@@ -2657,7 +2679,6 @@ static void gf_filter_pid_resolve_link_dijkstra(GF_FilterPid *pid, GF_Filter *ds
 				redge->src_reg->cap_idx = redge->src_cap_idx;
 			} else if (fsess->flags & GF_FS_FLAG_PRINT_CONNECTIONS) {
 				GF_LOG(GF_LOG_DEBUG, GF_LOG_FILTER, ("[Filters] Dijkstra: no shorter path from filter %s distance %d from destination %s priority %d (tested %s dist %d priority %d)\n", redge->src_reg->freg->name, redge->src_reg->dist, redge->src_reg->destination ? redge->src_reg->destination->freg->name : "none", redge->priority, current_node->freg->name, dist, redge->src_reg->priority));
-
 			}
 		}
 		first = GF_FALSE;
@@ -2668,10 +2689,10 @@ static void gf_filter_pid_resolve_link_dijkstra(GF_FilterPid *pid, GF_Filter *ds
 	GF_LOG(GF_LOG_INFO, GF_LOG_FILTER, ("[Filters] Dijkstra: sorted filters in "LLU" us, Dijkstra done in "LLU" us on %d nodes %d edges\n", sort_time_us, dijkstra_time_us, dijsktra_node_count, dijsktra_edge_count));
 
 	if (result && result->destination) {
-		GF_LOG(GF_LOG_INFO, GF_LOG_FILTER, ("[Filters] Dijkstra result: %s", result->freg->name));
+		GF_LOG(GF_LOG_INFO, GF_LOG_FILTER, ("[Filters] Dijkstra result: %s(%d)", result->freg->name, result->cap_idx));
 		result = result->destination;
 		while (result->destination) {
-			GF_LOG(GF_LOG_INFO, GF_LOG_FILTER, (" %s", result->freg->name ));
+			GF_LOG(GF_LOG_INFO, GF_LOG_FILTER, (" %s(%d)", result->freg->name, result->cap_idx ));
 			gf_list_add(out_reg_chain, (void *) result->freg);
 			gf_list_add(out_reg_chain, (void *) &result->freg->caps[result->cap_idx]);
 			result = result->destination;
@@ -5990,27 +6011,32 @@ GF_Err gf_filter_pid_set_discard(GF_FilterPid *pid, Bool discard_on)
 	return GF_OK;
 }
 
-static char *gf_filter_pid_get_dst_string(GF_FilterSession *sess, const char *dst_args)
+static char *gf_filter_pid_get_dst_string(GF_FilterSession *sess, const char *_args, Bool is_dst)
 {
-	char *dst, *sep;
+	char *target, *sep;
 	char szKey[6];
 	u32 len;
-	if (!dst_args) return NULL;
+	if (!_args) return NULL;
 
-	sprintf(szKey, "dst%c", sess->sep_name);
-	dst = strstr(dst_args, szKey);
-	if (!dst) return NULL;
+	if (is_dst)
+		sprintf(szKey, "dst%c", sess->sep_name);
+	else
+		sprintf(szKey, "src%c", sess->sep_name);
 
-	sep = (char *) gf_fs_path_escape_colon(sess, dst + 4);
-	dst += 4;
-	if (sep) len = (u32) (sep - dst);
-	else len = (u32) strlen(dst);
+	target = strstr(_args, szKey);
+	if (!target) return NULL;
+
+	sep = (char *) gf_fs_path_escape_colon(sess, target + 4);
+	target += 4;
+	if (sep) len = (u32) (sep - target);
+	else len = (u32) strlen(target);
 
 	char *res = gf_malloc(sizeof(char)* (len+1));
-	memcpy(res, dst, sizeof(char)* len);
+	memcpy(res, target, sizeof(char)* len);
 	res[len]=0;
 	return res;
 }
+
 
 GF_EXPORT
 char *gf_filter_pid_get_destination(GF_FilterPid *pid)
@@ -6025,7 +6051,7 @@ char *gf_filter_pid_get_destination(GF_FilterPid *pid)
 
 	dst_args = pid->filter->dst_args;
 	if (!dst_args) dst_args = pid->filter->src_args;
-	res = gf_filter_pid_get_dst_string(pid->filter->session, dst_args);
+	res = gf_filter_pid_get_dst_string(pid->filter->session, dst_args, GF_TRUE);
 	if (res) return res;
 
 	//if not set this means we have explicetly loaded the filter
@@ -6034,7 +6060,7 @@ char *gf_filter_pid_get_destination(GF_FilterPid *pid)
 
 		dst_args = pidi->filter->dst_args;
 		if (!dst_args) dst_args = pidi->filter->src_args;
-		res = gf_filter_pid_get_dst_string(pid->filter->session, dst_args);
+		res = gf_filter_pid_get_dst_string(pid->filter->session, dst_args, GF_TRUE);
 		if (res) return res;
 
 		for (j=0; j<pidi->filter->num_output_pids; j++) {
@@ -6046,6 +6072,35 @@ char *gf_filter_pid_get_destination(GF_FilterPid *pid)
 	return NULL;
 }
 
+GF_EXPORT
+char *gf_filter_pid_get_source(GF_FilterPid *pid)
+{
+	const char *src_args;
+	char *res;
+//	GF_FilterPidInst *pidi = (GF_FilterPidInst *) pid;
+	u32 i;
+	if (PID_IS_OUTPUT(pid)) {
+		GF_LOG(GF_LOG_ERROR, GF_LOG_FILTER, ("Attempt to query source on output PID %s in filter %s not allowed\n", pid->pid->name, pid->filter->name));
+		return NULL;
+	}
+	pid = pid->pid;
+
+	src_args = pid->filter->src_args;
+	if (!src_args) src_args = pid->filter->dst_args;
+	res = gf_filter_pid_get_dst_string(pid->filter->session, src_args, GF_FALSE);
+	if (res) return res;
+
+	//if not set this means we have explicetly loaded the filter
+	for (i=0; i<pid->filter->num_input_pids; i++) {
+		GF_FilterPidInst *pidi = gf_list_get(pid->filter->input_pids, i);
+
+		src_args = pidi->pid->filter->src_args;
+		if (!src_args) src_args = pidi->pid->filter->dst_args;
+		res = gf_filter_pid_get_dst_string(pid->filter->session, src_args, GF_FALSE);
+		if (res) return res;
+	}
+	return NULL;
+}
 
 GF_EXPORT
 void gf_filter_pid_discard_block(GF_FilterPid *pid)

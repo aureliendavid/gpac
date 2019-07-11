@@ -78,15 +78,15 @@ void isor_emulate_chapters(GF_ISOFile *file, GF_InitialObjectDescriptor *iod)
 
 static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32 stsd_idx, u32 streamtype, Bool use_iod)
 {
-	u32 w, h, sr, nb_ch, codec_id, depends_on_id, esid, avg_rate, max_rate, buffer_size, sample_count, max_size, nb_refs, exp_refs, base_track, audio_fmt;
+	u32 w, h, sr, nb_ch, nb_bps, codec_id, depends_on_id, esid, avg_rate, max_rate, buffer_size, sample_count, max_size, nb_refs, exp_refs, base_track, audio_fmt;
 	GF_ESD *an_esd;
 	const char *mime, *encoding, *stxtcfg, *namespace, *schemaloc;
-	char *tk_template;
+	u8 *tk_template;
 	u32 tk_template_size;
 	GF_Language *lang_desc = NULL;
 	Bool external_base=GF_FALSE;
 	Bool has_scalable_layers = GF_FALSE;
-	char *dsi = NULL, *enh_dsi = NULL;
+	u8 *dsi = NULL, *enh_dsi = NULL;
 	u32 dsi_size = 0, enh_dsi_size = 0;
 	Double track_dur=0;
 	GF_FilterPid *pid;
@@ -191,6 +191,11 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 				gf_odf_desc_del((GF_Descriptor *) txtcfg);
 			}
 		}
+			break;
+
+		case GF_ISOM_SUBTYPE_FLAC:
+			codec_id = GF_CODECID_FLAC;
+			gf_isom_flac_config_get(read->mov, track, stsd_idx, &dsi, &dsi_size);
 			break;
 
 		case GF_QT_SUBTYPE_TWOS:
@@ -485,7 +490,7 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 			gf_filter_pid_set_property(ch->pid, GF_PROP_PID_HEIGHT_MAX, &PROP_UINT(m_h) );
 			char *tx3g_config_sdp = NULL;
 			for (i=0; i<gf_isom_get_sample_description_count(read->mov, ch->track); i++) {
-				char *tx3g;
+				u8 *tx3g;
 				char buffer[2000];
 				u32 l1;
 				u32 tx3g_len, len;
@@ -507,7 +512,7 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 
 
 		u32 tag_len;
-		const char *tag;
+		const u8 *tag;
 		if (gf_isom_apple_get_tag(read->mov, GF_ISOM_ITUNE_NAME, &tag, &tag_len)==GF_OK)
 			gf_filter_pid_set_info_str(ch->pid, "info:name", &PROP_STRING(tag) );
 
@@ -668,12 +673,17 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 		if (hspace != vspace)
 			gf_filter_pid_set_property(ch->pid, GF_PROP_PID_SAR, &PROP_FRAC_INT(hspace, vspace) );
 	}
-	sr = nb_ch = 0;
-	gf_isom_get_audio_info(read->mov,track, stsd_idx, &sr, &nb_ch, NULL);
+	sr = nb_ch = nb_bps = 0;
+	gf_isom_get_audio_info(read->mov,track, stsd_idx, &sr, &nb_ch, &nb_bps);
 	if (sr && nb_ch) {
 		u32 d1, d2;
 		gf_filter_pid_set_property(ch->pid, GF_PROP_PID_SAMPLE_RATE, &PROP_UINT(sr));
 		gf_filter_pid_set_property(ch->pid, GF_PROP_PID_NUM_CHANNELS, &PROP_UINT(nb_ch));
+
+		//to remove once we deprecate master
+		if (!gf_sys_is_test_mode())
+			gf_filter_pid_set_property(ch->pid, GF_PROP_PID_AUDIO_BPS, &PROP_UINT(nb_bps));
+
 		if (first_config ) {
 			d1 = gf_isom_get_sample_duration(read->mov, ch->track, 1);
 			d2 = gf_isom_get_sample_duration(read->mov, ch->track, 2);
@@ -798,7 +808,7 @@ void isor_update_channel_config(ISOMChannel *ch)
 
 GF_Err isor_declare_objects(ISOMReader *read)
 {
-	const char *tag;
+	const u8 *tag;
 	u32 tlen;
 	u32 i, count, j, track_id;
 	Bool highest_stream;
@@ -962,7 +972,7 @@ GF_Err isor_declare_objects(ISOMReader *read)
 				GF_LOG(GF_LOG_ERROR, GF_LOG_PARSER, ("[MP3Dmx] error setting up video pid for cover art: %s\n", gf_error_to_string(e) ));
 			}
 			if (cover_pid) {
-				char *out_buffer;
+				u8 *out_buffer;
 				GF_FilterPacket *dst_pck;
 				gf_filter_pid_set_name(cover_pid, "CoverArt");
 				dst_pck = gf_filter_pck_new_alloc(cover_pid, tlen, &out_buffer);

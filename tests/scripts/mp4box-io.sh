@@ -66,7 +66,7 @@ mp4_test ()
  #only check the logo.png
  */logo.jpg )
   return ;;
- # mkv not supported yet
+ # mkv not supported in < 0.9.0
  *.mkv )
   return ;;
  *.jpg )
@@ -91,6 +91,8 @@ mp4_test ()
   do_dnal=1
   do_hint=0 ;;
  *.png )
+  do_hint=0 ;;
+ *.flac )
   do_hint=0 ;;
  *.qcp )
   do_play=0 ;;
