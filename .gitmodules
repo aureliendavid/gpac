@@ -1,6 +1,6 @@
 [submodule "testsuite"]
 	path = testsuite
-	url = git@github.com:aureliendavid/gpac_tests.git
+	url = https://github.com/aureliendavid/gpac_tests.git
 	branch = filters
 	ignore = dirty
 
