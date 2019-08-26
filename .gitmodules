@@ -1,0 +1,3 @@
+[submodule "testsuite"]
+	path = testsuite
+	url = git@github.com:aureliendavid/gpac_tests.git
