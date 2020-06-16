@@ -1,6 +1,6 @@
 #
 # Main gpac Makefile
-# 1.1
+# 1.1aaaaaaaaaaaaaaaaaa
 include config.mak
 
 ifndef SRC_PATH
