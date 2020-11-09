@@ -5,7 +5,6 @@
 #     Authors: Jean Le Feuvre, Romain Bouqueau
 #
 #set -v
-#comment
 
 #set temporary file name
 if test ! -z "$TMPDIR" ; then
