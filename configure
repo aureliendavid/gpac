@@ -6,6 +6,7 @@
 #
 #set -v
 #set -v
+#set -v
 
 #set temporary file name
 if test ! -z "$TMPDIR" ; then
