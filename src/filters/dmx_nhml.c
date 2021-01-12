@@ -25,6 +25,9 @@
 
 #include <gpac/filters.h>
 #include <gpac/constants.h>
+
+#ifndef GPAC_DISABLE_CORE_TOOLS
+
 #include <gpac/thread.h>
 #include <gpac/list.h>
 #include <gpac/bitstream.h>
@@ -349,7 +352,7 @@ static GF_Err nhml_sample_from_xml(GF_NHMLDmxCtx *ctx, char *xml_file, char *xml
 		GF_LOG(GF_LOG_WARNING, GF_LOG_PARSER, ("[NHMLDmx] Failed to read samp->dataLength\n"));
 	}
 	e = GF_OK;
-	
+
 exit:
 	if (xml) gf_fclose(xml);
 	while (gf_list_count(breaker.id_stack)) {
@@ -1403,9 +1406,13 @@ GF_FilterRegister NHMLDmxRegister = {
 	.process = nhmldmx_process,
 	.process_event = nhmldmx_process_event
 };
+#endif /* GPAC_DISABLE_CORE_TOOLS */
 
 const GF_FilterRegister *nhmldmx_register(GF_FilterSession *session)
 {
+#ifndef GPAC_DISABLE_CORE_TOOLS
 	return &NHMLDmxRegister;
+#else
+	return NULL;
+#endif
 }
-

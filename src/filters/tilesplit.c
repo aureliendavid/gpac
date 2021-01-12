@@ -555,13 +555,16 @@ static const GF_FilterCapability TileSplitCaps[] =
 	CAP_UINT(GF_CAPS_OUTPUT, GF_PROP_PID_CODECID, GF_CODECID_HEVC_TILES)
 };
 
+#if !defined(GPAC_DISABLE_HEVC) && !defined(GPAC_DISABLE_AV_PARSERS)
 #define OFFS(_n)	#_n, offsetof(GF_TileSplitCtx, _n)
+
 
 static const GF_FilterArgs TileSplitArgs[] =
 {
 	{ OFFS(tiledrop), "specify indexes of tiles to drop (0-based, in tile raster scan order)", GF_PROP_UINT_LIST, "", NULL, GF_FS_ARG_UPDATE},
 	{0}
 };
+#endif
 
 GF_FilterRegister TileSplitRegister = {
 	.name = "tilesplit",
@@ -580,9 +583,9 @@ GF_FilterRegister TileSplitRegister = {
 	"\n"
 	"Warning: Support for dynamic changes of tiling grid has not been tested !\n"
 	)
+#if !defined(GPAC_DISABLE_HEVC) && !defined(GPAC_DISABLE_AV_PARSERS)
 	.private_size = sizeof(GF_TileSplitCtx),
 	SETCAPS(TileSplitCaps),
-#if !defined(GPAC_DISABLE_HEVC) && !defined(GPAC_DISABLE_AV_PARSERS)
 	.initialize = tilesplit_initialize,
 	.finalize = tilesplit_finalize,
 	.args = TileSplitArgs,
@@ -602,5 +605,3 @@ const GF_FilterRegister *tilesplit_register(GF_FilterSession *session)
 #endif
 	return &TileSplitRegister;
 }
-
-

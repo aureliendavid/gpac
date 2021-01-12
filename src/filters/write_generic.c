@@ -25,6 +25,9 @@
 
 #include <gpac/filters.h>
 #include <gpac/constants.h>
+
+#ifndef GPAC_DISABLE_CORE_TOOLS
+
 #include <gpac/bitstream.h>
 #include <gpac/xml.h>
 #include <gpac/base_coding.h>
@@ -1402,11 +1405,11 @@ static GF_Err writegen_initialize(GF_Filter *filter)
 	}
 	return GF_OK;
 }
-
+#endif /* GPAC_DISABLE_CORE_TOOLS */
 
 const GF_FilterRegister *writegen_register(GF_FilterSession *session)
 {
-
+#ifndef GPAC_DISABLE_CORE_TOOLS
 	//assign runtime caps on first load
 	if (!strcmp(GenDumpCaps[3].val.value.string, "gpac")) {
 		GenDumpCaps[3].val.value.string = (char *) gf_pixel_fmt_all_shortnames();
@@ -1416,5 +1419,7 @@ const GF_FilterRegister *writegen_register(GF_FilterSession *session)
 	}
 
 	return &GenDumpRegister;
+#else
+	return NULL;
+#endif
 }
-

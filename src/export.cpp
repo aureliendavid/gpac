@@ -362,6 +362,7 @@
 #pragma comment (linker, EXPORT_SYMBOL(gf_cfg_get_filename) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_cfg_discard_changes) )
 
+#ifndef GPAC_DISABLE_CORE_TOOLS
 #pragma comment (linker, EXPORT_SYMBOL(gf_opts_get_key) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_opts_set_key) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_opts_get_key_name) )
@@ -374,7 +375,7 @@
 #pragma comment (linker, EXPORT_SYMBOL(gf_opts_get_int) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_opts_get_filename) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_opts_default_shared_directory) )
-
+#endif
 
 #ifndef GPAC_DISABLE_PLAYER
 #pragma comment (linker, EXPORT_SYMBOL(gf_modules_new) )
@@ -2596,4 +2597,3 @@
 #pragma comment (linker, EXPORT_SYMBOL(gf_cicp_color_primaries_all_names) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_cicp_color_transfer_all_names) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_cicp_color_matrix_all_names) )
-

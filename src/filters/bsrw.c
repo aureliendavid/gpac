@@ -25,6 +25,9 @@
 
 #include <gpac/filters.h>
 #include <gpac/constants.h>
+
+#ifndef GPAC_DISABLE_ISOM
+
 #include <gpac/internal/media_dev.h>
 #include <gpac/mpeg4_odf.h>
 
@@ -44,6 +47,7 @@ struct _bsrw_pid_ctx
 	u32 nalu_size_length;
 
 	GF_VUIInfo vui;
+
 	Bool rewrite_vui;
 };
 
@@ -661,8 +665,11 @@ GF_FilterRegister BSRWRegister = {
 	.update_arg = bsrw_update_arg
 };
 
+#endif /* GPAC_DISABLE_ISOM */
+
 const GF_FilterRegister *bsrw_register(GF_FilterSession *session)
 {
+#ifndef GPAC_DISABLE_ISOM
 	//assign runtime caps on first load
 	if (gf_opts_get_bool("temp", "helponly")) {
 		BSRWArgs[0].min_max_enum = gf_cicp_color_primaries_all_names();
@@ -670,4 +677,7 @@ const GF_FilterRegister *bsrw_register(GF_FilterSession *session)
 		BSRWArgs[2].min_max_enum = gf_cicp_color_matrix_all_names();
 	}
 	return (const GF_FilterRegister *) &BSRWRegister;
+#else
+	return NULL;
+#endif
 }

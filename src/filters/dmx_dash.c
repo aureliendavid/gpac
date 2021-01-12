@@ -69,7 +69,7 @@ typedef struct
 	//http io for manifest
 	GF_DASHFileIO dash_io;
 	GF_DownloadManager *dm;
-	
+
 	Bool reuse_download_session;
 
 	Bool initial_setup_done;
@@ -1985,14 +1985,14 @@ static Bool dashdmx_process_event(GF_Filter *filter, const GF_FilterEvent *fevt)
 		gf_dash_override_ntp(ctx->dash, com->addon_time.ntp);
 		return GF_TRUE;
 #endif
-            
+
 	case GF_FEVT_FILE_DELETE:
 		//check if we want that in other forward mode
 		if (ctx->forward==DFWD_FILE) {
 			for (i=0; i<gf_dash_get_group_count(ctx->dash); i++) {
 				group = gf_dash_get_group_udta(ctx->dash, i);
 				if (!group || !group->template) continue;
-				
+
 				if (!strncmp(group->template, fevt->file_del.url, strlen(group->template) )) {
 					GF_FilterPid *pid = dashdmx_opid_from_group(ctx, group);
 					if (pid) {
@@ -2428,7 +2428,7 @@ GF_Err dashin_abort(GF_DASHDmxCtx *ctx)
 {
 	u32 i;
 	if (ctx->in_error) return GF_EOS;
-	
+
 	for (i=0; i<gf_filter_get_ipid_count(ctx->filter); i++) {
 		GF_FilterEvent evt;
 		GF_FilterPid *pid = gf_filter_get_ipid(ctx->filter, i);
@@ -2881,12 +2881,12 @@ const GF_FilterRegister *dashdmx_register(GF_FilterSession *session)
 #endif
 }
 
+#ifndef GPAC_DISABLE_DASH_CLIENT
 static s32 dashdmx_rate_adaptation_ext(void *udta, u32 group_idx, u32 base_group_idx, Bool force_lower_complexity, GF_DASHCustomAlgoInfo *stats)
 {
 	GF_DASHDmxCtx *ctx = (GF_DASHDmxCtx*) udta;
 	return ctx->on_rate_adaptation(ctx->rt_udta, group_idx, base_group_idx, force_lower_complexity, stats);
 }
-
 
 typedef struct
 {
@@ -2911,7 +2911,7 @@ s32 dashdmx_download_monitor_ext(void *udta, u32 group_idx, u32 bits_per_sec, u6
 	stats.current_seg_dur = current_seg_dur;
 	return ctx->on_download_monitor(ctx->rt_udta, group_idx, &stats);
 }
-
+#endif
 
 GF_EXPORT
 GF_Err gf_filter_bind_dash_algo_callbacks(GF_Filter *filter, void *udta,

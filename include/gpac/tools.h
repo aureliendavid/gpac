@@ -1819,7 +1819,7 @@ void gf_sha1_csum(u8 *buf, u32 buflen, u8 digest[GF_SHA1_DIGEST_SIZE]);
 \addtogroup libsys_grp
 @{
 */
-
+#ifndef GPAC_DISABLE_CORE_TOOLS
 /*! gets a global config key value from its section and name.
 \param secName the desired key parent section name
 \param keyName the desired key name
@@ -1902,6 +1902,7 @@ const char *gf_opts_get_filename();
  */
 Bool gf_opts_default_shared_directory(char *path_buffer);
 
+#endif /* GPAC_DISABLE_CORE_TOOLS */
 /*! @} */
 
 
@@ -1948,7 +1949,7 @@ void gf_fm_request_call(u32 type, u32 param, int *value);
 
 /*to call whenever the OpenGL library is opened - this function is needed to bind openGL and remotery, and to load
 openGL extensions on windows
-not exported, and not included in src/compositor/gl_inc.h since it may be needed even when no OpenGL 
+not exported, and not included in src/compositor/gl_inc.h since it may be needed even when no OpenGL
 calls are made by the caller*/
 void gf_opengl_init();
 
@@ -2010,4 +2011,3 @@ void gf_gl_txw_reset(GF_GLTextureWrapper *tx);
 
 
 #endif		/*_GF_CORE_H_*/
-

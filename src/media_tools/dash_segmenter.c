@@ -92,7 +92,7 @@ struct __gf_dash_segmenter
 
 	Bool mvex_after_traks;
 	u32 sdtp_in_traf;
-	
+
 	//some HLS options
 	Bool hls_clock;
 
@@ -1059,7 +1059,7 @@ static GF_Err gf_dasher_setup(GF_DASHSegmenter *dasher)
 		}
 
 		if (!di->filter_chain) {
-			//assign this source 
+			//assign this source
 			gf_filter_set_source(dasher->output, src, NULL);
 			continue;
 		}
@@ -1118,6 +1118,8 @@ static GF_Err gf_dasher_setup(GF_DASHSegmenter *dasher)
 
 GF_Err dash_state_check_timing(const char *dash_state, u64 *next_gen_ntp_ms, u32 *next_time_ms)
 {
+#ifndef GPAC_DISABLE_CORE_TOOLS
+
 	u64 next_gen_ntp = 0;
 	GF_Err e = GF_OK;
 	GF_DOMParser *mpd_parser;
@@ -1154,6 +1156,8 @@ GF_Err dash_state_check_timing(const char *dash_state, u64 *next_gen_ntp_ms, u32
 			return GF_EOS;
 		}
 	}
+#endif /* GPAC_DISABLE_CORE_TOOLS */
+
 	return GF_OK;
 }
 
@@ -1215,4 +1219,3 @@ GF_Err gf_dasher_process(GF_DASHSegmenter *dasher)
 	}
 	return GF_OK;
 }
-

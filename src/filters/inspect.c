@@ -1863,7 +1863,7 @@ static void inspect_dump_property(GF_InspectCtx *ctx, FILE *dump, u32 p4cc, cons
 	if (ctx->xml) {
 		if (ctx->dtype)
 			gf_fprintf(dump, " type=\"%s\"", gf_props_get_type_name(att->type) );
-			
+
 		if (pname && strchr(pname, ' ')) {
 			u32 i=0, k;
 			char *pname_no_space = gf_strdup(pname);
@@ -2284,6 +2284,7 @@ static void inspect_dump_tmcd(GF_InspectCtx *ctx, PidCtx *pctx, char *data, u32 
 	gf_fprintf(dump, " time=\"%s%02d:%02d:%02d:%02d\"/>\n", neg ? "-" : "", h, m, s, f);
 }
 
+#ifndef GPAC_DISABLE_AV_PARSERS
 static void inspect_dump_vpx(GF_InspectCtx *ctx, FILE *dump, u8 *ptr, u64 frame_size, Bool dump_crc, PidCtx *pctx, u32 vpversion)
 {
 	GF_Err e;
@@ -2367,6 +2368,7 @@ static void inspect_dump_ac3_eac3(GF_InspectCtx *ctx, FILE *dump, u8 *ptr, u64 f
 	gf_fprintf(dump, "/>\n");
 	gf_bs_set_logger(pctx->bs, NULL, NULL);
 }
+#endif /* GPAC_DISABLE_AV_PARSERS */
 
 static void inspect_dump_packet(GF_InspectCtx *ctx, FILE *dump, GF_FilterPacket *pck, u32 pid_idx, u64 pck_num, PidCtx *pctx)
 {
@@ -2635,6 +2637,7 @@ props_done:
 		case GF_CODECID_MHAS:
 			gf_inspect_dump_mhas(dump, (char *) data, size, ctx->crc, pctx);
 			break;
+#ifndef GPAC_DISABLE_AV_PARSERS
 		case GF_CODECID_VP8:
 			inspect_dump_vpx(ctx, dump, (char *) data, size, ctx->crc, pctx, 8);
 			break;
@@ -2647,6 +2650,7 @@ props_done:
 		case GF_CODECID_EAC3:
 			inspect_dump_ac3_eac3(ctx, dump, (char *) data, size, ctx->crc, pctx, 1);
 			break;
+#endif
 		case GF_CODECID_TRUEHD:
 			gf_bs_reassign_buffer(pctx->bs, data, size);
 			gf_inspect_dump_truehd_frame(dump, pctx->bs);
@@ -2699,9 +2703,8 @@ static void inspect_reset_parsers(PidCtx *pctx, void *keep_parser_address)
 
 static void inspect_dump_pid(GF_InspectCtx *ctx, FILE *dump, GF_FilterPid *pid, u32 pid_idx, Bool is_connect, Bool is_remove, u64 pck_for_config, Bool is_info, PidCtx *pctx)
 {
-	u32 idx=0, nalh_size;
+	u32 idx=0, nalh_size, i;
 #ifndef GPAC_DISABLE_AV_PARSERS
-	u32 i;
 	GF_NALUFFParam *slc;
 #endif
 	GF_AVCConfig *avcc, *svcc;
@@ -3131,6 +3134,7 @@ static void inspect_dump_pid(GF_InspectCtx *ctx, FILE *dump, GF_FilterPid *pid, 
 			GF_LOG(GF_LOG_WARNING, GF_LOG_AUTHOR, ("[Inspect] bitstream analysis for codec %s not supported, only configuration is\n", gf_codecid_name(pctx->codec_id)));
 		}
 		if (dsi) {
+#ifndef GPAC_DISABLE_AV_PARSERS
 			GF_M4ADecSpecInfo acfg;
 			InspectLogCbk lcbk;
 
@@ -3158,6 +3162,7 @@ static void inspect_dump_pid(GF_InspectCtx *ctx, FILE *dump, GF_FilterPid *pid, 
 			}
 			if (acfg.comments[0])
 				gf_fprintf(dump, "comments=\"%s\" ", acfg.comments);
+#endif /* GPAC_DISABLE_AV_PARSERS */
 			gf_fprintf(dump, "/>\n");
 		} else {
 			gf_fprintf(dump, "/>\n");
@@ -3272,7 +3277,7 @@ static GF_Err inspect_process(GF_Filter *filter)
 			}
 		}
 		if (!pck) continue;
-		
+
 		pctx->pck_for_config++;
 		pctx->pck_num++;
 
@@ -3289,7 +3294,7 @@ static GF_Err inspect_process(GF_Filter *filter)
 				}
 			}
 		}
-		
+
 		if (ctx->dur.num && ctx->dur.den) {
 			u64 timescale = gf_filter_pck_get_timescale(pck);
 			u64 ts = gf_filter_pck_get_dts(pck);
@@ -3712,6 +3717,3 @@ const GF_FilterRegister *probe_register(GF_FilterSession *session)
 {
 	return &ProbeRegister;
 }
-
-
-

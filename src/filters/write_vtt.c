@@ -25,6 +25,9 @@
 
 #include <gpac/filters.h>
 #include <gpac/constants.h>
+
+#ifndef GPAC_DISABLE_VTT
+
 #include <gpac/bitstream.h>
 #include <gpac/webvtt.h>
 #include <gpac/internal/media_dev.h>
@@ -331,9 +334,13 @@ GF_FilterRegister WebVTTMxRegister = {
 	.configure_pid = vttmx_configure_pid,
 	.process = vttmx_process
 };
-
+#endif /* GPAC_DISABLE_VTT */
 
 const GF_FilterRegister *vttmx_register(GF_FilterSession *session)
 {
+#ifndef GPAC_DISABLE_VTT
 	return &WebVTTMxRegister;
+#else
+	return NULL;
+#endif
 }

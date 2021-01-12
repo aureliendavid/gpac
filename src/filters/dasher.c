@@ -25,6 +25,9 @@
 
 #include <gpac/filters.h>
 #include <gpac/constants.h>
+
+#ifndef GPAC_DISABLE_CORE_TOOLS
+
 #include <gpac/iso639.h>
 #include <gpac/mpd.h>
 #include <gpac/internal/media_dev.h>
@@ -207,7 +210,7 @@ typedef struct
 	Bool force_hls_ll_manifest;
 
 	u32 forward_mode;
-	
+
 	u8 last_hls_signature[GF_SHA1_DIGEST_SIZE], last_mpd_signature[GF_SHA1_DIGEST_SIZE], last_hls2_signature[GF_SHA1_DIGEST_SIZE];
 } GF_DasherCtx;
 
@@ -362,7 +365,7 @@ typedef struct _dash_stream
 	Bool cues_use_edits;
 	s32 cues_ts_offset;
 	Bool inband_cues;
-	
+
 	Bool clamp_done;
 	Bool dcd_not_ready;
 
@@ -1858,7 +1861,7 @@ static Bool dasher_same_adaptation_set(GF_DasherCtx *ctx, GF_DashStream *ds, GF_
 	//in all forward mode we don't rewrite the manifest, make each source file a single as
 	if (ctx->forward_mode==DASHER_FWD_ALL)
 		return GF_FALSE;
-		
+
 	//muxed representations
 	if (ds_test->muxed_base) {
 		if (ds_test->muxed_base == ds)
@@ -2215,7 +2218,7 @@ static void dasher_open_destination(GF_Filter *filter, GF_DasherCtx *ctx, GF_MPD
 		char szKey[20], *sep;
 		sprintf(szSRC, "%c", sep_args);
 		gf_dynstrcat(&szDST, szSRC, NULL);
-		
+
 		gf_dynstrcat(&szDST, dst_args, NULL);
 		sprintf(szKey, "%c%c", sep_args, sep_args);
 		sep = strstr(szDST, szKey);
@@ -2310,7 +2313,7 @@ static void dasher_open_destination(GF_Filter *filter, GF_DasherCtx *ctx, GF_MPD
 	}
 	if (trailer_args)
 		gf_dynstrcat(&szDST, trailer_args, NULL);
-		
+
 	ds->dst_filter = gf_filter_connect_destination(filter, szDST, &e);
 	gf_free(szDST);
 	szDST = NULL;
@@ -5099,7 +5102,7 @@ static GF_Err dasher_switch_period(GF_Filter *filter, GF_DasherCtx *ctx)
 				p2 = gf_filter_pid_get_property(a_ds->ipid, GF_PROP_PID_FILEPATH);
 				if (p1 && p2 && gf_props_equal(p1, p2)) split_init = GF_TRUE;
 			}
-			
+
 			if (split_init) {
 				ds->split_set_names = GF_TRUE;
 				a_ds->split_set_names = GF_TRUE;
@@ -5649,7 +5652,7 @@ static char *dasher_strip_base(GF_DasherCtx *ctx, char *url)
 	char *res = url;
 
 	if (!manifest_path || !url) return NULL;
-	
+
 	if (!strncmp(manifest_path, "./", 2)) manifest_path+=2;
 	if (!strncmp(file_path, "./", 2)) file_path+=2;
 
@@ -6697,7 +6700,7 @@ static GF_Err dasher_process(GF_Filter *filter)
 				u32 idx, nb_queued, nb_pck = gf_list_count(ds->packet_queue);
 				nb_queued = nb_pck;
 				if (is_queue_flush) nb_queued += 1;
-				
+
 				for (idx=1; idx<nb_queued; idx++) {
 					GF_FilterPacket *next;
 					if (idx==nb_pck) {
@@ -7995,8 +7998,13 @@ GF_FilterRegister DasherRegister = {
 	.process_event = dasher_process_event,
 };
 
+#endif /* GPAC_DISABLE_CORE_TOOLS */
 
 const GF_FilterRegister *dasher_register(GF_FilterSession *session)
 {
+#ifndef GPAC_DISABLE_CORE_TOOLS
 	return &DasherRegister;
+#else
+	return NULL;
+#endif
 }

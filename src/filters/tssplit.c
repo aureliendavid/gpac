@@ -25,6 +25,9 @@
 
 #include <gpac/filters.h>
 #include <gpac/constants.h>
+
+#ifndef GPAC_DISABLE_MPEG2TS
+
 #include <gpac/thread.h>
 #include <gpac/list.h>
 #include <gpac/bitstream.h>
@@ -475,9 +478,13 @@ GF_FilterRegister M2TSSplitRegister = {
 	.process = m2tssplit_process,
 	.process_event = m2tssplit_process_event,
 };
+#endif /* GPAC_DISABLE_MPEG2TS */
 
 const GF_FilterRegister *m2tssplit_register(GF_FilterSession *session)
 {
+#ifndef GPAC_DISABLE_MPEG2TS
 	return &M2TSSplitRegister;
+#else
+	return NULL;
+#endif
 }
-

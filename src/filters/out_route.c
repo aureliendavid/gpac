@@ -26,6 +26,9 @@
 
 #include <gpac/filters.h>
 #include <gpac/constants.h>
+
+#ifndef GPAC_DISABLE_ROUTE
+
 #include <gpac/xml.h>
 #include <gpac/route.h>
 #include <gpac/network.h>
@@ -2112,9 +2115,13 @@ GF_FilterRegister ROUTEOutRegister = {
 	.process = routeout_process,
 	.use_alias = routeout_use_alias
 };
-
+#endif /* GPAC_DISABLE_ROUTE */
 
 const GF_FilterRegister *routeout_register(GF_FilterSession *session)
 {
+#ifndef GPAC_DISABLE_ROUTE
 	return &ROUTEOutRegister;
+#else
+	return NULL;
+#endif
 }

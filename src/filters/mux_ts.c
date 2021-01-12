@@ -25,6 +25,9 @@
 
 #include <gpac/filters.h>
 #include <gpac/constants.h>
+
+#ifndef GPAC_DISABLE_MPEG2TS_MUX
+
 #include <gpac/mpegts.h>
 #include <gpac/iso639.h>
 #include <gpac/webvtt.h>
@@ -678,7 +681,7 @@ static void tsmux_setup_esi(GF_TSMuxCtx *ctx, GF_M2TS_Mux_Program *prog, M2Pid *
 
 	memset(&tspid->esi, 0, sizeof(GF_ESInterface));
 	tspid->esi.stream_type = stream_type;
-	
+
 	p = gf_filter_pid_get_property(tspid->ipid, GF_PROP_PID_TIMESCALE);
 	tspid->esi.timescale = p->value.uint;
 
@@ -838,7 +841,7 @@ static void tsmux_setup_temi(GF_TSMuxCtx *ctx, M2Pid *tspid)
 		}
 
 		sep = strchr(temi_cfg, ',');
-		if (sep) sep[0] = 0;	
+		if (sep) sep[0] = 0;
 
 		done = GF_TRUE;
 		if (temi_index && (temi_index!=st_idx)) done = GF_FALSE;
@@ -1735,9 +1738,13 @@ GF_FilterRegister TSMuxRegister = {
 	.process = tsmux_process,
 	.process_event = tsmux_process_event,
 };
-
+#endif /* GPAC_DISABLE_MPEG2TS_MUX */
 
 const GF_FilterRegister *tsmux_register(GF_FilterSession *session)
 {
+#ifndef GPAC_DISABLE_MPEG2TS_MUX
 	return &TSMuxRegister;
+#else
+	return NULL;
+#endif
 }

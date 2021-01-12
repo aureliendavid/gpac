@@ -307,6 +307,7 @@ GF_PropertyValue gf_props_parse_value(u32 type, const char *name, const char *va
 				p.value.string = data;
 			}
 		} else if (value && !strnicmp(value, "bxml@", 5) ) {
+#ifndef GPAC_DISABLE_CORE_TOOLS
 			GF_Err e;
 			GF_DOMParser *dom = gf_xml_dom_new();
 			e = gf_xml_dom_parse(dom, value+5, NULL, NULL);
@@ -325,6 +326,7 @@ GF_PropertyValue gf_props_parse_value(u32 type, const char *name, const char *va
 				}
 			}
 			gf_xml_dom_del(dom);
+#endif /* GPAC_DISABLE_CORE_TOOLS */
 		} else {
 			p.value.string = value ? gf_strdup(value) : NULL;
 		}
@@ -352,6 +354,7 @@ GF_PropertyValue gf_props_parse_value(u32 type, const char *name, const char *va
 				p.value.data.ptr[i] = res;
 			}
 		} else if (!strnicmp(value, "bxml@", 5) ) {
+#ifndef GPAC_DISABLE_CORE_TOOLS
 			GF_Err e;
 			GF_DOMParser *dom = gf_xml_dom_new();
 			e = gf_xml_dom_parse(dom, value+5, NULL, NULL);
@@ -368,6 +371,7 @@ GF_PropertyValue gf_props_parse_value(u32 type, const char *name, const char *va
 				}
 			}
 			gf_xml_dom_del(dom);
+#endif /* GPAC_DISABLE_CORE_TOOLS */
 		} else if (!strnicmp(value, "file@", 5) ) {
 			GF_Err e = gf_file_load_data(value+5, (u8 **) &p.value.data.ptr, &p.value.data.size);
 			if (e) {
@@ -684,7 +688,7 @@ GF_PropertyMap * gf_props_new(GF_Filter *filter)
 	if (!map) {
 		GF_SAFEALLOC(map, GF_PropertyMap);
 		if (!map) return NULL;
-		
+
 		map->session = filter->session;
 #if GF_PROPS_HASHTABLE_SIZE
 #else
@@ -1084,7 +1088,7 @@ const GF_PropertyValue *gf_props_enum_property(GF_PropertyMap *props, u32 *io_id
 	u32 i, nb_items = 0;
 #endif
 	u32 idx, count;
-	
+
 	const GF_PropertyEntry *pe;
 	if (!io_idx) return NULL;
 
@@ -1733,4 +1737,3 @@ const char *gf_props_dump(u32 p4cc, const GF_PropertyValue *att, char dump[GF_PR
 	}
 	return "";
 }
-

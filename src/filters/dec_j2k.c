@@ -34,6 +34,7 @@
 
 #include <gpac/constants.h>
 #include <gpac/isomedia.h>
+#include <gpac/bitstream.h>
 
 #include <openjpeg.h>
 
@@ -625,4 +626,3 @@ const GF_FilterRegister *j2kdec_register(GF_FilterSession *session)
 	return NULL;
 #endif
 }
-

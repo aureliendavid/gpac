@@ -1492,7 +1492,7 @@ static struct _itags {
 	u32 id3tag;
 	u32 type;
 } itunes_tags[] = {
-
+#ifndef GPAC_DISABLE_ISOM
 	{"album", GF_ISOM_ITUNE_ALBUM, GF_ID3V2_FRAME_TALB, GF_ITAG_STR},
 	{"artist", GF_ISOM_ITUNE_ARTIST, GF_ID3V2_FRAME_TPE1, GF_ITAG_STR},
 	{"comment", GF_ISOM_ITUNE_COMMENT, 0, GF_ITAG_SUBSTR},
@@ -1512,6 +1512,7 @@ static struct _itags {
 	{"album_artist", GF_ISOM_ITUNE_ALBUM_ARTIST, GF_ID3V2_FRAME_TPE2, GF_ITAG_SUBSTR},
 	{"gapless", GF_ISOM_ITUNE_GAPLESS, 0, GF_ITAG_BOOL},
 	{"conductor", GF_ISOM_ITUNE_CONDUCTOR, GF_ID3V2_FRAME_TPE3, GF_ITAG_STR},
+#endif
 };
 
 GF_EXPORT
