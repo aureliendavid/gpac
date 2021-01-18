@@ -336,6 +336,9 @@
     <Bscmake>
       <SuppressStartupBanner>true</SuppressStartupBanner>
     </Bscmake>
+    <Manifest>
+      <AdditionalManifestFiles>$(SolutionDir)gpac_manifest.xml %(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <Midl>
@@ -513,6 +516,9 @@
       <Command>
       </Command>
     </PostBuildEvent>
+    <Manifest>
+      <AdditionalManifestFiles>$(SolutionDir)gpac_manifest.xml %(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\..\applications\mp4box\filedump.c">

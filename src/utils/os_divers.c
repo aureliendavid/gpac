@@ -1995,7 +1995,21 @@ const char * gf_get_default_cache_directory_ex(Bool do_create)
 #ifdef _WIN32_WCE
 	strcpy(szCacheDir, "\\windows\\temp" );
 #elif defined(WIN32)
-	GetTempPath(GF_MAX_PATH, szCacheDir);
+	u32 tmpret = GetEnvironmentVariable("TMP", szCacheDir, GF_MAX_PATH);
+	if (tmpret < 0 || tmpret > GF_MAX_PATH) {
+		tmpret = GetEnvironmentVariable("TEMP", szCacheDir, GF_MAX_PATH);
+		if (tmpret < 0 || tmpret > GF_MAX_PATH) {
+			tmpret = GetEnvironmentVariable("USERPROFILE", szCacheDir, GF_MAX_PATH);
+			if (tmpret < 0 || tmpret > GF_MAX_PATH) {
+				tmpret = GetWindowsDirectory(szCacheDir, GF_MAX_PATH);
+				if (tmpret < 0 || tmpret > GF_MAX_PATH) {
+					GF_LOG(GF_LOG_ERROR, GF_LOG_CORE, ("Cannot init a temp directory\n"));
+					szCacheDir[0] = '\0';
+					return szCacheDir;
+				}
+			}
+		}
+	}
 #elif defined(GPAC_CONFIG_ANDROID)
 	strcpy(szCacheDir, "/data/data/com.gpac.Osmo4/cache");
 #else
@@ -2010,11 +2024,14 @@ const char * gf_get_default_cache_directory_ex(Bool do_create)
 		szCacheDir[len+1] = 0;
 	}
 
-	strcat(szCacheDir, "gpac_cache");
+	if (strlen(szCacheDir) + strlen("gpac_cache") < GF_MAX_PATH) {
+		strcat(szCacheDir, "gpac_cache");
 
-	if (do_create && !gf_dir_exists(szCacheDir) && gf_mkdir(szCacheDir)!=GF_OK ) {
-		strcpy(szCacheDir, root_tmp);
-		return szCacheDir;
+		if (do_create && !gf_dir_exists(szCacheDir) && gf_mkdir(szCacheDir) != GF_OK) {
+			strcpy(szCacheDir, root_tmp);
+			return szCacheDir;
+		}
+
 	}
 	return szCacheDir;
 }
