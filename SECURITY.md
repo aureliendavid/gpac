@@ -13,7 +13,7 @@ Thus only reports that are confirmed reproducible on the current `HEAD` of the `
 
 ## Reporting a Vulnerability
 
-Vulnerability reports (as well as other bugs) should be reported directly using the [Github issue trakcer](https://github.com/gpac/gpac/issues). 
+Vulnerabilities (as well as other bugs) should be reported directly using the [Github issue trakcer](https://github.com/gpac/gpac/issues). 
 
 Please include all information needed to reproduce the issue, including a sample file. 
 
