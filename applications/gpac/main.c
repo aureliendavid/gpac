@@ -1835,8 +1835,9 @@ static void gpac_check_session_args()
 	if (opts) gf_cfg_del(opts);
 }
 
-static int gpac_main(int argc, char **argv)
+int gpac_main(int argc, char **argv)
 {
+	fprintf(stderr, "hellow from main in gpacc\n");
 	GF_Err e=GF_OK;
 	int i;
 	const char *profile=NULL;
