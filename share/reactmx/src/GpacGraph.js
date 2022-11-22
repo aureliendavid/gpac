@@ -84,6 +84,7 @@ export default class GpacGraph extends React.Component {
 
         console.log("GpacGraph did MOUNT with props ", this.props)
 
+        var self = this;
 
         this.container = document.querySelector("#graphContainer");
         this.graph = new mxnspaceobj.mxGraph(this.container);
@@ -127,15 +128,22 @@ export default class GpacGraph extends React.Component {
 
             console.log("selection changed", unselected, selected);
 
-            // if (unselected && unselected.length > 0) {
-            //     if (self.OnUnselectCell)
-            //         self.OnUnselectCell(unselected[0]);
-            // }
+            function callSelectionEvent(cb, cells) {
+                if (cb && cells && cells.length > 0) {
+                    let cell = cells[0];
+                    if (cell.vertex && cell.id.startsWith("v:")) {
+                        cb(cell.value.idx);
+                    }
+                }
+            }
 
-            // if (selected) {
-            //     if (self.OnSelectCell)
-            //         self.OnSelectCell(selected[0]);
-            // }
+            callSelectionEvent(self.props.onUnselectCell, unselected);
+            callSelectionEvent(self.props.onSelectCell, selected);
+
+            if (!selected || selected.length==0) {
+                if (self.props.onExitSelection)
+                    self.props.onExitSelection();
+            }
             // else {
             //     if (self.OnExitSelection)
             //         self.OnExitSelection();
@@ -401,22 +409,7 @@ export default class GpacGraph extends React.Component {
         }
 
 
-        //----------------------------------------------------
-        // // -- The rest is the same as usually found in examples -- //
 
-        // new mxRubberband(graph);
-        // let parent = graph.getDefaultParent();
-
-        // graph.getModel().beginUpdate();
-        // try {
-        //     const v1 = graph.insertVertex(parent, null,
-        //        'Hello,', 20, 20, 80, 30);
-        //     const v2 = graph.insertVertex(parent, null,
-        //        'World!', 200, 150, 80, 30);
-        //     const e1 = graph.insertEdge(parent, null, '', v1, v2);
-        // } finally {
-        //     graph.getModel().endUpdate();
-        // }
     }
 
     render(){

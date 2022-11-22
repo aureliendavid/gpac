@@ -8,9 +8,8 @@
     background: url('../img/grid.gif');
 }
 
-.filter_table {
-    /* height: 100px;
-    width: 200px; */
+#filter_table > thead {
+    text-align: left;
 }
 
 .filter_name {
@@ -44,7 +43,7 @@
     min-width: 350px;
     padding-left:25px;
     /* float: right; */
-    font-size: 11px;
+    font-size: 16px;
     font-family: 'Courier New', Courier, monospace;
     border-left: 2px blueviolet dashed;
     overflow-x: auto;
@@ -57,7 +56,7 @@
 
 .details_header {
     font-family:Arial, Helvetica, sans-serif;
-    font-size: 14;
+    font-size: 14px;
     /* text-align: center; */
     font-weight: bolder;
     color:cornflowerblue;

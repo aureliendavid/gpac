@@ -274,7 +274,7 @@ session.set_new_filter_fun( (f) => {
 		// print(JSON.stringify(jsf, null, 2));
 		all_filters.push(f);
 		if (draned_once) {
-			sys.sleep(100);
+			sys.sleep(50);
 			send_all_filters();
 		}
 } );
@@ -285,7 +285,7 @@ session.set_del_filter_fun( (f) => {
 	if (idx>=0)
 		all_filters.splice(idx, 1);
 	if (draned_once) {
-		sys.sleep(100);
+		sys.sleep(50);
 		send_all_filters();
 	}
 });
