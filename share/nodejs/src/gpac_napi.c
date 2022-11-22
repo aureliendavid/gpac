@@ -286,6 +286,16 @@ napi_value gpac_set_rmt_fun(napi_env env, napi_callback_info info)
 	napi_create_reference(env, argv[0], 1, &gpac->rmt_ref);
 	return NULL;
 }
+
+napi_value gpac_rmt_log(napi_env env, napi_callback_info info)
+{
+	NARG_ARGS(1, 1)
+	NARG_STR(msg, 0, NULL);
+	if (msg)
+		gf_sys_profiler_log(msg);
+	return NULL;
+}
+
 napi_value gpac_rmt_send(napi_env env, napi_callback_info info)
 {
 	NARG_ARGS(1, 1)
@@ -3864,7 +3874,7 @@ void fs_on_filter_creation(void *udta, GF_Filter *filter, Bool is_destroy)
 	napi_env env = napi_fs->env;
 
 	//set to NULL means final nodeJS addon shutdown, do not notify
-	
+
 	if (napi_fs->async_ctx != NULL) {
 		GPAC_NAPI *gpac;
 		if ( napi_get_instance_data(env, (void **) &gpac) != napi_ok) {

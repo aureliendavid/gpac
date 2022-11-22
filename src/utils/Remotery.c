@@ -3500,6 +3500,7 @@ typedef enum MessageID
     MsgID_LogText,
     MsgID_SampleTree,
     MsgID_None,
+    MsgID_SendText,
     MsgID_Force32Bits = 0xFFFFFFFF,
 } MessageID;
 
@@ -4757,6 +4758,7 @@ static rmtError Remotery_ConsumeMessageQueue(Remotery* rmt)
 
             // Dispatch to message handler
             case MsgID_LogText:
+            case MsgID_SendText:
                 error = Remotery_SendLogTextMessage(rmt, message);
                 break;
             case MsgID_SampleTree:
@@ -5325,6 +5327,40 @@ static rmtBool QueueLine(rmtMessageQueue* queue, unsigned char* text, rmtU32 siz
     return RMT_TRUE;
 }
 
+
+RMT_API void _rmt_SendText(rmtPStr text) {
+
+    //fprintf(stderr, "_rmt_SendText size % d: % s\n", strlen(text), text);
+
+    //do not check for sampling enabled here
+    if (g_Remotery == NULL)
+        return;
+
+    ThreadSampler* ts;
+    Message* message;
+    rmtU32 size = strlen(text);
+
+    Remotery_GetThreadSampler(g_Remotery, &ts);
+
+    //rmtBool res = QueueLine(g_Remotery->mq_to_rmt_thread, (unsigned char*)text, strlen(text), ts);
+
+    //fprintf(stderr, "RMT sent line of size %d with res %d: %s\n", strlen(text), res, text);
+
+
+    // Allocate some space for the line
+    message = rmtMessageQueue_AllocMessage(g_Remotery->mq_to_rmt_thread, size, &ts);
+    if (message == NULL)
+        return;
+
+    // Copy the text and commit the message
+    memcpy(message->payload, text, size);
+    rmtMessageQueue_CommitMessage(message, MsgID_SendText);
+
+    //return RMT_TRUE;
+
+
+
+}
 
 RMT_API void _rmt_LogText(rmtPStr text)
 {

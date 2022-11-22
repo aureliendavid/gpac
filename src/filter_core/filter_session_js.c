@@ -301,6 +301,19 @@ static JSValue jsfs_enable_rmt(JSContext *ctx, JSValueConst this_val, int argc, 
 	return JS_UNDEFINED;
 }
 
+static JSValue jsfs_rmt_log(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+	const char *msg;
+	GF_FilterSession *fs = JS_GetOpaque(this_val, fs_class_id);
+    if (!fs ||!argc) return GF_JS_EXCEPTION(ctx);
+    msg = JS_ToCString(ctx, argv[0]);
+    if (!msg) return GF_JS_EXCEPTION(ctx);
+	gf_sys_profiler_log(msg);
+	JS_FreeCString(ctx, msg);
+	return JS_UNDEFINED;
+}
+
+
 static JSValue jsfs_rmt_send(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
 	const char *msg;
@@ -1333,8 +1346,11 @@ static JSValue jsff_insert_filter(JSContext *ctx, JSValueConst this_val, int arg
 
 	gf_fs_lock_filters(f->session, GF_FALSE);
 
+<<<<<<< HEAD
 	f->dst_filter = new_f;
-	
+
+=======
+>>>>>>> 7f19c7d0c (add rmt_send to send plain text on ws + fix js all_args())
 	//reconnect outputs of source
 	gf_filter_reconnect_output((GF_Filter *) f, opid);
 
@@ -1814,7 +1830,7 @@ GF_Err gf_fs_load_js_api(JSContext *c, GF_FilterSession *fs)
 		fs->jstasks = gf_list_new();
 		if (!fs->jstasks) return GF_OUT_OF_MEM;
 	}
-	
+
 
 	//initialize filter class and create a single filter object in global scope
 	JS_NewClassID(&fs_class_id);
@@ -2004,6 +2020,3 @@ void gf_filter_load_script(GF_Filter *filter, const char *js_file, const char *f
 }
 
 #endif
-
-
-
