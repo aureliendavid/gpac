@@ -1,3 +1,4 @@
+import { editableInputTypes } from "@testing-library/user-event/dist/utils";
 import React, {Component} from "react"
 
 function FilterInfos(props) {
@@ -33,6 +34,90 @@ function FilterInfos(props) {
 }
 
 
+function FilterArgs(props) {
+
+
+    const editable = (argument) => {
+        if (argument['update']) {
+            return <a href='#'>edit</a>
+        } else {
+            return null
+        }
+    }
+
+    const infos = (index, value) => {
+
+
+        return (
+            <tr key={index}><td title={value['desc']}>{value['name']}</td><td>{JSON.stringify(value['value'])}</td><td>{editable(value)}</td></tr> // add unique key
+        );
+
+    };
+
+    return (
+        <div>
+        <div className="details_header">arguments</div>
+        <table id="args_table">
+            <thead>
+                <tr>
+                <th>name</th>
+                <th>value</th>
+                <th></th>
+                </tr>
+            </thead>
+            <tbody id="args_tbody">
+            { props.filter['gpac_args'].map( (value, index) => infos(index, value) ) }
+            </tbody>
+        </table>
+        </div>
+    );
+
+}
+
+
+
+function FilterPids(props) {
+
+    const pid = (pidindex, pidname, pidobj) => {
+
+
+        return (
+            <tbody key={pidindex}>
+                <tr>
+                    <td colSpan="2" className="pidname_td">{pidname}</td>
+                </tr>
+                { Object.keys(pidobj).map( (pidprop, i) => (
+                    <tr  key={i}>
+                        <td>{pidprop}</td><td>{JSON.stringify(pidobj[pidprop]['val'])}</td>
+                    </tr>
+                ) ) }
+            </tbody>
+
+        );
+
+    };
+
+    return (
+        <div>
+            <div id="ipid_div" >
+                <hr />
+                <div className="details_header">input pids</div>
+                <table id="ipid_table">
+                    { Object.keys(props.filter['ipid']).map( (key, index) => pid(index, key, props.filter['ipid'][key]) ) }
+                </table>
+            </div>
+            <div id="opid_div" >
+                <hr />
+                <div className="details_header">output pids</div>
+                <table id="opid_table">
+                    { Object.keys(props.filter['opid']).map( (key, index) => pid(index, key, props.filter['opid'][key]) ) }
+                </table>
+            </div>
+        </div>
+    );
+
+}
+
 export default class FilterDetails extends React.Component {
     constructor(props) {
         super(props);
@@ -50,31 +135,9 @@ export default class FilterDetails extends React.Component {
                         <FilterInfos filter={this.props.filter} />
                     <hr />
                     <div id="args_div" >
-                        <div className="details_header">arguments</div>
-                        <table id="args_table">
-                            <thead>
-                                <tr>
-                                <th>name</th>
-                                <th>value</th>
-                                </tr>
-                            </thead>
-                            <tbody id="args_tbody"></tbody>
-                        </table>
+                        <FilterArgs filter={this.props.filter} />
                     </div>
-                    <div id="ipid_div" >
-                        <hr />
-                        <div className="details_header">input pids</div>
-                        <table id="ipid_table">
-
-                        </table>
-                    </div>
-                    <div id="opid_div" >
-                        <hr />
-                        <div className="details_header">output pids</div>
-                        <table id="opid_table">
-
-                        </table>
-                    </div>
+                    <FilterPids filter={this.props.filter} />
                 </div>
             );
         }

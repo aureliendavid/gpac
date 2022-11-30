@@ -8,6 +8,10 @@
     background: url('../img/grid.gif');
 }
 
+#graphuibody {
+    height: 800px;
+}
+
 #filter_table > thead {
     text-align: left;
 }
@@ -49,6 +53,7 @@
     overflow-x: auto;
     overflow-y: auto;
     height:100%;
+    display: block;
 
 }
 

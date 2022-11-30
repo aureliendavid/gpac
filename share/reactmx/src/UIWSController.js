@@ -116,7 +116,7 @@ export default class UIWSController extends React.Component {
     render(){
 
         return (
-            <div>
+            <div id="graphuibody">
                 <GpacGraph
                     filters={ this.state.filters }
                     redraw={ this.state.redraw }
