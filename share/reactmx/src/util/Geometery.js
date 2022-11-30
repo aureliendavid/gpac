@@ -37,6 +37,17 @@ let Gemotery = (function() {
             SendMessage(this, {'message': "stop_details", 'idx': idx} );
         }
 
+        this.UpdateFilterArg = function(filterIdx, filterName, argName, argNewValue) {
+            console.log("updating filter ", filterName, filterIdx, " arg ", argName, " = ", argNewValue);
+            SendMessage(this, {
+                'message' : "update_arg",
+                'idx' : filterIdx,
+                'name' : filterName,
+                'argName' : argName,
+                'newValue' : argNewValue
+            })
+        }
+
     }
 
 

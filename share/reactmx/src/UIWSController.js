@@ -113,6 +113,10 @@ export default class UIWSController extends React.Component {
         this.setState({details: null});
     }
 
+    onArgumentUpdated = (filterIdx, filterName, argName, argNewValue) => {
+        gws.UpdateFilterArg(filterIdx, filterName, argName, argNewValue);
+    }
+
     render(){
 
         return (
@@ -124,7 +128,7 @@ export default class UIWSController extends React.Component {
                     onUnselectCell={this.onUnselectCell}
                     onExitSelection={this.onExitSelection}
                 />
-                <FilterDetails filter={this.state.details} />
+                <FilterDetails filter={this.state.details} onArgumentUpdated={this.onArgumentUpdated} />
             </div>
         );
 

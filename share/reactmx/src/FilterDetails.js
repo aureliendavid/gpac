@@ -1,5 +1,11 @@
 import { editableInputTypes } from "@testing-library/user-event/dist/utils";
 import React, {Component} from "react"
+import { useState } from 'react';
+
+
+function GPACDetailsValue(props) {
+    return (JSON.stringify(props.value))
+}
 
 function FilterInfos(props) {
 
@@ -10,7 +16,7 @@ function FilterInfos(props) {
         //console.log("infos ", k, v);
         if (!exclude.includes(propname)) {
             return (
-                <tr key={index}><td>{propname}</td><td>{JSON.stringify(value)}</td></tr> // add unique key
+                <tr key={index}><td>{propname}</td><td><GPACDetailsValue value={value}/></td></tr> // add unique key
             );
         }
     };
@@ -34,14 +40,42 @@ function FilterInfos(props) {
 }
 
 
+function Editable(props) {
+    const [isEditing, setEditing] = useState(false);
+    const [editValue, setEditValue] = useState("");
+
+    const handleChange = (event) => {
+        setEditValue(event.target.value);
+    };
+
+    const saveEdit = (event) => {
+        setEditing(false);
+        props.onArgumentUpdated(editValue);
+    };
+
+    if (isEditing) {
+        return (
+            <span>
+                <input type="text" onChange={handleChange} defaultValue={JSON.stringify(props.value)}></input>
+                <a href="#" onClick={saveEdit}> save</a>
+                <a href="#" onClick={()=>setEditing(false)}> cancel</a>
+            </span>
+        );
+    } else {
+        return (
+            <span><GPACDetailsValue value={props.value}/> <a href="#" onClick={()=>setEditing(true)}>edit</a></span>
+        )
+    }
+}
+
 function FilterArgs(props) {
 
 
     const editable = (argument) => {
         if (argument['update']) {
-            return <a href='#'>edit</a>
+            return <Editable value={argument['value']} onArgumentUpdated={ (newValue) => { props.onArgumentUpdated(argument['name'], newValue) } } />
         } else {
-            return null
+            return <GPACDetailsValue value={argument['value']}/>
         }
     }
 
@@ -49,7 +83,7 @@ function FilterArgs(props) {
 
 
         return (
-            <tr key={index}><td title={value['desc']}>{value['name']}</td><td>{JSON.stringify(value['value'])}</td><td>{editable(value)}</td></tr> // add unique key
+            <tr key={index}><td title={value['desc']}>{value['name']}</td><td>{editable(value)}</td></tr> // add unique key
         );
 
     };
@@ -62,7 +96,6 @@ function FilterArgs(props) {
                 <tr>
                 <th>name</th>
                 <th>value</th>
-                <th></th>
                 </tr>
             </thead>
             <tbody id="args_tbody">
@@ -88,7 +121,7 @@ function FilterPids(props) {
                 </tr>
                 { Object.keys(pidobj).map( (pidprop, i) => (
                     <tr  key={i}>
-                        <td>{pidprop}</td><td>{JSON.stringify(pidobj[pidprop]['val'])}</td>
+                        <td>{pidprop}</td><td><GPACDetailsValue value={pidobj[pidprop]['val']}/></td>
                     </tr>
                 ) ) }
             </tbody>
@@ -123,6 +156,7 @@ export default class FilterDetails extends React.Component {
         super(props);
     }
 
+
     render(){
 
         if (!this.props.filter)
@@ -135,7 +169,7 @@ export default class FilterDetails extends React.Component {
                         <FilterInfos filter={this.props.filter} />
                     <hr />
                     <div id="args_div" >
-                        <FilterArgs filter={this.props.filter} />
+                        <FilterArgs filter={this.props.filter} onArgumentUpdated={ (argName, newValue) => this.props.onArgumentUpdated(this.props.filter.idx, this.props.filter['name'], argName, newValue)} />
                     </div>
                     <FilterPids filter={this.props.filter} />
                 </div>

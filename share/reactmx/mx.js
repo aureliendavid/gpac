@@ -40,12 +40,31 @@ session.set_rmt_fun( (text)=> {
 				details_needed[idx] = false;
 			}
 
+			if ( jtext['message'] == 'update_arg' ) {
+				print("Update arguments of ")
+				print(JSON.stringify(jtext));
+				update_filter_argument(jtext['idx'], jtext['name'], jtext['argName'], jtext['newValue'])
+			}
+
 		} catch(e) {
 			console.log(e);
 		}
 	}
 });
 
+
+function update_filter_argument(idx, name, argName, newValue) {
+
+	let filter = session.get_filter(idx);
+
+	if (!filter || filter.name != name) {
+		print("discrepency in filter names " + filter.name + " v. " + name);
+	}
+	else {
+		filter.update(argName, newValue)
+	}
+
+}
 
 function on_all_connected(cb) {
 
@@ -159,12 +178,16 @@ function send_all_filters() {
 		// dasher.update("template", "$File$UPDATEEEEEEDDDDD$Number$_dash$FS$$Number$");
 
 		// dasher.insert("dst=voxdyng.png:start=50:dur=1/24");
-		if (!png_added) {
-			// session.get_filter(3).insert("dst=voxdyng.png:start=50:dur=1/24");
-			session.get_filter(3).insert("dst=voxdyng.png:osize=500x500");
-			png_added = true;
 
-		}
+
+
+
+		// if (!png_added) {
+		// 	// session.get_filter(3).insert("dst=voxdyng.png:start=50:dur=1/24");
+		// 	session.get_filter(3).insert("dst=voxdyng.png:osize=500x500");
+		// 	png_added = true;
+
+		// }
 
 
 
@@ -268,8 +291,8 @@ let draned_once = false;
 
 session.set_new_filter_fun( (f) => {
 		print("new filter " + f.name);
-		f.iname = "JS"+f.name;
 		f.idx = filter_uid++;
+		f.iname = ''+f.idx;
 		// let jsf = gpac_filter_to_object(f);
 		// print(JSON.stringify(jsf, null, 2));
 		all_filters.push(f);
