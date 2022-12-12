@@ -76,3 +76,11 @@
     padding: 2px;
     background-color: lightgray;
 }
+
+.argsbtn {
+    text-decoration: none;
+}
+
+.argsbtn:hover {
+    font-weight: bolder;
+}

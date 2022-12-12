@@ -3,8 +3,35 @@ import React, {Component} from "react"
 import { useState } from 'react';
 
 
+
+
+const val2enum = (value, enumvals) => {
+
+    if (enumvals && typeof(value) == "number" && value < enumvals.length) {
+        return enumvals[value];
+    }
+
+    return value;
+
+};
+
 function GPACDetailsValue(props) {
-    return (JSON.stringify(props.value))
+
+    if (typeof(props.value) == "boolean") {
+        return (
+            <input type="checkbox" checked={props.value} disabled={true} />
+        )
+    }
+    if (props.value == null) {
+        return (null)
+    }
+
+    var value = props.value;
+
+    if (props.enumvals) {
+        value = val2enum(props.value, props.enumvals);
+    }
+    return (JSON.stringify(value))
 }
 
 function FilterInfos(props) {
@@ -13,7 +40,6 @@ function FilterInfos(props) {
 
         let exclude = ['gpac_args', 'ipid', 'opid' ];
 
-        //console.log("infos ", k, v);
         if (!exclude.includes(propname)) {
             return (
                 <tr key={index}><td>{propname}</td><td><GPACDetailsValue value={value}/></td></tr> // add unique key
@@ -40,30 +66,71 @@ function FilterInfos(props) {
 }
 
 
+
 function Editable(props) {
     const [isEditing, setEditing] = useState(false);
     const [editValue, setEditValue] = useState("");
 
     const handleChange = (event) => {
-        setEditValue(event.target.value);
+
+        if (event.target.hasOwnProperty("checked"))
+            setEditValue(event.target.checked);
+        else
+            setEditValue(event.target.value);
     };
 
     const saveEdit = (event) => {
         setEditing(false);
-        props.onArgumentUpdated(editValue);
+
+        var sendValue = editValue;
+        if (typeof(props.arg.value) == "object") {
+            try {
+                sendValue = JSON.parse(sendValue);
+            }
+            catch (e) {
+                console.log("JSON parse error: ", e, "on value ", sendValue);
+            }
+        }
+        props.onArgumentUpdated(sendValue);
     };
+
+    const editWidget = () => {
+
+        if (props.enumvals) {
+
+            return (
+                <select onChange={handleChange} defaultValue={ val2enum(props.arg.value, props.enumvals) }>
+                    { props.enumvals.map( (option, index) => {
+                        return ( <option key={index} value={option}>{option}</option>)
+                    } ) }
+                </select>
+            )
+        }
+
+        if (typeof(props.arg.value) == "boolean") {
+            return (
+                <input key={props.arg.name + "editing"} type="checkbox" onChange={handleChange} defaultChecked={props.arg.value}  />
+            )
+        }
+
+        return (
+            <input type="text" onChange={handleChange} defaultValue={JSON.stringify(props.arg.value)}></input>
+        );
+
+    }
 
     if (isEditing) {
         return (
-            <span>
-                <input type="text" onChange={handleChange} defaultValue={JSON.stringify(props.value)}></input>
-                <a href="#" onClick={saveEdit}> save</a>
-                <a href="#" onClick={()=>setEditing(false)}> cancel</a>
-            </span>
+            <div>
+                {/* <input type="text" onChange={handleChange} defaultValue={JSON.stringify(props.arg.value)}></input> */}
+                {editWidget()}
+                <a href="#" className="argsbtn" onClick={saveEdit}> ✅</a>
+                <a href="#" className="argsbtn" onClick={()=>setEditing(false)}> ❌</a>
+            </div>
         );
     } else {
         return (
-            <span><GPACDetailsValue value={props.value}/> <a href="#" onClick={()=>setEditing(true)}>edit</a></span>
+            <span><GPACDetailsValue value={props.arg.value} enumvals={props.enumvals}/> <a href="#" className="argsbtn" onClick={()=> { setEditValue(props.arg.value) ; setEditing(true); }}>🖉</a></span>
         )
     }
 }
@@ -71,19 +138,32 @@ function Editable(props) {
 function FilterArgs(props) {
 
 
-    const editable = (argument) => {
+
+
+    const editable = (argument, enumvals) => {
         if (argument['update']) {
-            return <Editable value={argument['value']} onArgumentUpdated={ (newValue) => { props.onArgumentUpdated(argument['name'], newValue) } } />
+            return <Editable arg={argument} enumvals={enumvals} onArgumentUpdated={ (newValue) => { props.onArgumentUpdated(argument['name'], newValue) } } />
         } else {
-            return <GPACDetailsValue value={argument['value']}/>
+            return <GPACDetailsValue value={argument['value']} enumvals={enumvals} />
         }
     }
 
     const infos = (index, value) => {
 
+        var enumvals = null;
+
+        if ("min_max_enum" in value) {
+            let mme = value['min_max_enum'];
+            if (mme.includes('|')) {
+
+                enumvals = mme.split('|');
+
+            }
+        }
+
 
         return (
-            <tr key={index}><td title={value['desc']}>{value['name']}</td><td>{editable(value)}</td></tr> // add unique key
+            <tr key={index}><td title={value['desc']}>{value['name']}</td><td>{editable(value, enumvals)}</td></tr> // add unique key
         );
 
     };

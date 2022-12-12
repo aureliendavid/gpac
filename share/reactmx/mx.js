@@ -55,7 +55,7 @@ session.set_rmt_fun( (text)=> {
 
 function update_filter_argument(idx, name, argName, newValue) {
 
-	let filter = session.get_filter(idx);
+	let filter = session.get_filter(''+idx); // force get by iname
 
 	if (!filter || filter.name != name) {
 		print("discrepency in filter names " + filter.name + " v. " + name);
