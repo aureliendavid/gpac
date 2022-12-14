@@ -1346,11 +1346,8 @@ static JSValue jsff_insert_filter(JSContext *ctx, JSValueConst this_val, int arg
 
 	gf_fs_lock_filters(f->session, GF_FALSE);
 
-<<<<<<< HEAD
 	f->dst_filter = new_f;
 
-=======
->>>>>>> 7f19c7d0c (add rmt_send to send plain text on ws + fix js all_args())
 	//reconnect outputs of source
 	gf_filter_reconnect_output((GF_Filter *) f, opid);
 
