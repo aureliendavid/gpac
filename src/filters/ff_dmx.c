@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2017-2022
+ *			Copyright (c) Telecom ParisTech 2017-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / ffmpeg demux filter
@@ -986,6 +986,10 @@ GF_Err ffdmx_init_common(GF_Filter *filter, GF_FFDemuxCtx *ctx, u32 grab_type)
 		if (codec_blockalign)
 			gf_filter_pid_set_property(pid, GF_PROP_PID_META_DEMUX_OPAQUE, &PROP_UINT(codec_blockalign));
 
+		if ((stream->disposition & AV_DISPOSITION_DEFAULT) && !gf_sys_is_test_mode()) {
+			gf_filter_pid_set_property(pid, GF_PROP_PID_IS_DEFAULT, &PROP_BOOL(GF_TRUE));
+		}
+		gf_filter_pid_set_property(pid, GF_PROP_PID_MUX_INDEX, &PROP_UINT(i+1));
 
 		for (j=0; j<(u32) stream->nb_side_data; j++) {
 			ffdmx_parse_side_data(&stream->side_data[i], pid);
@@ -1038,6 +1042,9 @@ static GF_Err ffdmx_initialize(GF_Filter *filter)
 	if (gf_sys_is_cov_mode()) {
 		ffdmx_update_arg(filter, "foo", &PROP_STRING_NO_COPY("bar"));
 		ffmpeg_pixfmt_from_codec_tag(0, NULL);
+#if (LIBAVCODEC_VERSION_MAJOR > 56)
+		ffmpeg_codec_par_to_gpac(NULL, NULL, 0);
+#endif
 	}
 #endif
 	if (!ctx->src) {
@@ -1102,7 +1109,7 @@ static GF_Err ffdmx_initialize(GF_Filter *filter)
 	}
 
 	if (e && gf_filter_is_temporary(filter)) {
-		char *ext = strrchr(ctx->src, '.');
+		ext = strrchr(ctx->src, '.');
 		const AVInputFormat *ifmt = av_find_input_format(ctx->src);
 		if (!ifmt && ext) ifmt = av_find_input_format(ext+1);
 #if (LIBAVFORMAT_VERSION_MAJOR>=59)
@@ -1131,7 +1138,26 @@ static GF_Err ffdmx_initialize(GF_Filter *filter)
 		return e;
 	}
 
-	res = avformat_find_stream_info(ctx->demuxer, ctx->options ? &ctx->options : NULL);
+	AVDictionary** optionsarr = NULL;
+	if (ctx->options && ctx->demuxer) {
+		optionsarr = (AVDictionary**)gf_malloc(ctx->demuxer->nb_streams * sizeof(AVDictionary*));
+		for (unsigned si = 0; si < ctx->demuxer->nb_streams; si++) {
+			optionsarr[si] = NULL;
+			av_dict_copy(&optionsarr[si], ctx->options, 0);
+		}
+	}
+
+
+	res = avformat_find_stream_info(ctx->demuxer, optionsarr);
+
+	if (optionsarr) {
+		for (unsigned si = 0; si < ctx->demuxer->nb_streams; si++) {
+			av_dict_free(&optionsarr[si]);
+		}
+		gf_free(optionsarr);
+		optionsarr = NULL;
+	}
+
 	if (res <0) {
 		GF_LOG(GF_LOG_ERROR, ctx->log_class, ("[%s] cannot locate streams - error %s\n", ctx->fname, av_err2str(res)));
 		e = GF_NOT_SUPPORTED;

@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2017-2022
+ *			Copyright (c) Telecom ParisTech 2017-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / filters sub-project
@@ -1103,6 +1103,7 @@ enum
 	GF_PROP_PID_HAS_SYNC = GF_4CC('P','S','Y','N'),
 	GF_PROP_SERVICE_WIDTH = GF_4CC('D','W','D','T'),
 	GF_PROP_SERVICE_HEIGHT = GF_4CC('D','H','G','T'),
+	GF_PROP_PID_IS_DEFAULT = GF_4CC('P','D','E','F'),
 	GF_PROP_PID_CAROUSEL_RATE = GF_4CC('C','A','R','A'),
 	GF_PROP_PID_AUDIO_VOLUME = GF_4CC('A','V','O','L'),
 	GF_PROP_PID_AUDIO_PAN = GF_4CC('A','P','A','N'),
@@ -1234,6 +1235,7 @@ enum
 	GF_PROP_PID_CUBE_MAP_PAD = GF_4CC('P','C','M','P'),
 	GF_PROP_PID_EQR_CLAMP = GF_4CC('P','E','Q','C'),
 	GF_PROP_PID_SPARSE = GF_4CC('P','S','P','A'),
+	GF_PROP_PID_CHARSET = GF_4CC('P','C','H','S'),
 
 	GF_PROP_PID_SCENE_NODE = GF_4CC('P','S','N','D'),
 	GF_PROP_PID_ORIG_CRYPT_SCHEME = GF_4CC('P','O','C','S'),
@@ -3565,6 +3567,13 @@ typedef struct
 	/*! loss rate in per-thousand - input pid only */
 	u32 loss_rate;
 
+	/*! timestamp and timescale of last packet droped
+		- For input PID, set to last packet dropped
+		- For output PID, set to maximum TS value of last packet dropped on all PID destinations
+	*/
+	GF_Fraction64 last_ts_drop;
+	/*! timestamp and timescale of last packet send on PID (for output PID) or on parent PID (for input PID)	*/
+	GF_Fraction64 last_ts_sent;
 } GF_FilterPidStatistics;
 
 /*! Direction for stats querying*/

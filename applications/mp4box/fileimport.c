@@ -2534,7 +2534,10 @@ GF_Err cat_isomedia_file(GF_ISOFile *dest, char *fileName, u32 import_flags, GF_
 		orig = gf_isom_open("temp", GF_ISOM_WRITE_EDIT, NULL);
 		if (opts) opts[0] = ':';
 		e = import_file(orig, fileName, import_flags, force_fps, frames_per_sample, NULL, NULL, NULL, 0);
-		if (e) return e;
+		if (e) {
+			gf_isom_delete(orig);
+			return e;
+		}
 	} else {
 		//open read+edit mode to allow applying options on file
 		orig = gf_isom_open(fileName, GF_ISOM_OPEN_READ_EDIT, NULL);
@@ -2543,7 +2546,10 @@ GF_Err cat_isomedia_file(GF_ISOFile *dest, char *fileName, u32 import_flags, GF_
 
 		if (opts) {
 			e = import_file(orig, fileName, 0xFFFFFFFF, force_fps, frames_per_sample, NULL, NULL, NULL, 0);
-			if (e) return e;
+			if (e) {
+				gf_isom_delete(orig);
+				return e;
+			}
 		}
 	}
 
@@ -3660,9 +3666,10 @@ static Bool wgt_enum_files(void *cbck, char *file_name, char *file_path, GF_File
 }
 static Bool wgt_enum_dir(void *cbck, char *file_name, char *file_path, GF_FileEnumInfo *file_info)
 {
-	if (!stricmp(file_name, "cvs") || !stricmp(file_name, ".svn") || !stricmp(file_name, ".git")) return 0;
+	if (!stricmp(file_name, "cvs") || !stricmp(file_name, ".svn") || !stricmp(file_name, ".git")) return GF_FALSE;
 	gf_enum_directory(file_path, 0, wgt_enum_files, cbck, NULL);
-	return gf_enum_directory(file_path, 1, wgt_enum_dir, cbck, NULL);
+	gf_enum_directory(file_path, 1, wgt_enum_dir, cbck, NULL);
+	return GF_TRUE;
 }
 
 GF_ISOFile *package_file(char *file_name, char *fcc, Bool make_wgt)

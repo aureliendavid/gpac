@@ -244,6 +244,7 @@ const char *gpac_doc =
 "- name#TYPE: accepts only PIDs of matching media type. TYPE can be `audio`, `video`, `scene`, `text`, `font`, `meta`\n"
 "- name#TYPEN: accepts only `N` (1-based index) PID of matching type from source (e.g. `video2` to only accept second video PID)\n"
 "- name#TAG=VAL: accepts the PID if its parent filter has no tag or a tag matching `VAL`\n"
+"- name#ITAG=VAL: accepts the PID if its parent filter has no inherited tag or an inherited tag matching `VAL`\n"
 "- name#P4CC=VAL: accepts only PIDs with builtin property of type `P4CC` and value `VAL`.\n"
 "- name#PName=VAL: same as above, using the builtin name corresponding to the property.\n"
 "- name#AnyName=VAL: same as above, using the name of a non built-in property.\n"
@@ -329,6 +330,8 @@ const char *gpac_doc =
 "A filter may be assigned a name (for inspection purposes, not inherited) using `:N=name` option. This name is not used in link resolution and may be changed at runtime by the filter instance.\n"
 "  \n"
 "A filter may be assigned a tag (any string) using `:TAG=name` option. This tag does not need to be unique, and can be used to exclude filter in link resolution. Tags are not inherited, therefore dynamically loaded filters never have a tag.\n"
+"  \n"
+"A filter may also be assigned an inherited tag (any string) using `:ITAG=name` option. Such tags are inherited, and are typically used to track dynamically loaded filters.\n"
 "  \n"
 "# URL templating\n"
 "Destination URLs can be dynamically constructed using templates. Pattern `$KEYWORD$` is replaced in the template with the "
@@ -453,12 +456,30 @@ const char *gpac_doc =
 "- FS: sub-session identifier (unsigned int value)\n"
 "- RSID: require sourceID to be present on target filters (no value)\n"
 "- TAG: filter tag (string value)\n"
+"- ITAG: filter inherited tag (string value)\n"
+"- FBT: buffer time in microseconds (unsigned int value)\n"
+"- FBU: buffer units (unsigned int value)\n"
+"- FBD: decode buffer time in microseconds (unsigned int value)\n"
 "- clone: filter cloning flag (no value)\n"
 "- nomux: enable/disable direct file copy (no value)\n"
 "- gfreg: preferred filter registry names for link solving (string value)\n"
 "- gfloc: following options are local to filter declaration, not inherited (no value)\n"
 "- gfopt: following options are not tracked (no value)\n"
 "- gpac: argument separator for URLs (no value)\n"
+"\n"
+"The buffer control options are used to change the default buffering of PIDs of a filter:\n"
+"- `FBT` controls the maximum buffer time of output PIDs of a filter\n"
+"- `FBU` controls the maximum number of packets in buffer of output PIDs of a filter when timing is not available\n"
+"- `FBD` controls the maximum buffer time of input PIDs of a decoder filter, ignored for other filters\n"
+"\n"
+"If another filter sends a buffer requirement messages, the maximum value of `FBT` (resp. `FBD`) and the user requested buffer time will be used for output buffer time (resp. decoding buffer time).\n"
+"\n"
+"These options can be set:\n"
+"- per filter instance: `fA reframer:FBU=2`\n"
+"- per filter class for the run: `--reframer@FBU=2`\n"
+"- in the GPAC config file in a per-filter section: `[filter@reframer]FBU=2`\n"
+"\n"
+"The default values are defined by the session default parameters `-buffer-gen`, `buffer-units` and `-buffer-dec`.\n"
 "\n"
 "# External filters\n"
 "GPAC comes with a set of built-in filters in libgpac. It may also load external filters in dynamic libraries, located in "
@@ -2241,7 +2262,7 @@ void dump_all_props(char *pname)
 		gf_sys_format_help(helpout, help_flags, " Name | Integer value \n");
 		gf_sys_format_help(helpout, help_flags, " --- | ---  \n");
 		for (i=0; i<GF_CICP_PRIM_LAST; i++) {
-			const char *name = gf_cicp_color_primaries_name(i);
+			name = gf_cicp_color_primaries_name(i);
 			if (!name || !strcmp(name, "unknown")) continue;
 			gf_sys_format_help(helpout, help_flags, " %s | %d \n", name, i);
 		}
@@ -2249,7 +2270,7 @@ void dump_all_props(char *pname)
 		gf_sys_format_help(helpout, help_flags, " Name | Integer value \n");
 		gf_sys_format_help(helpout, help_flags, " --- | ---  \n");
 		for (i=0; i<GF_CICP_TRANSFER_LAST; i++) {
-			const char *name = gf_cicp_color_transfer_name(i);
+			name = gf_cicp_color_transfer_name(i);
 			if (!name) continue;
 			gf_sys_format_help(helpout, help_flags, " %s | %d \n", name, i);
 		}
@@ -2257,7 +2278,7 @@ void dump_all_props(char *pname)
 		gf_sys_format_help(helpout, help_flags, " Name | Integer value \n");
 		gf_sys_format_help(helpout, help_flags, " --- | ---  \n");
 		for (i=0; i<GF_CICP_MX_LAST; i++) {
-			const char *name = gf_cicp_color_matrix_name(i);
+			name = gf_cicp_color_matrix_name(i);
 			if (!name) continue;
 			gf_sys_format_help(helpout, help_flags, " %s | %d \n", name, i);
 		}
@@ -2464,7 +2485,7 @@ void dump_all_codecs(GF_SysArgMode argmode)
 				if (k==i) continue;;
 				reg = gf_list_get(meta_codecs, k);
 				const char *rname = strchr(reg->name, ':');
-				if (name) rname++;
+				if (rname) rname++;
 				else rname = reg->name;
 				if (strcmp(rname, name)) continue;
 
@@ -2805,10 +2826,9 @@ void dump_all_formats(GF_SysArgMode argmode)
 		} else if (gen_doc==1) {
 			gf_sys_format_help(helpout, help_flags | GF_PRINTARG_NL_TO_BR, "n/a");
 		}
-		if (gen_doc==1)
-			gf_sys_format_help(helpout, help_flags | GF_PRINTARG_NL_TO_BR, " | ");
 
 		if (gen_doc==1) {
+			gf_sys_format_help(helpout, help_flags | GF_PRINTARG_NL_TO_BR, " | ");
 			gf_sys_format_help(helpout, help_flags | GF_PRINTARG_NL_TO_BR | GF_PRINTARG_ESCAPE_PIPE, "%s \n", hdl->mime ? hdl->mime : "n/a");
 		} else {
 			if (hdl->mime && (argmode>GF_ARGMODE_EXPERT)) {
@@ -2889,7 +2909,7 @@ void dump_all_proto_schemes(GF_SysArgMode argmode)
 	}
 	count = gf_list_count(all_protos);
 	for (i=0; i<count; i++) {
-		u32 j, k, c2;
+		u32 j, c2;
 		PROTOHandler *pe = gf_list_get(all_protos, i);
 
 		if (gen_doc==1) {

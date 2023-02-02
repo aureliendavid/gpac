@@ -99,7 +99,7 @@ static void gf_media_update_bitrate_ex(GF_ISOFile *file, u32 track, Bool use_esd
 
 	br = (Double) (s64) gf_isom_get_media_duration(file, track);
 	br /= timescale;
-	if (br) {
+	if (br>0) {
 		GF_ESD *esd = NULL;
 		if (!csize || !cdur) {
 			bitrate = (u32) ((Double) (s64)avg_rate / br);
@@ -184,7 +184,7 @@ u32 gf_dolby_vision_level(u32 width, u32 height, u64 fps_num, u64 fps_den, u32 c
             else dv_level = 10;
         }
         else if (level_check <= 7680*4320*60) dv_level = 12;
-        else level_check = 13;
+        else dv_level = 13;
 	}
 	return dv_level;
 }

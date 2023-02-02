@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / Scene Compositor sub-project
@@ -1445,6 +1445,11 @@ GF_Err gf_sc_set_scene(GF_Compositor *compositor, GF_SceneGraph *scene_graph)
 		evt.type = GF_EVENT_SCENE_SIZE;
 		evt.size.width = width;
 		evt.size.height = height;
+		evt.size.orientation = 0;
+		if (compositor->scene && gf_sg_get_root_node(compositor->scene))
+			evt.size.window_id = 1;
+		else
+			evt.size.window_id = 0;
 		gf_sc_send_event(compositor, &evt);
 	}
 	return GF_OK;
@@ -1502,6 +1507,11 @@ GF_Err gf_sc_set_size(GF_Compositor *compositor, u32 NewWidth, u32 NewHeight)
 		evt.type = GF_EVENT_SCENE_SIZE;
 		evt.size.width = NewWidth;
 		evt.size.height = NewHeight;
+		evt.size.orientation = 0;
+		if (compositor->scene && gf_sg_get_root_node(compositor->scene))
+			evt.size.window_id = 1;
+		else
+			evt.size.window_id = 0;
 		gf_sc_send_event(compositor, &evt);
 	}
 
@@ -2038,6 +2048,7 @@ GF_Err gf_sc_get_screen_buffer(GF_Compositor *compositor, GF_VideoSurface *frame
 #endif
 		/*no depth dump in 2D mode*/
 		if (depth_dump_mode) e = GF_NOT_SUPPORTED;
+		else if (!compositor->video_out->LockBackBuffer) e = GF_NOT_SUPPORTED;
 		else e = compositor->video_out->LockBackBuffer(compositor->video_out, framebuffer, 1);
 
 	if (e != GF_OK) gf_mx_v(compositor->mx);

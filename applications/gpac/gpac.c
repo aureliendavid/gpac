@@ -194,7 +194,7 @@ static Bool gpac_fsess_task(GF_FilterSession *fsess, void *callback, u32 *resche
 	return GF_TRUE;
 }
 
-static int gpac_exit_fun(int code, char **alias_argv, int alias_argc)
+static int gpac_exit_fun(int code)
 {
 	u32 i;
 	if (code>=0) {
@@ -275,7 +275,7 @@ s32 get_s32(char *val, char *log_name)
 
 
 #define gpac_exit(_code) \
-	return gpac_exit_fun(_code, alias_argv, alias_argc)
+	return gpac_exit_fun(_code)
 
 
 #if defined(GPAC_CONFIG_DARWIN) && !defined(GPAC_CONFIG_IOS)
@@ -2109,7 +2109,6 @@ rescan:
 /*
 	Coverage
 */
-
 #ifdef GPAC_ENABLE_COVERAGE
 #include <gpac/utf.h>
 #include <gpac/base_coding.h>
@@ -2127,6 +2126,7 @@ rescan:
 #include <gpac/internal/isomedia_dev.h>
 #include <gpac/path2d.h>
 #include <gpac/module.h>
+#include <gpac/crypt.h>
 #endif
 static u32 gpac_unit_tests(GF_MemTrackerType mem_track)
 {
@@ -2140,6 +2140,8 @@ static u32 gpac_unit_tests(GF_MemTrackerType mem_track)
 
 	if (mem_track == GF_MemTrackerNone) return 0;
 
+	gpac_handle_prompt(NULL, 0);
+
 	gpac_fsess_task_help(); //for coverage
 	gf_dm_sess_last_error(NULL);
 	gf_log_use_color();
@@ -2150,6 +2152,11 @@ static u32 gpac_unit_tests(GF_MemTrackerType mem_track)
 	gf_itags_get_id3tag(1);
 	i=0;
 	gf_itags_enum_tags(&i, NULL, NULL, NULL);
+	//functions exported for gpac_napi but we don't yet have tests for napi in testsuite
+	gf_fs_in_final_flush(NULL);
+	gf_fs_get_rt_udta(NULL);
+	gf_fs_set_external_gl_provider(NULL, NULL, NULL);
+	gf_filter_print_all_connections(NULL, NULL);
 
 	GF_LOG(GF_LOG_INFO, GF_LOG_CORE, ("[CoreUnitTests] performing tests\n"));
 
@@ -2273,10 +2280,10 @@ static u32 gpac_unit_tests(GF_MemTrackerType mem_track)
 	gf_ntohs(0xAABB);
 	gf_errno_str(-1);
 
-	/* these two lock the bash shell in test mode
-	gf_prompt_set_echo_off(GF_TRUE);
 	gf_prompt_set_echo_off(GF_FALSE);
-	*/
+	gf_getch();
+	gf_prompt_get_char();
+	gf_read_line_input(utf8_buf, 7, 1);
 
 	gf_net_set_ntp_shift(-1000);
 	gf_net_get_ntp_diff_ms(gf_net_get_ntp_ts() );
@@ -2313,6 +2320,21 @@ static u32 gpac_unit_tests(GF_MemTrackerType mem_track)
 	gf_sys_get_argv();
 	gf_mx_get_num_locks(NULL);
 	signal_catched = GF_TRUE;
+
+	gf_url_is_relative("./");
+
+	//test ECB (no test using ECB decrypt)
+	bin128 master_key;
+	memset(master_key, 0, sizeof(bin128));
+	GF_Crypt *crypto = gf_crypt_open(GF_AES_128, GF_ECB);
+	gf_crypt_init(crypto, master_key, master_key);
+	gf_crypt_encrypt(crypto, master_key, 16);
+	gf_crypt_decrypt(crypto, master_key, 16);
+	gf_crypt_set_IV(crypto, master_key, 16);
+	u32 ivsize=16;
+	gf_crypt_get_IV(crypto, master_key, &ivsize);
+	gf_crypt_close(crypto);
+
 
 #ifdef WIN32
 	gpac_sig_handler(CTRL_C_EVENT);
@@ -2383,6 +2405,12 @@ static u32 gpac_unit_tests(GF_MemTrackerType mem_track)
 	memset(&bbox, 0, sizeof(GF_BBox));
 	gf_bbox_equal(&bbox, &bbox);
 
+	bbox.min_edge.x=-1;
+	bbox.max_edge.x=1;
+	gf_bbox_refresh(&bbox);
+	gf_mx_apply_bbox_4x4(&mat, &bbox);
+
+
 	GF_Vec v;
 	v.x = v.y = v.z = 0;
 	gf_vec_scale_p(&v, 2*FIX_ONE);
@@ -2441,7 +2469,8 @@ static u32 gpac_unit_tests(GF_MemTrackerType mem_track)
 
 	gf_mp3_version_name(0);
 	u8 tsbuf[188];
-	u8 is_pes=GF_TRUE;
+	u8 is_pes[GF_M2TS_MAX_STREAMS];
+	memset(is_pes, 1, sizeof(u8)*GF_M2TS_MAX_STREAMS);
 	memset(tsbuf, 0, 188);
 	tsbuf[0] = 0x47;
 	tsbuf[1] = 0x40;
@@ -2451,7 +2480,7 @@ static u32 gpac_unit_tests(GF_MemTrackerType mem_track)
 	tsbuf[10] = 0x80;
 	tsbuf[11] = 0xc0;
 	tsbuf[13] = 0x2 << 4;
-	gf_m2ts_restamp(tsbuf, 188, 1000, &is_pes);
+	gf_m2ts_restamp(tsbuf, 188, 1000, is_pes);
 
 
 	gf_filter_post_task(NULL,NULL,NULL,NULL);

@@ -781,7 +781,7 @@ static GF_Config *create_default_config(char *file_path, const char *profile)
 #endif
 
 #ifdef GPAC_CONFIG_ANDROID
-	const char *opt = opt = android_external_storage[0] ? android_external_storage : getenv("EXTERNAL_STORAGE");
+	const char *opt = android_external_storage[0] ? android_external_storage : getenv("EXTERNAL_STORAGE");
 	if (!opt) opt = "/sdcard";
 	gf_cfg_set_key(cfg, "core", "docs-dir", opt);
 	gf_cfg_set_key(cfg, "core", "last-dir", opt);
@@ -1410,6 +1410,10 @@ GF_DEF_ARG("full-link", NULL, "throw error if any PID in the filter graph cannot
  GF_DEF_ARG("no-graph-cache", NULL, "disable internal caching of filter graph connections. If disabled, the graph will be recomputed at each link resolution (lower memory usage but slower)", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_FILTERS),
  GF_DEF_ARG("no-reservoir", NULL, "disable memory recycling for packets and properties. This uses much less memory but stresses the system memory allocator much more", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_FILTERS),
 
+ GF_DEF_ARG("buffer-gen", NULL, "default buffer size in microseconds for generic pids", "1000", NULL, GF_ARG_INT, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_FILTERS),
+ GF_DEF_ARG("buffer-dec", NULL, "default buffer size in microseconds for decoder input pids", "1000000", NULL, GF_ARG_INT, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_FILTERS),
+ GF_DEF_ARG("buffer-units", NULL, "default buffer size in frames when timing is not available", "1", NULL, GF_ARG_INT, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_FILTERS),
+
  GF_DEF_ARG("switch-vres", NULL, "select smallest video resolution larger than scene size, otherwise use current video resolution", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_VIDEO),
  GF_DEF_ARG("hwvmem", NULL, "specify (2D rendering only) memory type of main video backbuffer. Depending on the scene type, this may drastically change the playback speed\n"
  "- always: always on hardware\n"
@@ -1592,7 +1596,7 @@ Bool gf_sys_set_cfg_option(const char *opt_string)
 	}
 	gf_opts_set_key(szSec, szKey, szVal[0] ? szVal : NULL);
 
-	if (!strcmp(szSec, "core")) {
+	if (!strcmp(szSec, "core") || !strcmp(szSec, "temp")) {
 		if (!strcmp(szKey, "noprog") && (!strcmp(szVal, "yes")||!strcmp(szVal, "true")||!strcmp(szVal, "1")) ) {
 			void gpac_disable_progress();
 

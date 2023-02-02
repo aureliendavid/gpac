@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre, Romain Bouqueau, Cyril Concolato
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / Media Tools sub-project
@@ -5677,10 +5677,10 @@ static s32 avc_parse_slice(GF_BitStream *bs, AVCState *avc, Bool svc_idr_flag, A
 	if (si->slice_type > 9) return -1;
 
 	pps_id = gf_bs_read_ue_log(bs, "pps_id");
-	if ((pps_id<0) || (pps_id > 255)) return -1;
+	if ((pps_id<0) || (pps_id >= 255)) return -1;
 	si->pps = &avc->pps[pps_id];
 	if (!si->pps->slice_group_count) return -2;
-	if (si->pps->sps_id>=255) return -1;
+	if (si->pps->sps_id>=32) return -1;
 	si->sps = &avc->sps[si->pps->sps_id];
 	if (!si->sps->log2_max_frame_num) return -2;
 	avc->sps_active_idx = si->pps->sps_id;
@@ -5787,7 +5787,7 @@ static s32 svc_parse_slice(GF_BitStream *bs, AVCState *avc, AVCSliceInfo *si)
 	if (si->slice_type > 9) return -1;
 
 	pps_id = gf_bs_read_ue_log(bs, "pps_id");
-	if ((pps_id<0) || (pps_id > 255))
+	if ((pps_id<0) || (pps_id >= 255))
 		return -1;
 	si->pps = &avc->pps[pps_id];
 	si->pps->id = pps_id;
@@ -6335,7 +6335,10 @@ u32 gf_avc_reformat_sei(u8 *buffer, u32 nal_size, Bool isobmf_rewrite, AVCState 
 		if (gf_bs_available(bs) <= 2) {
 			var = gf_bs_read_int(bs, 8);
 			if (var != 0x80) {
-				GF_LOG(GF_LOG_WARNING, GF_LOG_CODING, ("[avc-h264] SEI user message has less than 2 bytes remaining but no end of sei found\n"));
+				GF_LOG(GF_LOG_WARNING, GF_LOG_CODING, ("[avc-h264] SEI user message has less than 2 bytes remaining but no end of sei found, keeping full SEI untouched\n"));
+				if (bs_dest) gf_bs_del(bs_dest);
+				gf_bs_del(bs);
+				return nal_size;
 			}
 			if (bs_dest) gf_bs_write_int(bs_dest, 0x80, 8);
 			break;
@@ -7659,6 +7662,11 @@ static Bool hevc_parse_vps_extension(HEVC_VPS *vps, GF_BitStream *bs)
 		else {
 			vps->layer_id_in_nuh[i] = i;
 		}
+		if (vps->layer_id_in_nuh[i] > MAX_LHVC_LAYERS) {
+			GF_LOG(GF_LOG_ERROR, GF_LOG_CODING, ("[HEVC] %d layers in VPS ext but only %d supported in GPAC\n", vps->layer_id_in_nuh[i], MAX_LHVC_LAYERS));
+			vps->layer_id_in_nuh[i] = 0;
+			return -1;
+		}
 		vps->layer_id_in_vps[vps->layer_id_in_nuh[i]] = i;
 
 		if (!splitting_flag) {
@@ -8016,8 +8024,9 @@ static s32 gf_hevc_read_vps_bs_internal(GF_BitStream *bs, HEVCState *hevc, Bool 
 		gf_bs_read_ue_log_idx(bs, "vps_max_latency_increase_plus1", i);
 	}
 	vps->max_layer_id = gf_bs_read_int_log(bs, 6, "max_layer_id");
-	if (vps->max_layer_id > MAX_LHVC_LAYERS) {
+	if (vps->max_layer_id >= MAX_LHVC_LAYERS) {
 		GF_LOG(GF_LOG_ERROR, GF_LOG_CODING, ("[HEVC] VPS max layer ID %u but GPAC only supports %u\n", vps->max_layer_id, MAX_LHVC_LAYERS));
+		vps->max_layer_id = 0;
 		return -1;
 	}
 	vps->num_layer_sets = gf_bs_read_ue_log(bs, "num_layer_sets_minus1") + 1;
@@ -8259,16 +8268,17 @@ static s32 gf_hevc_read_sps_bs_internal(GF_BitStream *bs, HEVCState *hevc, u8 la
 		sps->update_rep_format_flag = gf_bs_read_int_log(bs, 1, "update_rep_format_flag");
 		if (sps->update_rep_format_flag) {
 			sps->rep_format_idx = gf_bs_read_int_log(bs, 8, "rep_format_idx");
-			if (sps->rep_format_idx>15) {
-				return -1;
-			}
 		} else {
 			if (layer_id<MAX_LHVC_LAYERS) {
 				u32 idx = vps->layer_id_in_vps[layer_id];
-				if (idx>15)
-					return -1;
-				sps->rep_format_idx = vps->rep_format_idx[idx];
+				if (idx<=15)
+					sps->rep_format_idx = vps->rep_format_idx[idx];
 			}
+		}
+		if (sps->rep_format_idx>15) {
+			GF_LOG(GF_LOG_ERROR, GF_LOG_CODING, ("[HEVC] Invalid rep_format_idx index %d\n", sps->rep_format_idx));
+			sps->rep_format_idx=0;
+			return -1;
 		}
 		sps->width = vps->rep_formats[sps->rep_format_idx].pic_width_luma_samples;
 		sps->height = vps->rep_formats[sps->rep_format_idx].pic_height_luma_samples;
@@ -8313,6 +8323,11 @@ static s32 gf_hevc_read_sps_bs_internal(GF_BitStream *bs, HEVCState *hevc, u8 la
 	}
 
 	sps->log2_max_pic_order_cnt_lsb = 4 + gf_bs_read_ue_log(bs, "log2_max_pic_order_cnt_lsb_minus4");
+	if (sps->log2_max_pic_order_cnt_lsb>16) {
+		GF_LOG(GF_LOG_ERROR, GF_LOG_CODING, ("[HEVC] Invalid log2_max_pic_order_cnt_lsb_minus4 %d, max shall be 12\n", sps->log2_max_pic_order_cnt_lsb-4));
+		sps->log2_max_pic_order_cnt_lsb = 16;
+		return -1;
+	}
 
 	if (!multiLayerExtSpsFlag) {
 		sps->sub_layer_ordering_info_present_flag = gf_bs_read_int_log(bs, 1, "sub_layer_ordering_info_present_flag");
@@ -9143,7 +9158,6 @@ static Bool gf_eac3_parser_internal(GF_BitStream *bs, GF_AC3Config *hdr, Bool fu
 	Bool main_indep_found = GF_FALSE;
 	s32 cur_main_id = -1;
 	u32 nb_blocks_main;
-	u32 cur_main_ac3 = 0;
 	u16 main_substreams; //bit-mask of independent channels found so far
 	static u32 numblks[4] = {1, 2, 3, 6};
 
@@ -9192,7 +9206,6 @@ next_block:
 		}
 		main_indep_found = GF_TRUE;
 		cur_main_id = 0;
-		cur_main_ac3 = 1;
 		goto next_block;
 	}
 	//corrupted frame, trash
@@ -9216,7 +9229,6 @@ next_block:
 
 	//independent stream
 	if (strmtyp!=0x1) {
-		cur_main_ac3 = 0;
 		//all blocks gathered and we have seen this substreamid, done with whole frame
 		if ( (nb_blocks_main>=6) && ( (main_substreams >> substreamid) & 0x1)) {
 			eac3_update_channels(hdr);
@@ -9241,11 +9253,6 @@ next_block:
 		}
 		goto retry_frame;
 	}
-	//quick hack (not sure if the spec forbids this): some AC3+EAC3 streams use substreamid=0 for the eac3
-	//which breaks nb_dep_sub / chan_loc signaling
-	//we increase by one in this case
-	if (cur_main_ac3 && !substreamid) cur_main_ac3=2;
-	if (cur_main_ac3==2) substreamid++;
 
 	frmsiz = gf_bs_read_int_log(bs, 11, "frmsiz");
 	framesize += 2 * (1 + frmsiz);
@@ -9313,8 +9320,9 @@ next_block:
 			hdr->nb_streams++;
 	}
 	//dependent stream, record max substream ID of dep and store chan map
+	//"Dependent substreams are assigned substream ID's 0 to 7, which shall be assigned sequentially according to the order the dependent substreams are present in the bit stream. "
 	else {
-		hdr->streams[cur_main_id].nb_dep_sub = substreamid;
+		hdr->streams[cur_main_id].nb_dep_sub = 1+substreamid;
 		hdr->streams[cur_main_id].chan_loc |= chanmap;
 	}
 
@@ -9833,7 +9841,7 @@ GF_EXPORT
 u8 gf_opus_parse_packet_header(u8 *data, u32 data_length, Bool self_delimited, GF_OpusPacketHeader *header)
 {
     u32 i;
-    u32 nb_read_bytes = 0;
+    u32 nb_read_bytes;
     if (!data || !data_length)
         return 0;
     if (!header)
@@ -12348,7 +12356,7 @@ GF_Err gf_media_vc1_seq_header_to_dsi(const u8 *seq_hdr, u32 seq_hdr_len, u8 **d
 	}
 	*dsi_size = seq_hdr_len+7;
 	*dsi = gf_malloc(seq_hdr_len+7);
-	if (!dsi) return  GF_OUT_OF_MEM;
+	if (! (*dsi) ) return  GF_OUT_OF_MEM;
 
 	bs = gf_bs_new(*dsi, *dsi_size, GF_BITSTREAM_WRITE);
 	gf_bs_write_int(bs, 12, 4); //profile

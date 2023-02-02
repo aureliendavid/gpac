@@ -197,6 +197,7 @@ static GF_Err obumx_add_packet(GF_FilterPid *opid,
 	if (src_pck) {
 		gf_filter_pck_merge_properties(src_pck, pck);
 	}
+	gf_free(pck_input_data);
 	gf_list_add(pcks, pck);
 	return GF_OK;
 }
@@ -283,6 +284,7 @@ static GF_Err obumx_process_mpeg2au(GF_OBUMxCtx *ctx, GF_FilterPacket *src_pck, 
 			}
 			first_frame_found = GF_TRUE;
 		}
+		//TODO - rework code to avoid alloc/free all per obu
 		obu_data = gf_malloc(obu_size);
 		read_size = gf_bs_read_data(ctx->bs_r, obu_data, obu_size);
 		if (read_size != obu_size) {
@@ -294,6 +296,9 @@ static GF_Err obumx_process_mpeg2au(GF_OBUMxCtx *ctx, GF_FilterPacket *src_pck, 
 		} else {
 			gf_bs_write_data(ctx->bs_w, out_obu_data, out_obu_size);
 		}
+		if (out_obu_data) gf_free(out_obu_data);
+		out_obu_data = NULL;
+		if (obu_data) gf_free(obu_data);
 	}
 	// create last packet from any pending data
 	obumx_add_packet(ctx->opid,ctx->bs_w, src_pck, pcks);
@@ -308,6 +313,7 @@ static GF_Err obumx_process_mpeg2au(GF_OBUMxCtx *ctx, GF_FilterPacket *src_pck, 
 		GF_FilterPacket *pck = (GF_FilterPacket *)gf_list_get(pcks, 0);
 		gf_list_rem(pcks, 0);
 		gf_filter_pck_set_cts(pck, out_cts);
+		gf_filter_pck_set_dts(pck, out_cts);
 		out_cts += out_duration;
 		if (gf_list_count(pcks) != 0) {
 			gf_filter_pck_set_duration(pck, out_duration);

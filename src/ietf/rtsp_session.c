@@ -186,7 +186,7 @@ GF_RTSPSession *gf_rtsp_session_new(char *sURL, u16 DefaultPort)
 
 #ifdef GPAC_HAS_SSL
 	if (!strncmp(sURL, "rtsps://", 8)
-		|| (!strncmp(sURL, "rtsph://", 8) && (Port==443))
+		|| (!strncmp(sURL, "rtsph://", 8) && ((Port==443) || (Port == 8443)))
 	) {
 		sess->use_ssl = GF_TRUE;
 		sess->ConnectionType = GF_SOCK_TYPE_TCP;
@@ -298,14 +298,14 @@ u32 gf_rtsp_session_reset(GF_RTSPSession *sess, Bool ResetConnection)
 }
 
 
+#ifdef GPAC_HAS_SSL
 Bool gf_rtsp_session_needs_ssl(GF_RTSPSession *sess)
 {
 	if (!sess) return GF_FALSE;
-#ifdef GPAC_HAS_SSL
 	if (sess->use_ssl && !sess->ssl_ctx) return GF_TRUE;
-#endif
 	return GF_FALSE;
 }
+#endif
 
 GF_EXPORT
 void gf_rtsp_session_del(GF_RTSPSession *sess)

@@ -610,7 +610,9 @@ struct __gf_filter
 	char *dst_args;
 	//filter tag
 	char *tag;
-	
+	//filter itag
+	char *itag;
+
 	//tasks pending for this filter. The first task in this list is also present in the filter session
 	//task list in order to avoid locking the main task list with a mutex
 	GF_FilterQueue *tasks;
@@ -725,6 +727,9 @@ struct __gf_filter
 	//sets once broken blocking mode has been detected
 	Bool blockmode_broken;
 #endif
+
+	//per-filter buffer options
+	u32 pid_buffer_max_us, pid_buffer_max_units, pid_decode_buffer_max_us;
 
 	//requested by a filter to disable blocking
 	Bool prevent_blocking;

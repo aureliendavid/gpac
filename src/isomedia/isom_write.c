@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / ISO Media File Format sub-project
@@ -4926,12 +4926,19 @@ GF_Err gf_isom_shift_cts_offset(GF_ISOFile *the_file, u32 trackNumber, s32 offse
 	if (!trak->Media->information->sampleTable->CompositionOffset) return GF_BAD_PARAM;
 	if (!trak->Media->information->sampleTable->CompositionOffset->unpack_mode) return GF_BAD_PARAM;
 
-	for (i=0; i<trak->Media->information->sampleTable->CompositionOffset->nb_entries; i++) {
+	GF_CompositionOffsetBox *ctso = trak->Media->information->sampleTable->CompositionOffset;
+	for (i=0; i<ctso->nb_entries; i++) {
+		s64 new_ts = ctso->entries[i].decodingOffset;
+		new_ts -= offset_shift;
 		/*we're in unpack mode: one entry per sample*/
-		trak->Media->information->sampleTable->CompositionOffset->entries[i].decodingOffset -= offset_shift;
+		ctso->entries[i].decodingOffset = (s32) new_ts;
 	}
-	if (trak->Media->mediaHeader->duration >= -offset_shift)
-		trak->Media->mediaHeader->duration -= offset_shift;
+	if (trak->Media->mediaHeader->duration >= -offset_shift) {
+		s64 new_dur = trak->Media->mediaHeader->duration;
+		new_dur -= offset_shift;
+		if (new_dur<0) new_dur = 0;
+		trak->Media->mediaHeader->duration = (u32) new_dur;
+	}
 	return GF_OK;
 }
 
@@ -6302,7 +6309,7 @@ GF_Err gf_isom_set_qt_key(GF_ISOFile *movie, GF_QT_UDTAKey *key)
 
 	nb_keys = gf_list_count(keys->keys);
 	if (!key) {
-		u32 i, nb_keys = gf_list_count(keys->keys);
+		u32 nb_keys = gf_list_count(keys->keys);
 		gf_isom_box_del_parent(&meta->child_boxes, (GF_Box *) keys);
 		for (i=0; i<gf_list_count(ilst->child_boxes); i++) {
 			GF_ListItemBox *info = gf_list_get(ilst->child_boxes, i);
@@ -6992,7 +6999,7 @@ static GF_Err gf_isom_set_sample_group_info_internal(GF_ISOFile *movie, u32 trac
 GF_Err gf_isom_add_sample_group_info_internal(GF_ISOFile *movie, u32 track, u32 grouping_type, void *data, u32 data_size, Bool is_default, u32 *sampleGroupDescriptionIndex, Bool *is_traf_sgpd, Bool check_access)
 {
 	GF_Err e;
-	GF_TrackBox *trak;
+	GF_TrackBox *trak=NULL;
 #ifndef GPAC_DISABLE_ISOM_FRAGMENTS
 	GF_TrackFragmentBox *traf=NULL;
 #else
@@ -7026,8 +7033,8 @@ GF_Err gf_isom_add_sample_group_info_internal(GF_ISOFile *movie, u32 track, u32 
 		}
 
 		trak = gf_isom_get_track_from_file(movie, track);
-		if (!trak) return GF_BAD_PARAM;
 	}
+	if (!trak) return GF_BAD_PARAM;
 
 	//get sample group desc for this grouping type
 	sgdesc = get_sgdp(trak->Media->information->sampleTable, traf, grouping_type, is_traf_sgpd);
@@ -7484,7 +7491,9 @@ static GF_Err gf_isom_set_ctts_v0(GF_ISOFile *file, GF_TrackBox *trak)
 		if (shift > 0)
 		{
 			for (i=0; i<ctts->nb_entries; i++) {
-				ctts->entries[i].decodingOffset += shift;
+				s64 new_ts = ctts->entries[i].decodingOffset;
+				new_ts += shift;
+				ctts->entries[i].decodingOffset = (s32) new_ts;
 			}
 		}
 	}
@@ -7493,7 +7502,9 @@ static GF_Err gf_isom_set_ctts_v0(GF_ISOFile *file, GF_TrackBox *trak)
 		cslg = trak->Media->information->sampleTable->CompositionToDecode;
 		shift = cslg->compositionToDTSShift;
 		for (i=0; i<ctts->nb_entries; i++) {
-			ctts->entries[i].decodingOffset += shift;
+			s64 new_ts = ctts->entries[i].decodingOffset;
+			new_ts += shift;
+			ctts->entries[i].decodingOffset = (s32) new_ts;
 		}
 		gf_isom_box_del_parent(&trak->Media->information->sampleTable->child_boxes, (GF_Box *)cslg);
 		trak->Media->information->sampleTable->CompositionToDecode = NULL;
@@ -8045,6 +8056,7 @@ GF_Err gf_isom_set_nalu_length_field(GF_ISOFile *file, u32 track, u32 StreamDesc
 	if (ve->svc_config) ve->svc_config->config->nal_unit_size = nalu_size_length;
 	if (ve->hevc_config) ve->hevc_config->config->nal_unit_size = nalu_size_length;
 	if (ve->lhvc_config) ve->lhvc_config->config->nal_unit_size = nalu_size_length;
+	if (ve->vvc_config) ve->vvc_config->config->nal_unit_size = nalu_size_length;
 	return GF_OK;
 }
 
@@ -8444,9 +8456,8 @@ GF_Err gf_isom_set_track_magic(GF_ISOFile *movie, u32 trackNumber, u64 magic)
 GF_EXPORT
 GF_Err gf_isom_set_track_index(GF_ISOFile *movie, u32 trackNumber, u32 index, void (*track_num_changed)(void *udta, u32 old_track_num, u32 new_track_num), void *udta)
 {
-	u32 i, count;
+	u32 i, j, count;
 	GF_List *tracks;
-	u32 prev_index=0, prev_pos=0;
 	GF_TrackBox *trak = gf_isom_get_track_from_file(movie, trackNumber);
 	if (!trak || !index) return GF_BAD_PARAM;
 	trak->index = index;
@@ -8457,13 +8468,17 @@ GF_Err gf_isom_set_track_index(GF_ISOFile *movie, u32 trackNumber, u32 index, vo
 		GF_TrackBox *a_tk = gf_list_get(movie->moov->trackList, i);
 		if (!a_tk->index) {
 			gf_list_insert(tracks, a_tk, 0);
-		} else if (a_tk->index < prev_index) {
-			gf_list_insert(tracks, a_tk, prev_pos);
 		} else {
-			gf_list_add(tracks, a_tk);
+			for (j=0; j<gf_list_count(tracks); j++) {
+				GF_TrackBox *a_tki = gf_list_get(tracks, j);
+				if (a_tki->index<a_tk->index) continue;
+				gf_list_insert(tracks, a_tk, j);
+				a_tk = NULL;
+				break;
+			}
+			if (a_tk)
+				gf_list_add(tracks, a_tk);
 		}
-		prev_pos = gf_list_count(tracks) - 1;
-		prev_index = a_tk->index;
 	}
 	if (gf_list_count(tracks) != count) {
 		gf_list_del(tracks);

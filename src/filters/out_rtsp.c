@@ -385,6 +385,11 @@ static GF_Err rtspout_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool i
 		stream->min_dts = GF_FILTER_NO_TS;
 		stream->on_rtcp = rtspout_on_rtcp;
 		stream->on_rtcp_udta = sess;
+
+#ifdef GPAC_ENABLE_COVERAGE
+		if (gf_sys_is_cov_mode())
+			rtspout_on_rtcp(stream->on_rtcp_udta);
+#endif
 	 	gf_filter_pid_set_udta(pid, stream);
 	}
 	stream->ctrl_id = sess->next_stream_id+1;
@@ -715,6 +720,12 @@ static Bool rtspout_init_clock(GF_RTSPOutCtx *ctx, GF_RTSPOutSession *sess)
 				rtpi->rtp_time = (u32) gf_timestamp_rescale(rtpi->rtp_time, stream->timescale, timescale);
 
 			gf_list_add(sess->response->RTP_Infos, rtpi);
+
+#ifdef GPAC_ENABLE_COVERAGE
+			if (gf_sys_is_cov_mode()) {
+				gf_rtp_streamer_get_ssrc(stream->rtp);
+			}
+#endif
 		}
 	}
 	GF_SAFEALLOC(sess->response->Range, GF_RTSPRange);

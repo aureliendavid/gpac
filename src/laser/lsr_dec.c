@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2005-2022
+ *			Copyright (c) Telecom ParisTech 2005-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / LASeR codec sub-project
@@ -857,7 +857,11 @@ static Fixed lsr_translate_coords(GF_LASeRCodec *lsr, u32 val, u32 nb_bits)
 
 #ifdef GPAC_FIXED_POINT
 	if (val >> (nb_bits-1) ) {
-		s64 neg = (s64) val - (0x00000001UL << nb_bits);
+		s32 neg;
+		if (nb_bits == 31)
+			neg = (s32)val - 0x80000000;
+		else
+			neg = (s32)val - (1 << nb_bits);
 		if (neg < -FIX_ONE / 2)
 			return 2 * gf_divfix(INT2FIX(neg/2), lsr->res_factor);
 		return gf_divfix(INT2FIX(neg), lsr->res_factor);
@@ -868,7 +872,11 @@ static Fixed lsr_translate_coords(GF_LASeRCodec *lsr, u32 val, u32 nb_bits)
 	}
 #else
 	if (val >> (nb_bits-1) ) {
-		s64 neg = (s64) val - (((u64)1) << nb_bits);
+		s32 neg;
+		if (nb_bits == 31)
+			neg = (s32)val - 0x80000000;
+		else
+			neg = (s32)val - (1 << nb_bits);
 		return ((Fixed)neg) / lsr->res_factor;
 	} else {
 		return ((Fixed)val) / lsr->res_factor;
@@ -879,8 +887,12 @@ static Fixed lsr_translate_coords(GF_LASeRCodec *lsr, u32 val, u32 nb_bits)
 static Fixed lsr_translate_scale(GF_LASeRCodec *lsr, u32 val)
 {
 	if (val >> (lsr->coord_bits-1) ) {
-		s64 v = val - (0x00000001UL << lsr->coord_bits);
-		return INT2FIX(v) / 256 ;
+		s32 neg;
+		if (lsr->coord_bits >= 31)
+			neg = (s32)val - 0x80000000;
+		else
+			neg = (s32)val - (1 << lsr->coord_bits);
+		return INT2FIX(neg) / 256 ;
 	} else {
 		return INT2FIX(val) / 256;
 	}
@@ -1527,8 +1539,8 @@ static void lsr_read_rare_full(GF_LASeRCodec *lsr, GF_Node *n)
 			} else {
 				da->type=SVG_STROKEDASHARRAY_ARRAY;
 				da->array.count = lsr_read_vluimsbf5(lsr, "len");
-				da->array.vals = (Fixed*)gf_malloc(sizeof(Fixed)*da->array.count);
-				da->array.units = (u8*)gf_malloc(sizeof(u8)*da->array.count);
+				da->array.vals = (Fixed*)gf_realloc(da->array.vals, sizeof(Fixed)*da->array.count);
+				da->array.units = (u8*)gf_realloc(da->array.units, sizeof(u8)*da->array.count);
 				if (!da->array.vals || !da->array.units) {
 					lsr->last_error = GF_OUT_OF_MEM;
 					return;

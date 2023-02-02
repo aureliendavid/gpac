@@ -401,9 +401,9 @@ GF_FilterSession *gf_fs_new(s32 nb_threads, GF_FilterSchedulerType sched_type, u
 
 	fsess->run_status = GF_EOS;
 	fsess->nb_threads_stopped = 1+nb_threads;
-	fsess->default_pid_buffer_max_us = 1000;
-	fsess->decoder_pid_buffer_max_us = 1000000;
-	fsess->default_pid_buffer_max_units = 1;
+	fsess->default_pid_buffer_max_us = gf_opts_get_int("core", "buffer-gen");
+	fsess->decoder_pid_buffer_max_us = gf_opts_get_int("core", "buffer-dec");
+	fsess->default_pid_buffer_max_units = gf_opts_get_int("core", "buffer-units");
 	fsess->max_resolve_chain_len = 6;
 	fsess->auto_inc_nums = gf_list_new();
 
@@ -1133,7 +1133,7 @@ static GF_Filter *gf_fs_load_encoder(GF_FilterSession *fsess, const char *args)
 	szCodec[1] = fsess->sep_name;
 	szCodec[2] = 0;
 
-	cid = strstr(args, szCodec);
+	cid = args ? strstr(args, szCodec) : NULL;
 	if (!cid) {
 		GF_LOG(GF_LOG_ERROR, GF_LOG_FILTER, ("Missing codec identifier in \"enc\" definition: %s\n", args ? args : "no arguments"));
 		return NULL;
@@ -3356,6 +3356,7 @@ static void gf_fs_print_jsf_connection(GF_FilterSession *session, char *filter_n
 	Bool has_output, has_input;
 
 	if (!js_filter) {
+		if (!filter_name) return;
 		js_filter = gf_fs_load_filter(session, filter_name, &e);
 		if (!js_filter) return;
 	} else {
@@ -4010,7 +4011,7 @@ GF_EXPORT
 GF_Filter *gf_fs_new_filter(GF_FilterSession *fsess, const char *name, u32 flags, GF_Err *e)
 {
 	GF_Filter *f;
-	char szRegName[25];
+	char *sep, szRegName[25];
 	GF_FilterRegister *reg;
 
 	GF_SAFEALLOC(reg, GF_FilterRegister);
@@ -4027,16 +4028,18 @@ GF_Filter *gf_fs_new_filter(GF_FilterSession *fsess, const char *name, u32 flags
 #endif
 	reg->version = "custom";
 	sprintf(szRegName, "custom%p", reg);
+	sep = strchr(name, fsess->sep_args);
+	if (sep) sep[0] = 0;
 	reg->name = gf_strdup(name ? name : szRegName);
 	reg->flags = GF_FS_REG_CUSTOM | GF_FS_REG_EXPLICIT_ONLY;
 
 	if (flags & GF_FS_REG_MAIN_THREAD)
 		reg->flags |= GF_FS_REG_MAIN_THREAD;
 
-	f = gf_filter_new(fsess, reg, NULL, NULL, 0, e, NULL, GF_FALSE);
-	if (!f) return NULL;
-	if (name)
+	f = gf_filter_new(fsess, reg, sep ? sep+1 : NULL, NULL, 0, e, NULL, GF_FALSE);
+	if (f && name)
 		gf_filter_set_name(f, name);
+	if (sep) sep[0] = fsess->sep_args;
 	return f;
 }
 

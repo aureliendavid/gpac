@@ -474,7 +474,7 @@ static GF_Err ut_filter_config_input(GF_Filter *filter, GF_FilterPid *pid, Bool 
 	for (i=0; i<count; i++) {
 		pidctx = gf_list_get(stack->pids, i);
 
-		//something is being reconfigured. We check we have the same custum arg, otherwise we do not support
+		//something is being reconfigured. We check we have the same custom arg, otherwise we do not support
 		if (pidctx->src_pid == pid) {
 			format = gf_filter_pid_get_property(pidctx->src_pid, GF_4CC('c','u','s','t') );
 			if (!format || !format->value.string || strcmp(format->value.string, stack->pid_att)) {
@@ -970,19 +970,19 @@ const GF_FilterRegister UTSourceRegister = {
 };
 
 
-const GF_FilterRegister *ut_filter_register(GF_FilterSession *session, Bool load_meta_filters)
+const GF_FilterRegister *ut_filter_register(GF_FilterSession *session)
 {
 	return &UTFilterRegister;
 }
-const GF_FilterRegister *ut_source_register(GF_FilterSession *session, Bool load_meta_filters)
+const GF_FilterRegister *ut_source_register(GF_FilterSession *session)
 {
 	return &UTSourceRegister;
 }
-const GF_FilterRegister *ut_sink_register(GF_FilterSession *session, Bool load_meta_filters)
+const GF_FilterRegister *ut_sink_register(GF_FilterSession *session)
 {
 	return &UTSinkRegister;
 }
-const GF_FilterRegister *ut_sink2_register(GF_FilterSession *session, Bool load_meta_filters)
+const GF_FilterRegister *ut_sink2_register(GF_FilterSession *session)
 {
 	return &UTSink2Register;
 }

@@ -247,9 +247,15 @@ static void filter_push_args(GF_FilterSession *fsess, char **out_args, char *in_
 		}
 		else if (!strncmp(in_args, "TAG", 3) && (in_args[3]==fsess->sep_name)) {
 		}
+		else if (!strncmp(in_args, "ITAG", 4) && (in_args[4]==fsess->sep_name)) {
+		}
 		else if (!strncmp(in_args, "FS", 2) && (in_args[2]==fsess->sep_name)) {
 		}
 		else if (!strncmp(in_args, "RSID", 4) && (!in_args[4] || (in_args[4]==fsess->sep_args))) {
+		}
+		else if (!strncmp(in_args, "FBT", 2) && (in_args[3]==fsess->sep_name)) {
+		}
+		else if (!strncmp(in_args, "FBU", 2) && (in_args[3]==fsess->sep_name)) {
 		}
 		else if (!is_src && (in_args[0]==fsess->sep_frag)) {
 
@@ -481,7 +487,7 @@ GF_Filter *gf_filter_new(GF_FilterSession *fsess, const GF_FilterRegister *freg,
 	}
 
 	if ((freg->flags & GF_FS_REG_SINGLE_THREAD) && gf_list_count(filter->session->threads)) {
-		u32 i, count = gf_list_count(filter->session->threads);
+		u32 count = gf_list_count(filter->session->threads);
 		GF_SessionThread *ft;
 		u32 idx=0;
 		u32 min_th_assigned = 0;
@@ -653,6 +659,8 @@ void gf_filter_del(GF_Filter *filter)
 	if (filter->name) gf_free(filter->name);
 	if (filter->status_str) gf_free(filter->status_str);
 	if (filter->restricted_source_id) gf_free(filter->restricted_source_id);
+	if (filter->tag) gf_free(filter->tag);
+	if (filter->itag) gf_free(filter->itag);
 
 	if (!filter->session->in_final_flush && !filter->session->run_status) {
 		u32 i, count;
@@ -1035,7 +1043,7 @@ Bool filter_solve_gdocs(const char *url, char szPath[GF_MAX_PATH])
 	if (path && path[0]) {
 		strcpy(szPath, path);
 		u32 len = (u32) strlen(szPath);
-		if ((szPath[len-1]=='/') || (szPath[len-1]=='/'))
+		if ((szPath[len-1]=='/') || (szPath[len-1]=='\\'))
 			szPath[len-1]=0;
 
 		strcat(szPath, url+6);
@@ -1204,7 +1212,7 @@ void gf_filter_update_arg_task(GF_FSTask *task)
 	gf_free(arg);
 }
 
-static const char *gf_filter_load_arg_config(GF_Filter *filter, const char *sec_name, const char *arg_name, const char *arg_val)
+static const char *gf_filter_load_arg_config(GF_Filter *filter, const char *sec_name, const char *arg_name, const char *arg_val, Bool first_arg)
 {
 	char szArg[101];
 	Bool gf_sys_has_filter_global_args();
@@ -1216,7 +1224,9 @@ static const char *gf_filter_load_arg_config(GF_Filter *filter, const char *sec_
 		u32 alen = (u32) strlen(arg_name);
 		u32 i, nb_args = gf_sys_get_argc();
 		for (i=0; i<nb_args; i++) {
+			u32 len;
 			u32 flen = 0;
+			u32 is_ok, loc_alen;
 			const char *per_filter, *sep2, *sep;
 			const char *o_arg, *arg = gf_sys_get_arg(i);
 			if (arg[0]!='-') continue;
@@ -1241,18 +1251,42 @@ static const char *gf_filter_load_arg_config(GF_Filter *filter, const char *sec_
 				arg += flen;
 			}
 
+			if (sep) {
+				len = (u32) (sep - (arg));
+			} else {
+				len = (u32) strlen(arg);
+			}
+			is_ok = 0;
 			if (!strncmp(arg, arg_name, alen)) {
-				u32 len=0;
-				if (sep) {
-					len = (u32) (sep - (arg));
-				} else {
-					len = (u32) strlen(arg);
+				if (len == alen) is_ok = 1;
+				loc_alen = alen;
+			} else if (first_arg && sep) {
+				if (!strncmp(arg, "FBT", len)) {
+					GF_PropertyValue ap = gf_props_parse_value(GF_PROP_UINT, "FBT", sep+1, NULL, filter->session->sep_list);
+					filter->pid_buffer_max_us = ap.value.uint;
+					is_ok = 2;
+					loc_alen=3;
 				}
-				if (len != alen) continue;
-				strncpy(szArg, o_arg, 100);
-				szArg[ MIN(flen + alen, 100) ] = 0;
-				gf_fs_push_arg(session, szArg, GF_TRUE, GF_ARGTYPE_LOCAL, NULL, NULL);
+				else if (!strncmp(arg, "FBU", len)) {
+					GF_PropertyValue ap = gf_props_parse_value(GF_PROP_UINT, "FBU", sep+1, NULL, filter->session->sep_list);
+					filter->pid_buffer_max_units = ap.value.uint;
+					is_ok = 2;
+					loc_alen=3;
+				}
+				else if (!strncmp(arg, "FBD", len)) {
+					GF_PropertyValue ap = gf_props_parse_value(GF_PROP_UINT, "FBD", sep+1, NULL, filter->session->sep_list);
+					filter->pid_decode_buffer_max_us = ap.value.uint;
+					is_ok = 2;
+					loc_alen=3;
+				}
+			}
+			if (!is_ok) continue;
 
+			strncpy(szArg, o_arg, 100);
+			szArg[ MIN(flen + loc_alen, 100) ] = 0;
+			gf_fs_push_arg(session, szArg, GF_TRUE, GF_ARGTYPE_LOCAL, NULL, NULL);
+
+			if (is_ok==1) {
 				if (sep) return sep+1;
 				//no arg value means boolean true
 				else return "true";
@@ -1265,6 +1299,25 @@ static const char *gf_filter_load_arg_config(GF_Filter *filter, const char *sec_
 	if (opt)
 		return opt;
 
+	if (first_arg) {
+		GF_PropertyValue ap;
+		opt = gf_opts_get_key(sec_name, "FBT");
+		if (opt) {
+			ap = gf_props_parse_value(GF_PROP_UINT, "FBT", opt, NULL, filter->session->sep_list);
+			filter->pid_buffer_max_us = ap.value.uint;
+		}
+		opt = gf_opts_get_key(sec_name, "FBU");
+		if (opt) {
+			ap = gf_props_parse_value(GF_PROP_UINT, "FBU", opt, NULL, filter->session->sep_list);
+			filter->pid_buffer_max_units = ap.value.uint;
+		}
+		opt = gf_opts_get_key(sec_name, "FBD");
+		if (opt) {
+			ap = gf_props_parse_value(GF_PROP_UINT, "FBD", opt, NULL, filter->session->sep_list);
+			filter->pid_decode_buffer_max_us = ap.value.uint;
+		}
+	}
+	
 	//ifce (used by socket and other filters), use core default
 	if (!strcmp(arg_name, "ifce")) {
 		opt = gf_opts_get_key("core", "ifce");
@@ -1824,6 +1877,20 @@ skip_date:
 				found = GF_TRUE;
 				internal_arg = GF_TRUE;
 			}
+			//per-filter buffer times
+			else if (!strcmp("FBT", szArg)) {
+				if (arg_type!=GF_FILTER_ARG_INHERIT)
+					filter->pid_buffer_max_us = atoi(value);
+				found = GF_TRUE;
+				internal_arg = GF_TRUE;
+			}
+			//per-filter buffer units
+			else if (!strcmp("FBU", szArg)) {
+				if (arg_type!=GF_FILTER_ARG_INHERIT)
+					filter->pid_buffer_max_units = atoi(value);
+				found = GF_TRUE;
+				internal_arg = GF_TRUE;
+			}
 			//internal options, nothing to do here
 			else if (
 				//generic encoder load
@@ -1849,6 +1916,15 @@ skip_date:
 				if (! filter->dynamic_filter) {
 					if (filter->tag) gf_free(filter->tag);
 					filter->tag = value ? gf_strdup(value) : NULL;
+				}
+				found = GF_TRUE;
+				internal_arg = GF_TRUE;
+			}
+			//filter itag
+			else if (!strcmp("ITAG", szArg)) {
+				if (! filter->dynamic_filter) {
+					if (filter->itag) gf_free(filter->itag);
+					filter->itag = value ? gf_strdup(value) : NULL;
 				}
 				found = GF_TRUE;
 				internal_arg = GF_TRUE;
@@ -1952,6 +2028,7 @@ skip_arg:
 
 static void gf_filter_parse_args(GF_Filter *filter, const char *args, GF_FilterArgType arg_type, Bool for_script)
 {
+	Bool first = GF_TRUE;
 	u32 i=0;
 	char szSecName[200];
 	char szEscape[7];
@@ -1997,7 +2074,8 @@ static void gf_filter_parse_args(GF_Filter *filter, const char *args, GF_FilterA
 			continue;
 		}
 
-		def_val = gf_filter_load_arg_config(filter, szSecName, a->arg_name, a->arg_default_val);
+		def_val = gf_filter_load_arg_config(filter, szSecName, a->arg_name, a->arg_default_val, first);
+		first = GF_FALSE;
 
 		if (!def_val) continue;
 
@@ -2377,16 +2455,6 @@ Bool gf_filter_reconf_output(GF_Filter *filter, GF_FilterPid *pid)
 	gf_mx_v(filter->tasks_mx);
 	return GF_TRUE;
 }
-
-void gf_filter_reconfigure_output_task(GF_FSTask *task)
-{
-	GF_Filter *filter = task->filter;
-	GF_FilterPid *pid;
-	assert(filter->num_output_pids==1);
-	pid = gf_list_get(filter->output_pids, 0);
-	gf_filter_reconf_output(filter, pid);
-}
-
 
 static void gf_filter_renegociate_output(GF_Filter *filter, Bool force_afchain_insert)
 {
@@ -3213,19 +3281,19 @@ void gf_filter_setup_failure(GF_Filter *filter, GF_Err reason)
 		gf_mx_p(filter->tasks_mx);
 
 		while (filter->num_input_pids) {
-			GF_FilterPidInst *pidinst = gf_list_get(filter->input_pids, 0);
-			GF_Filter *sfilter = pidinst->pid->filter;
+			GF_FilterPidInst *a_pidi = gf_list_get(filter->input_pids, 0);
+			GF_Filter *a_filter = a_pidi->pid->filter;
 
-			gf_list_del_item(filter->input_pids, pidinst);
+			gf_list_del_item(filter->input_pids, a_pidi);
 
-			gf_filter_instance_detach_pid(pidinst);
+			gf_filter_instance_detach_pid(a_pidi);
 
 			filter->num_input_pids = gf_list_count(filter->input_pids);
 			if (!filter->num_input_pids)
 				filter->single_source = NULL;
 
 			//post a pid_delete task to also trigger removal of the filter if needed
-			gf_fs_post_task(filter->session, gf_filter_pid_inst_delete_task, sfilter, pidinst->pid, "pid_inst_delete", pidinst);
+			gf_fs_post_task(filter->session, gf_filter_pid_inst_delete_task, a_filter, a_pidi->pid, "pid_inst_delete", a_pidi);
 		}
 		gf_mx_v(filter->tasks_mx);
 		if (reason)

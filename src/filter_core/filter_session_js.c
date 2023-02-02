@@ -642,6 +642,8 @@ enum
 	JSFF_EVENT_TARGET,
 	JSFF_LAST_TS_SENT,
 	JSFF_LAST_TS_DROP,
+	JSFF_TAG,
+	JSFF_ITAG,
 };
 
 
@@ -660,6 +662,10 @@ static JSValue jsfs_f_prop_get(JSContext *ctx, JSValueConst this_val, int magic)
 		return JS_NewString(ctx, gf_filter_get_name(f) );
 	case JSFF_TYPE:
 		return JS_NewString(ctx, f->freg->name );
+	case JSFF_TAG:
+		return f->tag ? JS_NewString(ctx, f->tag ) : JS_NULL;
+	case JSFF_ITAG:
+		return f->itag ? JS_NewString(ctx, f->itag ) : JS_NULL;
 	case JSFF_ID:
 		val_s = gf_filter_get_id(f);
 		if (!val_s) return JS_NULL;
@@ -924,11 +930,10 @@ static JSValue jsff_get_pid_sinks(JSContext *ctx, JSValueConst this_val, int arg
 
 static void get_filter_args(JSContext *ctx, GF_FilterSession *fs,  const GF_FilterRegister *freg, GF_Filter *f_inst, Bool val_only, JSValue array)
 {
-	u32 idx, a_idx;
+	u32 idx;
 	const GF_FilterArgs *args;
 
 	idx=0;
-	a_idx=0;
 	args = (f_inst && f_inst->instance_args) ? f_inst->instance_args : freg->args;
 
 	while (args && args[idx].arg_name) {
@@ -1011,7 +1016,6 @@ static void get_filter_args(JSContext *ctx, GF_FilterSession *fs,  const GF_Filt
 		}
 		JS_SetPropertyUint32(ctx, array, idx, aval);
 		idx++;
-		a_idx++;
 	}
 }
 
@@ -1081,9 +1085,9 @@ static Bool jsfs_get_filter_args(JSContext *ctx, GF_FilterSession *fs, GF_Filter
 		//load external modules
 		u32 i, count = gf_modules_count();
 		for (i=0; i<count; i++) {
-			GF_FilterRegister *freg = (GF_FilterRegister *) gf_modules_load_filter(i, *meta_fs);
-			if (freg) {
-				gf_fs_add_filter_register(*meta_fs, freg);
+			GF_FilterRegister *a_freg = (GF_FilterRegister *) gf_modules_load_filter(i, *meta_fs);
+			if (a_freg) {
+				gf_fs_add_filter_register(*meta_fs, a_freg);
 			}
 		}
 		(*meta_fs)->blacklist = NULL;
@@ -1123,7 +1127,7 @@ static Bool jsfs_get_filter_args(JSContext *ctx, GF_FilterSession *fs, GF_Filter
 	const char *inst_names = gf_filter_meta_get_instances(finst);
 	while (inst_names && inst_names[0]) {
 		char szFName[100];
-		char *sep = strchr(inst_names, ' ');
+		sep = strchr(inst_names, ' ');
 		if (sep) sep[0] = 0;
 		sprintf(szFName, "%s:%s", finst->freg->name, inst_names);
 
@@ -1290,19 +1294,27 @@ static JSValue jsff_remove(JSContext *ctx, JSValueConst this_val, int argc, JSVa
 	return JS_UNDEFINED;
 }
 
+GF_Filter *jsf_custom_filter_opaque(JSContext *ctx, JSValueConst this_val);
+
 static JSValue jsff_insert_filter(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
-	const char *fname, *link_args;
+	const char *fname=NULL, *link_args;
 	GF_Filter *new_f;
 	GF_Err e;
 	Bool is_source = GF_FALSE;
 	GF_FilterPid *opid=NULL;
+	GF_Filter *inserted = NULL;
 	GF_Filter *f = JS_GetOpaque(this_val, fs_f_class_id);
 	if (!f || !argc)
 		return GF_JS_EXCEPTION(ctx);
 
-	fname = JS_ToCString(ctx, argv[0]);
-	if (!fname) return GF_JS_EXCEPTION(ctx);
+	if (JS_IsObject(argv[0])) {
+		inserted = jsf_custom_filter_opaque(ctx, argv[0]);
+		if (!inserted) return GF_JS_EXCEPTION(ctx);
+	} else {
+		fname = JS_ToCString(ctx, argv[0]);
+		if (!fname) return GF_JS_EXCEPTION(ctx);
+	}
 	link_args = NULL;
 	if (argc>1) {
 		u32 offset=1;
@@ -1317,13 +1329,16 @@ static JSValue jsff_insert_filter(JSContext *ctx, JSValueConst this_val, int arg
 		if ((u32) argc>offset) {
 			link_args = JS_ToCString(ctx, argv[offset]);
 			if (!link_args) {
-				JS_FreeCString(ctx, fname);
+				if (fname) JS_FreeCString(ctx, fname);
 				return GF_JS_EXCEPTION(ctx);
 			}
 		}
 	}
 	gf_fs_lock_filters(f->session, GF_TRUE);
-	if (!strncmp(fname, "src=", 4)) {
+	if (inserted) {
+		new_f = inserted;
+	}
+	else if (!strncmp(fname, "src=", 4)) {
 		new_f = gf_fs_load_source(f->session, fname+4, NULL, NULL, &e);
 		is_source = GF_TRUE;
 	} else if (!strncmp(fname, "dst=", 4)) {
@@ -1333,8 +1348,8 @@ static JSValue jsff_insert_filter(JSContext *ctx, JSValueConst this_val, int arg
 	}
 
 	if (!new_f) {
-		JSValue ret = js_throw_err_msg(ctx, e, "Cannot load filter %s: %s\n", fname, gf_error_to_string(e));
-		JS_FreeCString(ctx, fname);
+		JSValue ret = js_throw_err_msg(ctx, e, "Cannot load filter %s: %s\n", fname ? fname : "custom", gf_error_to_string(e));
+		if (fname) JS_FreeCString(ctx, fname);
 		if (link_args) JS_FreeCString(ctx, link_args);
 		gf_fs_lock_filters(f->session, GF_FALSE);
 		return ret;
@@ -1351,7 +1366,7 @@ static JSValue jsff_insert_filter(JSContext *ctx, JSValueConst this_val, int arg
 	//reconnect outputs of source
 	gf_filter_reconnect_output((GF_Filter *) f, opid);
 
-	JS_FreeCString(ctx, fname);
+	if (fname) JS_FreeCString(ctx, fname);
 	if (link_args) JS_FreeCString(ctx, link_args);
 
 	return jsfs_new_filter_obj(ctx, new_f);
@@ -1547,6 +1562,8 @@ static JSValue jsff_opid_stats(JSContext *ctx, JSValueConst this_val, int argc, 
 static const JSCFunctionListEntry fs_f_funcs[] = {
 	JS_CGETSET_MAGIC_DEF_ENUM("name", jsfs_f_prop_get, NULL, JSFF_NAME),
 	JS_CGETSET_MAGIC_DEF_ENUM("type", jsfs_f_prop_get, NULL, JSFF_TYPE),
+	JS_CGETSET_MAGIC_DEF_ENUM("tag", jsfs_f_prop_get, NULL, JSFF_TAG),
+	JS_CGETSET_MAGIC_DEF_ENUM("itag", jsfs_f_prop_get, NULL, JSFF_ITAG),
 	JS_CGETSET_MAGIC_DEF_ENUM("ID", jsfs_f_prop_get, NULL, JSFF_ID),
 	JS_CGETSET_MAGIC_DEF_ENUM("nb_ipid", jsfs_f_prop_get, NULL, JSFF_NB_IPID),
 	JS_CGETSET_MAGIC_DEF_ENUM("nb_opid", jsfs_f_prop_get, NULL, JSFF_NB_OPID),
@@ -1751,6 +1768,23 @@ static JSValue jsfs_new_filter(JSContext *ctx, JSValueConst this_val, int argc, 
 	return jsfilter_initialize_custom(f, ctx);
 }
 
+static JSValue jsfs_remove_filter(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+	GF_Filter *to_remove=NULL;
+	GF_FilterSession *fs = JS_GetOpaque(this_val, fs_class_id);
+	if (!fs || !argc) return GF_JS_EXCEPTION(ctx);
+	if (!JS_IsObject(argv[0]) ) return GF_JS_EXCEPTION(ctx);
+
+	to_remove = JS_GetOpaque(argv[0], fs_f_class_id);
+	if (!to_remove)
+		to_remove = jsf_custom_filter_opaque(ctx, argv[0]);
+
+	if (!to_remove)
+		return GF_JS_EXCEPTION(ctx);
+
+	gf_filter_remove(to_remove);
+	return JS_UNDEFINED;
+}
 
 static const JSCFunctionListEntry fs_funcs[] = {
     JS_CGETSET_MAGIC_DEF_ENUM("nb_filters", jsfs_prop_get, NULL, JSFS_NB_FILTERS),
@@ -1777,6 +1811,7 @@ static const JSCFunctionListEntry fs_funcs[] = {
     JS_CFUNC_DEF("fire_event", 0, jsfs_fire_event),
     JS_CFUNC_DEF("reporting", 0, jsfs_reporting),
     JS_CFUNC_DEF("new_filter", 0, jsfs_new_filter),
+    JS_CFUNC_DEF("remove_filter", 0, jsfs_remove_filter),
     JS_CFUNC_DEF("set_auth_fun", 0, jsfs_set_auth_fun),
 	JS_CFUNC_DEF("filter_args", 0, jsfs_filter_args),
 

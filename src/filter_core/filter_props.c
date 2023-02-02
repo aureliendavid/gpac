@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2017-2022
+ *			Copyright (c) Telecom ParisTech 2017-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / filters sub-project
@@ -1446,6 +1446,7 @@ GF_BuiltInProperty GF_BuiltInProps [] =
 	{ GF_PROP_PID_HAS_SYNC, "HasSync", "PID has sync points", GF_PROP_BOOL, GF_PROP_FLAG_GSF_REM},
 	{ GF_PROP_SERVICE_WIDTH, "ServiceWidth", "Display width of service", GF_PROP_UINT, GF_PROP_FLAG_GSF_REM},
 	{ GF_PROP_SERVICE_HEIGHT, "ServiceHeight", "Display height of service", GF_PROP_UINT, GF_PROP_FLAG_GSF_REM},
+	{ GF_PROP_PID_IS_DEFAULT, "IsDefault", "Default PID for this stream type", GF_PROP_BOOL, GF_PROP_FLAG_GSF_REM},
 	{ GF_PROP_PID_CAROUSEL_RATE, "CarouselRate", "Repeat rate in ms for systems carousel data", GF_PROP_UINT, GF_PROP_FLAG_GSF_REM},
 	{ GF_PROP_PID_AUDIO_VOLUME, "AudioVolume", "Volume of audio", GF_PROP_UINT, GF_PROP_FLAG_GSF_REM},
 	{ GF_PROP_PID_AUDIO_PAN, "AudioPan", "Balance/Pan of audio", GF_PROP_UINT, GF_PROP_FLAG_GSF_REM},
@@ -1557,7 +1558,7 @@ GF_BuiltInProperty GF_BuiltInProps [] =
 	{ GF_PROP_PID_ICC_PROFILE, "ICC", "ICC profile (see ISO 15076-1 or ICC.1)", GF_PROP_DATA, GF_PROP_FLAG_GSF_REM},
 
 	{ GF_PROP_PID_SRC_MAGIC, "SrcMagic", "Magic number to store in the track, only used by importers", GF_PROP_LUINT, GF_PROP_FLAG_GSF_REM},
-	{ GF_PROP_PID_MUX_INDEX, "MuxIndex", "Target track index in destination file, stored by lowest value first (not set by demultiplexers)", GF_PROP_LUINT, GF_PROP_FLAG_GSF_REM},
+	{ GF_PROP_PID_MUX_INDEX, "MuxIndex", "Target track index in destination file, stored by lowest value first (not set by demultiplexers)", GF_PROP_UINT, GF_PROP_FLAG_GSF_REM},
 	{ GF_PROP_NO_TS_LOOP, "NoTSLoop", "Timestamps on this PID are adjusted in case of loops (used by TS multiplexer output)", GF_PROP_BOOL, 0},
 	{ GF_PROP_PID_MHA_COMPATIBLE_PROFILES, "MHAProfiles", "List of compatible profiles for this MPEG-H Audio object", GF_PROP_UINT_LIST, GF_PROP_FLAG_GSF_REM},
 
@@ -1597,6 +1598,7 @@ GF_BuiltInProperty GF_BuiltInProps [] =
 	{ GF_PROP_PID_TIMESHIFT_SEGS, "TSBSegs", "Time shift in number of segments for HAS streams, only set by dashin and dasher filters", GF_PROP_UINT, GF_PROP_FLAG_GSF_REM},
 	{ GF_PROP_PID_IS_MANIFEST, "IsManifest", "PID is a HAS manifest", GF_PROP_BOOL, GF_PROP_FLAG_GSF_REM},
 	{ GF_PROP_PID_SPARSE, "Sparse", "PID has potentially empty times between packets", GF_PROP_BOOL, GF_PROP_FLAG_GSF_REM},
+	{ GF_PROP_PID_CHARSET, "CharSet", "Character set for input text PID", GF_PROP_STRING, GF_PROP_FLAG_GSF_REM},
 
 	{ GF_PROP_PID_CHAP_TIMES, "ChapTimes", "Chapter start times", GF_PROP_UINT_LIST, GF_PROP_FLAG_GSF_REM},
 	{ GF_PROP_PID_CHAP_NAMES, "ChapNames", "Chapter names", GF_PROP_STRING_LIST, GF_PROP_FLAG_GSF_REM},
@@ -1873,25 +1875,6 @@ const char *gf_props_dump_val(const GF_PropertyValue *att, char dump[GF_PROP_DUM
 	return dump;
 }
 
-/*time is given in ms*/
-static void prop_print_utc_date(char dump[GF_PROP_DUMP_ARG_SIZE], u64 time)
-{
-	time_t gtime;
-	struct tm *t;
-	u32 sec;
-	u32 ms;
-	gtime = time / 1000;
-	sec = (u32)(time / 1000);
-	ms = (u32)(time - ((u64)sec) * 1000);
-
-	t = gf_gmtime(&gtime);
-	sec = t->tm_sec;
-	//see issue #859, no clue how this happened...
-	if (sec > 60)
-		sec = 60;
-	snprintf(dump, GF_PROP_DUMP_ARG_SIZE-1, "%d-%02d-%02dT%02d:%02d:%02d.%03dZ", 1900 + t->tm_year, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, sec, ms);
-	dump[GF_PROP_DUMP_ARG_SIZE-1]=0;
-}
 
 GF_EXPORT
 const char *gf_props_dump(u32 p4cc, const GF_PropertyValue *att, char dump[GF_PROP_DUMP_ARG_SIZE], u32 dump_data_mode)
@@ -1912,10 +1895,25 @@ const char *gf_props_dump(u32 p4cc, const GF_PropertyValue *att, char dump[GF_PR
 
 	case GF_PROP_PCK_SENDER_NTP:
 	case GF_PROP_PCK_RECEIVER_NTP:
-		prop_print_utc_date(dump, gf_net_ntp_to_utc(att->value.longuint));
-		return dump;
 	case GF_PROP_PCK_UTC_TIME:
-		prop_print_utc_date(dump, att->value.longuint);
+	{
+		u64 time = (p4cc==GF_PROP_PCK_UTC_TIME) ? att->value.longuint : gf_net_ntp_to_utc(att->value.longuint);
+		time_t gtime;
+		struct tm *t;
+		u32 sec;
+		u32 ms;
+		gtime = time / 1000;
+		sec = (u32)(time / 1000);
+		ms = (u32)(time - ((u64)sec) * 1000);
+
+		t = gf_gmtime(&gtime);
+		sec = t->tm_sec;
+		//see issue #859, no clue how this happened...
+		if (sec > 60)
+			sec = 60;
+		snprintf(dump, GF_PROP_DUMP_ARG_SIZE-1, "%d-%02d-%02dT%02d:%02d:%02d.%03dZ", 1900 + t->tm_year, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, sec, ms);
+		dump[GF_PROP_DUMP_ARG_SIZE-1]=0;
+	}
 		return dump;
 
 	default:

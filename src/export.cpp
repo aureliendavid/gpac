@@ -335,6 +335,7 @@
 #pragma comment (linker, EXPORT_SYMBOL(gf_url_free) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_url_get_resource_name) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_url_to_fs_path) )
+#pragma comment (linker, EXPORT_SYMBOL(gf_url_is_relative) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_utc_time_since_1970) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_net_get_ntp) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_net_get_ntp_ts) )
@@ -590,6 +591,7 @@
 #pragma comment (linker, EXPORT_SYMBOL(gf_mx_perspective) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_mx_lookat) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_mx_apply_bbox) )
+#pragma comment (linker, EXPORT_SYMBOL(gf_mx_apply_bbox_4x4) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_mx_add_matrix_4x4) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_mx_inverse_4x4) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_mx_apply_vec_4x4) )
@@ -1528,6 +1530,7 @@
 #pragma comment (linker, EXPORT_SYMBOL(gf_crypt_encrypt) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_crypt_set_key) )
 #pragma comment (linker, EXPORT_SYMBOL(gf_crypt_set_IV) )
+#pragma comment (linker, EXPORT_SYMBOL(gf_crypt_get_IV) )
 #endif GPAC_DISABLE_CRYPTO
 
 #pragma comment (linker, EXPORT_SYMBOL(gf_sha1_csum) )

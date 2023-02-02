@@ -5009,7 +5009,6 @@ static void jsfilter_finalize(GF_Filter *filter)
 		gf_fs_unload_script(filter->session, jsf->ctx);
 
 	if (!jsf->is_custom) {
-		u32 i, count;
 		//we created the context, detach all other filters jsvals
 		gf_mx_p(jsf->filter->session->filters_mx);
 		count = gf_list_count(jsf->filter->session->filters);
@@ -5268,6 +5267,13 @@ JSValue jsfilter_initialize_custom(GF_Filter *filter, JSContext *ctx)
 	//signal reg is script, so we don't free the filter reg caps as with custom filters
 	((GF_FilterRegister *) filter->freg)->flags |= GF_FS_REG_SCRIPT;
 	return JS_DupValue(ctx, jsf->filter_obj);
+}
+
+GF_Filter *jsf_custom_filter_opaque(JSContext *ctx, JSValueConst this_val)
+{
+	GF_JSFilterCtx *jsf = JS_GetOpaque(this_val, jsf_filter_class_id);
+	if (!jsf || !jsf->is_custom) return NULL;
+	return jsf->filter;
 }
 
 #else

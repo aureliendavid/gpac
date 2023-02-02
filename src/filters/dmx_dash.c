@@ -300,7 +300,7 @@ static void dashdmx_forward_packet(GF_DASHDmxCtx *ctx, GF_FilterPacket *in_pck, 
 	}
 
 	if (!ctx->is_dash) {
-		GF_FilterPacket *dst_pck = gf_filter_pck_new_ref(out_pid, 0, 0, in_pck);
+		dst_pck = gf_filter_pck_new_ref(out_pid, 0, 0, in_pck);
 		if (!dst_pck) return;
 		gf_filter_pck_merge_properties(in_pck, dst_pck);
 
@@ -956,12 +956,14 @@ GF_Err dashdmx_io_on_dash_event(GF_DASHFileIO *dashio, GF_DASHEventType dash_evt
 #ifdef GPAC_ENABLE_COVERAGE
 		if (gf_sys_is_cov_mode()) {
 			gf_dash_groups_set_language(ctx->dash, gf_opts_get_key("core", "lang"));
-			//not used in the test suite (require JS)
-			gf_dash_switch_quality(ctx->dash, GF_TRUE);
-			//not used relyably in the test suite (require fatal error in session)
+			//not used in the test suite (require JS), but don't run if algo is none
+			if (!ctx->algo || strcmp(ctx->algo, "none"))
+				gf_dash_switch_quality(ctx->dash, GF_TRUE);
+			//not used reliably in the test suite (require fatal error in session)
 			dashin_abort(NULL);
 		}
 #endif
+
 		if (ctx->groupsel)
 			gf_dash_groups_set_language(ctx->dash, gf_opts_get_key("core", "lang"));
 
@@ -2084,13 +2086,6 @@ static GF_Err dashdmx_initialize(GF_Filter *filter)
 	ctx->filter = filter;
 	ctx->dm = gf_filter_get_download_manager(filter);
 	if (!ctx->dm) return GF_SERVICE_ERROR;
-
-	//old syntax
-	if (ctx->filemode) {
-		GF_LOG(GF_LOG_WARNING, GF_LOG_DASH, ("[DASHDmx] `filemode` option will soon be deprecated, update your script to use `:forward=file` option.\n"));
-		ctx->forward = DFWD_FILE;
-		ctx->filemode = GF_FALSE;
-	}
 
 	ctx->dash_io.udta = ctx;
 	ctx->dash_io.delete_cache_file = dashdmx_io_delete_cache_file;
@@ -3355,7 +3350,6 @@ static const GF_FilterArgs DASHDmxArgs[] =
 
 	{ OFFS(skip_lqt), "disable decoding of tiles with highest degradation hints (not visible, not gazed at) for debug purposes", GF_PROP_BOOL, "no", NULL, GF_FS_ARG_HINT_EXPERT},
 	{ OFFS(llhls_merge), "merge LL-HLS byte range parts into a single open byte range request", GF_PROP_BOOL, "yes", NULL, GF_FS_ARG_HINT_EXPERT},
-	{ OFFS(filemode), "alias for forward=file", GF_PROP_BOOL, "no", NULL, GF_FS_ARG_HINT_HIDE},
 	{ OFFS(groupsel), "select groups based on language (by default all playable groups are exposed)", GF_PROP_BOOL, "no", NULL, GF_FS_ARG_HINT_ADVANCED},
 	{ OFFS(chain_mode), "MPD chaining mode\n"
 	"- off: do not use MPD chaining\n"
@@ -3404,8 +3398,6 @@ GF_FilterRegister DASHDmxRegister = {
 	"\n"
 	"To expose a live DASH session to route:\n"
 	"EX gpac -i MANIFEST_URL dashin:forward=file -o route://225.0.0.1:8000/\n"
-	"\n"
-	"Note: This mode used to be trigger by [-filemode]() option, still recognized.\n"
 	"\n"
 	"If the source has dependent media streams (scalability) and all qualities and initialization segments need to be forwarded, add [-split_as]().\n"
 	"\n"

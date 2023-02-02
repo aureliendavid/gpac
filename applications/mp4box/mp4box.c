@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / mp4box application
@@ -4469,7 +4469,7 @@ static u32 do_add_cat(int argc, char **argv)
 	}
 
 	for (ipass=0; ipass<nb_pass; ipass++) {
-		u32 tk_idx = 1;
+		u32 tk_idx = 0;
 		for (i=0; i<(u32) argc; i++) {
 			char *margs=NULL;
 			char *msid = NULL;
@@ -5679,7 +5679,7 @@ static GF_Err do_itunes_tag()
 		}
 		if (!itag && !clear && !is_wma) {
 			if (tag_idx<0) {
-				if (!do_qt_keys(tags, val+1)) {
+				if (val && !do_qt_keys(tags, val+1)) {
 					M4_LOG(GF_LOG_WARNING, ("Invalid iTune tag name \"%s\" - ignoring\n", tags));
 				}
 				if (val) val[0] = '=';

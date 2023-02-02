@@ -672,7 +672,8 @@ static int h2_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 
 static int h2_error_callback(nghttp2_session *session, const char *msg, size_t len, void *user_data)
 {
-	GF_LOG(GF_LOG_ERROR, GF_LOG_HTTP, ("[HTTP/2] error %s\n", msg));
+	if (session)
+		GF_LOG(GF_LOG_ERROR, GF_LOG_HTTP, ("[HTTP/2] error %s\n", msg));
 	return 0;
 }
 
@@ -1508,8 +1509,10 @@ static size_t next_proto_list_len;
 #ifndef OPENSSL_NO_NEXTPROTONEG
 static int next_proto_cb(SSL *ssl, const unsigned char **data, unsigned int *len, void *arg)
 {
-	*data = next_proto_list;
-	*len = (unsigned int)next_proto_list_len;
+	if (data && len) {
+		*data = next_proto_list;
+		*len = (unsigned int)next_proto_list_len;
+	}
 	return SSL_TLSEXT_ERR_OK;
 }
 #endif //OPENSSL_NO_NEXTPROTONEG
@@ -1567,6 +1570,13 @@ void *gf_ssl_server_context_new(const char *cert, const char *key)
 		next_proto_list_len = 1 + NGHTTP2_PROTO_VERSION_ID_LEN;
 
 		SSL_CTX_set_next_protos_advertised_cb(ctx, next_proto_cb, NULL);
+#ifdef GPAC_ENABLE_COVERAGE
+		if (gf_sys_is_cov_mode()) {
+			next_proto_cb(NULL, NULL, NULL, NULL);
+			h2_error_callback(NULL, NULL, 0, NULL);
+			on_user_pass(NULL, NULL, NULL, GF_FALSE);
+		}
+#endif
 
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L
 		SSL_CTX_set_alpn_select_cb(ctx, alpn_select_proto_cb, NULL);
@@ -1592,7 +1602,12 @@ void *gf_ssl_new(void *ssl_ctx, GF_Socket *client_sock, GF_Err *e)
 	}
 	SSL_set_fd(ssl, gf_sk_get_handle(client_sock) );
 	if (SSL_accept(ssl) <= 0) {
-		ERR_print_errors_fp(stderr);
+		if (gf_log_tool_level_on(GF_LOG_NETWORK, GF_LOG_DEBUG)) {
+			//this one crashes /exits on windows, only use if debug level
+			ERR_print_errors_fp(stderr);
+		} else {
+			GF_LOG(GF_LOG_WARNING, GF_LOG_NETWORK, ("[SSL] Accept failure\n"));
+		}
 		SSL_shutdown(ssl);
         SSL_free(ssl);
 		*e = GF_AUTHENTICATION_FAILURE;
@@ -1758,7 +1773,7 @@ Bool gf_cache_set_mime(const DownloadedCacheEntry entry, const char *mime);
 Bool gf_cache_set_range(const DownloadedCacheEntry entry, u64 size, u64 start_range, u64 end_range);
 Bool gf_cache_set_content(const DownloadedCacheEntry entry, GF_Blob *blob, Bool copy, GF_Mutex *mx);
 Bool gf_cache_set_headers(const DownloadedCacheEntry entry, const char *headers);
-Bool gf_cache_set_downtime(const DownloadedCacheEntry entry, u32 download_time_ms);
+void gf_cache_set_downtime(const DownloadedCacheEntry entry, u32 download_time_ms);
 
 
 /**
@@ -6167,7 +6182,6 @@ static GF_Err wait_for_header_and_parse(GF_DownloadSession *sess, char * sHTTP)
 		sess->status = GF_NETIO_DATA_EXCHANGE;
 		sess->bytes_done = 0;
 	}
-
 
 	/* we may have existing data in this buffer ... */
 #ifdef GPAC_HAS_HTTP2

@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2017-2022
+ *			Copyright (c) Telecom ParisTech 2017-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / filters sub-project
@@ -244,12 +244,13 @@ static void gf_filter_pid_update_caps(GF_FilterPid *pid)
 	pid->stream_type = mtype;
 	pid->codecid = codecid;
 
+	u32 buffer_us = pid->filter->pid_buffer_max_us ? pid->filter->pid_buffer_max_us : pid->filter->session->default_pid_buffer_max_us;
 	if (pid->user_max_buffer_time) {
-		pid->max_buffer_time = pid->user_max_buffer_time;
+		pid->max_buffer_time = MAX(pid->user_max_buffer_time, buffer_us);
 		pid->max_buffer_unit = 0;
 	} else {
-		pid->max_buffer_time = pid->filter->session->default_pid_buffer_max_us;
-		pid->max_buffer_unit = pid->filter->session->default_pid_buffer_max_units;
+		pid->max_buffer_time = buffer_us;
+		pid->max_buffer_unit = pid->filter->pid_buffer_max_units ? pid->filter->pid_buffer_max_units : pid->filter->session->default_pid_buffer_max_units;
 	}
 	pid->raw_media = GF_FALSE;
 
@@ -273,12 +274,6 @@ static void gf_filter_pid_update_caps(GF_FilterPid *pid)
 		return;
 	}
 
-	if (pid->user_max_buffer_time) {
-		pid->max_buffer_time = pid->user_max_buffer_time;
-		pid->max_buffer_unit = 0;
-	}
-
-
 	//output is a decoded raw stream: if some input has same type but different codecid this is a decoder
 	//set input buffer size
 	gf_mx_p(pid->filter->tasks_mx);
@@ -295,15 +290,16 @@ static void gf_filter_pid_update_caps(GF_FilterPid *pid)
 
 		//same stream type but changing format type: this is a decoder input pid, set buffer req
 		if ((mtype==i_type) && (codecid != i_codecid)) {
+
+			buffer_us = pid->filter->pid_decode_buffer_max_us ? pid->filter->pid_decode_buffer_max_us : pid->filter->session->decoder_pid_buffer_max_us;
 			//default decoder buffer
-			if (pidi->pid->user_max_buffer_time)
-				pidi->pid->max_buffer_time = pidi->pid->user_max_buffer_time;
-			else
-				pidi->pid->max_buffer_time = pidi->pid->filter->session->decoder_pid_buffer_max_us;
+			pidi->pid->max_buffer_time = MAX(pidi->pid->user_max_buffer_time, buffer_us);
 			pidi->pid->max_buffer_unit = 0;
 
-
-			if (mtype==GF_STREAM_VISUAL) {
+			//composition buffer
+			if (pid->filter->pid_buffer_max_units) {
+				pid->max_buffer_unit = pid->filter->pid_buffer_max_units;
+			} else if (mtype==GF_STREAM_VISUAL) {
 				pid->max_buffer_unit = 4;
 			} else if (mtype==GF_STREAM_AUDIO) {
 				pid->max_buffer_unit = 20;
@@ -1580,7 +1576,7 @@ static Bool filter_pid_check_fragment(GF_FilterPid *src_pid, char *frag_name, Bo
 	pent=NULL;
 
 	//special case for tag
-	if (!strcmp(frag_name, "TAG")) {
+	if (!strcmp(frag_name, "TAG") || !strcmp(frag_name, "ITAG")) {
 		psep[0] = c;
 		if (src_pid->filter->tag) {
 			Bool is_eq;
@@ -2205,7 +2201,7 @@ u32 gf_filter_caps_to_caps_match(const GF_FilterRegister *src, u32 src_bundle_id
 	u32 cur_bundle_start = 0;
 	u32 cur_bundle_idx = 0;
 	u32 nb_matched=0;
-	u32 nb_out_caps=0;
+	//u32 nb_out_caps=0;
 	u32 nb_in_bundles=0;
 	u32 bundle_score = 0;
 	u32 *bundles_in_ok = NULL;
@@ -2313,7 +2309,7 @@ u32 gf_filter_caps_to_caps_match(const GF_FilterRegister *src, u32 src_bundle_id
 		if (already_tested) {
 			continue;
 		}
-		nb_out_caps++;
+		//nb_out_caps++;
 
 		//set cap as OK in all bundles
 		for (k=0; k<nb_in_bundles; k++) {
@@ -3395,6 +3391,8 @@ static GF_Filter *gf_filter_pid_resolve_link_internal(GF_FilterPid *pid, GF_Filt
 	GF_FilterSession *fsess = pid->filter->session;
 	GF_List *filter_chain;
 	u32 i, count;
+	char *gfloc = NULL;
+	char gfloc_c=0;
 	char prefRegister[1001];
 	char szForceReg[20];
 	Bool reconfigurable_only;
@@ -3536,6 +3534,16 @@ static GF_Filter *gf_filter_pid_resolve_link_internal(GF_FilterPid *pid, GF_Filt
 			GF_LOG(GF_LOG_DEBUG, GF_LOG_FILTER, ("Solved %sfilter chain from filter %s PID %s to filter %s - dumping chain:\n", reconfigurable_only_type ? "adaptation " : "", pid->filter->name, pid->name, dst->freg->name));
 		}
 #endif
+		char szLocSep[8];
+		sprintf(szLocSep, "gfloc%c", fsess->sep_args);
+		gfloc = strstr(args, "gfloc");
+		if (gfloc) {
+			if ((gfloc>args) && (gfloc[-1]==fsess->sep_args))
+				gfloc --;
+
+			gfloc_c = gfloc[0];
+			gfloc[0] = 0;
+		}
 		prev_af = NULL;
 		for (i=0; i<count; i++) {
 			GF_Filter *af;
@@ -3603,17 +3611,19 @@ static GF_Filter *gf_filter_pid_resolve_link_internal(GF_FilterPid *pid, GF_Filt
 			af = gf_filter_new(fsess, freg, args, dst_args, pid->filter->no_dst_arg_inherit ? GF_FILTER_ARG_INHERIT_SOURCE_ONLY : GF_FILTER_ARG_INHERIT, NULL, NULL, GF_TRUE);
 			if (!af) goto exit;
 			af->subsession_id = dst->subsession_id;
+			if (dst->itag) af->itag = gf_strdup(dst->itag);
+			
 			//destination is sink, check if af is a mux (output cap type STREAM=FILE present)
 			//if not, copy subsource_id from pid
 			Bool af_is_mux = GF_FALSE;
 			if (dst_is_sink) {
 				for (u32 cidx=0; cidx<freg->nb_caps; cidx++) {
-					const GF_FilterCapability *cap = &freg->caps[cidx];
-					if (!(cap->flags & GF_CAPFLAG_IN_BUNDLE)) continue;
-					if (!(cap->flags & GF_CAPFLAG_OUTPUT)) continue;
-					if (cap->flags & GF_CAPFLAG_EXCLUDED) continue;
-					if (cap->code!=GF_PROP_PID_STREAM_TYPE) continue;
-					if (cap->val.value.uint!=GF_STREAM_FILE) break;
+					const GF_FilterCapability *a_cap = &freg->caps[cidx];
+					if (!(a_cap->flags & GF_CAPFLAG_IN_BUNDLE)) continue;
+					if (!(a_cap->flags & GF_CAPFLAG_OUTPUT)) continue;
+					if (a_cap->flags & GF_CAPFLAG_EXCLUDED) continue;
+					if (a_cap->code!=GF_PROP_PID_STREAM_TYPE) continue;
+					if (a_cap->val.value.uint!=GF_STREAM_FILE) break;
 					af_is_mux = GF_TRUE;
 				}
 			}
@@ -3687,6 +3697,8 @@ static GF_Filter *gf_filter_pid_resolve_link_internal(GF_FilterPid *pid, GF_Filt
 	}
 
 exit:
+	if (gfloc) gfloc[0] = gfloc_c;
+
 	gf_list_del(filter_chain);
 	return chain_input;
 }
@@ -3959,7 +3971,30 @@ static void gf_filter_pid_set_args_internal(GF_Filter *filter, GF_FilterPid *pid
 					gf_bs_del(bs);
 				}
 				gf_props_reset_single(&a_p);
-			} else {
+			}
+			//parse codecID
+			else if (p4cc == GF_PROP_PID_CODECID) {
+				//only for explicit filters
+				if (filter->dynamic_filter) goto skip_arg;
+				u32 cid = gf_codecid_parse(value);
+				if (cid) {
+					p.type = GF_PROP_UINT;
+					p.value.uint = cid;
+				}
+			}
+			//parse streamtype
+			else if (p4cc == GF_PROP_PID_STREAM_TYPE) {
+				//only for explicit filters
+				if (filter->dynamic_filter) goto skip_arg;
+				u32 st = gf_stream_type_by_name(value);
+				if (st!=GF_STREAM_UNKNOWN) {
+					p.type = GF_PROP_UINT;
+					p.value.uint = st;
+				}
+			}
+			//pix formats and others are parsed as specific prop types
+
+			if (p.type == GF_PROP_FORBIDEN) {
 				p = gf_props_parse_value(prop_type, name, value, NULL, sep_list);
 			}
 
@@ -7535,6 +7570,17 @@ static void filter_pid_inst_collect_stats(GF_FilterPidInst *pidi, GF_FilterPidSt
 
 	if (stats->buffer_time < pidi->pid->buffer_duration)
 		stats->buffer_time = pidi->pid->buffer_duration;
+
+	if (!stats->last_ts_drop.den
+		|| gf_timestamp_less(stats->last_ts_drop.num, stats->last_ts_drop.den, pidi->last_ts_drop.num, pidi->last_ts_drop.den)
+	) {
+		stats->last_ts_drop = pidi->last_ts_drop;
+	}
+	if (!stats->last_ts_sent.den
+		|| gf_timestamp_less(stats->last_ts_sent.num, stats->last_ts_sent.den, pidi->pid->last_ts_sent.num, pidi->pid->last_ts_sent.den)
+	) {
+		stats->last_ts_sent = pidi->pid->last_ts_sent;
+	}
 
 	if (pidi->last_rt_report) {
 		stats->last_rt_report = pidi->last_rt_report;
