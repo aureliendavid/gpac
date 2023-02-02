@@ -117,6 +117,10 @@ export default class UIWSController extends React.Component {
         gws.UpdateFilterArg(filterIdx, filterName, argName, argNewValue);
     }
 
+    onPNGRequested = (filter) => {
+        gws.RequestPNG(filter);
+    }
+
     render(){
 
         return (
@@ -128,7 +132,7 @@ export default class UIWSController extends React.Component {
                     onUnselectCell={this.onUnselectCell}
                     onExitSelection={this.onExitSelection}
                 />
-                <FilterDetails filter={this.state.details} onArgumentUpdated={this.onArgumentUpdated} />
+                <FilterDetails filter={this.state.details} onArgumentUpdated={this.onArgumentUpdated} onPNGRequested={this.onPNGRequested} />
             </div>
         );
 

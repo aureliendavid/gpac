@@ -246,6 +246,7 @@ export default class FilterDetails extends React.Component {
 
                 <div id="filter_details" className="details_pane">
                     <div className="details_header">filter details</div>
+                        <a href="#" onClick={ () => this.props.onPNGRequested(this.props.filter) } >Add png sink</a>
                         <FilterInfos filter={this.props.filter} />
                     <hr />
                     <div id="args_div" >

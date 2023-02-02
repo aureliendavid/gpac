@@ -48,6 +48,16 @@ let Gemotery = (function() {
             })
         }
 
+
+        this.RequestPNG = function(filter) {
+            console.log("Requesting PNG for filter ", filter.name, filter.idx);
+            SendMessage(this, {
+                'message' : "get_png",
+                'idx' : filter.idx,
+                'name' : filter.name,
+            })
+        }
+
     }
 
 

@@ -1,10 +1,152 @@
 import * as evg from 'evg'
 import { Sys as sys } from 'gpaccore'
 
+import { FileIO as FileIO } from 'gpaccore'
+import { File as File } from 'gpaccore'
+
+// import {dst} from 'filewrap.js'
+
 session.rmt_sampling = false;
 
+let probefilter = null;
+
+///////////////////////////////////// FILE IO //////////////////////////////////////////////////////////////////////////////
+
+///
+function base64ArrayBuffer(arrayBuffer) {
+	var base64    = ''
+	var encodings = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+	var bytes         = new Uint8Array(arrayBuffer)
+	var byteLength    = bytes.byteLength
+	var byteRemainder = byteLength % 3
+	var mainLength    = byteLength - byteRemainder
+
+	var a, b, c, d
+	var chunk
+
+	// Main loop deals with bytes in chunks of 3
+	for (var i = 0; i < mainLength; i = i + 3) {
+	  // Combine the three bytes into a single integer
+	  chunk = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2]
+
+	  // Use bitmasks to extract 6-bit segments from the triplet
+	  a = (chunk & 16515072) >> 18 // 16515072 = (2^6 - 1) << 18
+	  b = (chunk & 258048)   >> 12 // 258048   = (2^6 - 1) << 12
+	  c = (chunk & 4032)     >>  6 // 4032     = (2^6 - 1) << 6
+	  d = chunk & 63               // 63       = 2^6 - 1
+
+	  // Convert the raw binary segments to the appropriate ASCII encoding
+	  base64 += encodings[a] + encodings[b] + encodings[c] + encodings[d]
+	}
+
+	// Deal with the remaining bytes and padding
+	if (byteRemainder == 1) {
+	  chunk = bytes[mainLength]
+
+	  a = (chunk & 252) >> 2 // 252 = (2^6 - 1) << 2
+
+	  // Set the 4 least significant bits to zero
+	  b = (chunk & 3)   << 4 // 3   = 2^2 - 1
+
+	  base64 += encodings[a] + encodings[b] + '=='
+	} else if (byteRemainder == 2) {
+	  chunk = (bytes[mainLength] << 8) | bytes[mainLength + 1]
+
+	  a = (chunk & 64512) >> 10 // 64512 = (2^6 - 1) << 10
+	  b = (chunk & 1008)  >>  4 // 1008  = (2^6 - 1) << 4
+
+	  // Set the 2 least significant bits to zero
+	  c = (chunk & 15)    <<  2 // 15    = 2^4 - 1
+
+	  base64 += encodings[a] + encodings[b] + encodings[c] + '='
+	}
+
+	return base64
+  }
+////
 
 
+function _arrayBufferToStr( buffer ) {
+    var binary = '';
+    var bytes = new Uint8Array( buffer );
+    var len = bytes.byteLength;
+    for (var i = 0; i < len; i++) {
+        binary += String.fromCharCode( bytes[ i ] );
+    }
+    return binary;
+}
+
+function  _arrayBufferToBase64( buffer ) {
+
+    return btoa( _arrayBufferToStr(buffer) );
+}
+
+let dst = new FileIO(
+	"xxxxxxxxxx.png",
+	//open
+	function(url, mode) {
+		this.target = new File(url, mode);
+		this.written = false;
+		console.log("opened file")
+		return true;
+	},
+	//close
+	function() {
+		console.log("closing file with written = " + JSON.stringify(this.written) + " and probe = " + JSON.stringify(gpac_filter_to_object(probefilter, true)))
+		this.target.close();
+		if (probefilter && this.written) {
+			console.log("removing probe " + JSON.stringify(gpac_filter_to_object(probefilter)));
+			probefilter.remove()
+			probefilter = null;
+		}
+	},
+	//write
+	function(buf)
+	{
+		var base64String = base64ArrayBuffer(buf);
+		console.log("writing to file : " + base64String.substring(0, 64));
+		this.written = true;
+		return this.target.write(buf);
+	},
+	//read
+	function(buf)
+	{
+		let res =  this.target.read(buf);
+		console.log("reading from file"  + res);
+		return res;
+	},
+	//seek
+	function(offset, whence)
+	{
+		console.log("seek in file ", offset, whence);
+		return this.target.seek(offset, whence);
+	},
+	//tell
+	function()
+	{
+		console.log("tell file pos");
+		return this.target.pos;
+	},
+	//eof
+	function()
+	{
+		console.log("check file eof");
+		return this.target.eof;
+	},
+	//exists
+	function(url)
+	{
+		console.log("check file exists");
+		return sys.file_exists(url);
+	}
+	);
+
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 let all_filters = [];
 let all_connected = false;
@@ -46,6 +188,12 @@ session.set_rmt_fun( (text)=> {
 				update_filter_argument(jtext['idx'], jtext['name'], jtext['argName'], jtext['newValue'])
 			}
 
+			if ( jtext['message'] == 'get_png' ) {
+				print("request png of ")
+				print(JSON.stringify(jtext));
+				add_png_probe(jtext['idx'], jtext['name']);
+			}
+
 		} catch(e) {
 			console.log(e);
 		}
@@ -62,6 +210,23 @@ function update_filter_argument(idx, name, argName, newValue) {
 	}
 	else {
 		filter.update(argName, newValue)
+	}
+
+}
+
+
+function add_png_probe(idx, name) {
+
+	let filter = session.get_filter(''+idx); // force get by iname
+
+	if (!filter || filter.name != name) {
+		print("discrepency in filter names " + filter.name + " v. " + name);
+	}
+	else {
+		probefilter = filter.insert("dst="+dst.url+":osize=128x128:dur=33/1000");
+		probefilter.tagged = "hideme";
+		//let probefilter = session.add_filter("dst="+dst.url+":osize=128x128", filter);
+		console.log("probe added :" + JSON.stringify(gpac_filter_to_object(probefilter)));
 	}
 
 }
@@ -297,7 +462,7 @@ session.set_new_filter_fun( (f) => {
 		// print(JSON.stringify(jsf, null, 2));
 		all_filters.push(f);
 		if (draned_once) {
-			sys.sleep(50);
+			sys.sleep(100);
 			send_all_filters();
 		}
 } );
@@ -308,7 +473,7 @@ session.set_del_filter_fun( (f) => {
 	if (idx>=0)
 		all_filters.splice(idx, 1);
 	if (draned_once) {
-		sys.sleep(50);
+		sys.sleep(100);
 		send_all_filters();
 	}
 });
