@@ -2488,9 +2488,19 @@ static void av1_add_obu_internal(GF_BitStream *bs, u64 pos, u64 obu_length, ObuT
 	u8 temporal_id, spatial_id;
 	GF_AV1_OBUArrayEntry *a = NULL;
 
+	fprintf(stderr, "%s:%d state %p obu_list %p  \n", __FILE__, __LINE__, state, obu_list);
+
 	if (state && state->mem_mode) {
-		if (!state->bs) state->bs = gf_bs_new(NULL, 0, GF_BITSTREAM_WRITE);
-		else gf_bs_reassign_buffer(state->bs, state->frame_obus, state->frame_obus_alloc);
+		if (!state->bs) {
+			state->bs = gf_bs_new(NULL, 0, GF_BITSTREAM_WRITE);
+			fprintf(stderr, "%s:%d state %p state bs %p  \n", __FILE__, __LINE__, state, state->bs);
+		}
+		else {
+			fprintf(stderr, "%s:%d reassing buffer state %p bs %p frame_obus %p frame_obus_alloc %u \n", __FILE__, __LINE__, state, state->bs, state->frame_obus, state->frame_obus_alloc);
+			GF_Err e = gf_bs_reassign_buffer(state->bs, state->frame_obus, state->frame_obus_alloc);
+			fprintf(stderr, "reassign res %d\n", e);
+		}
+
 	}
 	else {
 		GF_SAFEALLOC(a, GF_AV1_OBUArrayEntry);
@@ -2516,7 +2526,14 @@ static void av1_add_obu_internal(GF_BitStream *bs, u64 pos, u64 obu_length, ObuT
 				u32 block_size = OBU_BLOCK_SIZE;
 				if (block_size > remain) block_size = remain;
 				gf_bs_read_data(bs, block, block_size);
+				fprintf(stderr, "%s:%d write data state %p bs %p block %p block_size %u remain %u \n", __FILE__, __LINE__, state, state->bs, block, block_size, remain);
+				if (state->mem_mode && gf_bs_get_position(state->bs) + block_size > gf_bs_get_size(state->bs)) {
+					fprintf(stderr, "ERROR would need to realloc in mem_mode\n");
+				}
 				gf_bs_write_data(state->bs, block, block_size);
+				// else {
+				// 	gf_bs_write_data(state->bs, block, block_size);
+				// }
 				remain -= block_size;
 			}
 			return;
@@ -2577,6 +2594,7 @@ static void av1_add_obu_internal(GF_BitStream *bs, u64 pos, u64 obu_length, ObuT
 		gf_free(a);
 		return;
 	}
+	fprintf(stderr, "%s:%d state %p obu_list %p *obu_list %p  \n", __FILE__, __LINE__, state, obu_list, *obu_list);
 	a->obu_type = obu_type;
 	if (! *obu_list)
 		*obu_list = gf_list_new();
@@ -4021,6 +4039,8 @@ void gf_av1_reset_state(AV1State *state, Bool is_destroy)
 				gf_free(ptr);
 			}
 			if (state->frame_obus) {
+				fprintf(stderr, "%s:%d reseet state %p frame_obus %p bs %p \n", __FILE__, __LINE__, state, state->frame_obus, state->bs);
+				//if (!state->mem_mode)
 				gf_free(state->frame_obus);
 				state->frame_obus = NULL;
 				state->frame_obus_alloc = 0;

@@ -84,6 +84,7 @@ GF_Err gf_bs_reassign_buffer(GF_BitStream *bs, const u8 *buffer, u64 BufferSize)
 {
 	if (!bs) return GF_BAD_PARAM;
 	bs->total_bits_read = 0;
+	fprintf(stderr, "gf_bs_reassign_buffer bs %p bsmode %d buffer %p size %u\n", bs, bs->bsmode, buffer, BufferSize);
 	if (bs->bsmode == GF_BITSTREAM_READ) {
 		bs->original = (char*)buffer;
 		bs->size = BufferSize;
@@ -105,6 +106,7 @@ GF_Err gf_bs_reassign_buffer(GF_BitStream *bs, const u8 *buffer, u64 BufferSize)
 		return GF_OK;
 	}
 	if (bs->bsmode!=GF_BITSTREAM_WRITE_DYN) return GF_BAD_PARAM;
+	fprintf(stderr, "bs->original %p\n", bs->original);
 	if (bs->original) return GF_BAD_PARAM;
 
 	bs->position = 0;
@@ -152,6 +154,7 @@ GF_BitStream *gf_bs_new(const u8 *buffer, u64 BufferSize, u32 mode)
 				tmp->size = BS_MEM_BLOCK_ALLOC_SIZE;
 			}
 			tmp->original = (char *) gf_malloc(sizeof(char) * ((u32) tmp->size));
+			fprintf(stderr, "%s:%d tmp %p original %p  \n", __FILE__, __LINE__, tmp, tmp->original);
 			if (! tmp->original) {
 				gf_free(tmp);
 				return NULL;
@@ -296,6 +299,7 @@ GF_EXPORT
 void gf_bs_del(GF_BitStream *bs)
 {
 	if (!bs) return;
+	fprintf(stderr, "gf_bs_del bs %p original %p \n", bs, bs->original);
 	if (bs->on_block_out && bs->position>bs->bytes_out) {
 		bs->on_block_out(bs->usr_data, bs->original, (u32) (bs->position - bs->bytes_out) );
 	}
@@ -1048,6 +1052,7 @@ u32 gf_bs_write_data(GF_BitStream *bs, const u8 *data, u32 nbBytes)
 			//otherwise store
 			/*need to gf_realloc ...*/
 			if (bs->position + nbBytes - bs->bytes_out > bs->size) {
+				fprintf(stderr, "%s:%d need realloc bs %p bs->original %p position %u nbBytes %u byets_out %u size %u \n", __FILE__, __LINE__, bs, bs->original, bs->position, nbBytes, bs->bytes_out, bs->size);
 				u32 new_size = (u32) (bs->size*2);
 				if (!new_size) new_size = BS_MEM_BLOCK_ALLOC_SIZE;
 
@@ -1056,7 +1061,9 @@ u32 gf_bs_write_data(GF_BitStream *bs, const u8 *data, u32 nbBytes)
 
 				while (new_size < (u32) ( bs->size + nbBytes))
 					new_size *= 2;
+				fprintf(stderr, "%s:%d bs %p bs->original %p new_size %u \n", __FILE__, __LINE__, bs, bs->original, new_size);
 				bs->original = (char*)gf_realloc(bs->original, sizeof(u32)*new_size);
+				fprintf(stderr, "%s:%d after realloc bs %p bs->original %p \n", __FILE__, __LINE__, bs, bs->original);
 				if (!bs->original)
 					return 0;
 				bs->size = new_size;

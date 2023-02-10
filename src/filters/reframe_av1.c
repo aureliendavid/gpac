@@ -57,7 +57,7 @@ typedef struct
 	Double index;
 	Bool importer;
 	Bool deps, notime, temporal_delim;
-	
+
 	u32 bsdbg;
 
 	//only one input pid declared
@@ -933,7 +933,7 @@ static GF_Err av1dmx_parse_flush_sample(GF_Filter *filter, GF_AV1DmxCtx *ctx)
 
 	if (!ctx->opid)
 		return GF_NON_COMPLIANT_BITSTREAM;
-		
+
 	gf_bs_get_content_no_truncate(ctx->state.bs, &ctx->state.frame_obus, &pck_size, &ctx->state.frame_obus_alloc);
 
 	if (!pck_size) {
@@ -1004,6 +1004,7 @@ GF_Err av1dmx_parse_av1(GF_Filter *filter, GF_AV1DmxCtx *ctx)
 			e = GF_OK;
 		} else {
 			e = aom_av1_parse_temporal_unit_from_section5(ctx->bs, &ctx->state);
+			fprintf(stderr, "aom_av1_parse_temporal_unit_from_section5 returned %d\n",e);
 		}
 		break;
 	case AnnexB:
@@ -1392,4 +1393,3 @@ const GF_FilterRegister *av1dmx_register(GF_FilterSession *session)
 	return NULL;
 }
 #endif // GPAC_DISABLE_AV_PARSERS
-
