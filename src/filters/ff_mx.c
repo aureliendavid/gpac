@@ -452,6 +452,18 @@ static GF_Err ffmx_start_seg(GF_Filter *filter, GF_FFMuxCtx *ctx, const char *se
 				}
 			}
 		}
+
+		segmux->url = strdup(ctx->muxer->url);
+
+		if (!(ctx->muxer->oformat->flags & AVFMT_NOFILE)) {
+			res = avio_open2(&segmux->pb, seg_name, AVIO_FLAG_WRITE, NULL, &ctx->options);
+			if (res<0) {
+				GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[FFMux] Fail to open AVIO context for %s - error %s\n", seg_name, av_err2str(res) ));
+				avformat_free_context(segmux);
+				return GF_FILTER_NOT_SUPPORTED;
+			}
+		}
+
 		//swap context
 		avformat_free_context(ctx->muxer);
 		ctx->muxer = segmux;
