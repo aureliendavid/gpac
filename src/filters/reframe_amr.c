@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / AMR&EVRC&SMV reframer filter
@@ -516,7 +516,12 @@ GF_Err amrdmx_process(GF_Filter *filter)
 
 			gf_filter_pck_set_cts(dst_pck, ctx->cts);
 			gf_filter_pck_set_sap(dst_pck, GF_FILTER_SAP_1);
-			gf_filter_pck_set_duration(dst_pck, ctx->block_size);
+			if (ctx->timescale && (ctx->timescale!=ctx->sample_rate))
+				gf_filter_pck_set_duration(dst_pck, (u32) gf_timestamp_rescale(ctx->block_size, ctx->sample_rate, ctx->timescale) );
+			else
+				gf_filter_pck_set_duration(dst_pck, ctx->block_size);
+
+
 			gf_filter_pck_set_framing(dst_pck, GF_TRUE, ctx->remaining ? GF_FALSE : GF_TRUE);
 
 			if (byte_offset != GF_FILTER_NO_BO) {
@@ -617,7 +622,7 @@ GF_FilterRegister AMRDmxRegister = {
 };
 
 
-const GF_FilterRegister *amrdmx_register(GF_FilterSession *session)
+const GF_FilterRegister *rfamr_register(GF_FilterSession *session)
 {
 	return &AMRDmxRegister;
 }

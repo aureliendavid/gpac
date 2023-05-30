@@ -10,12 +10,18 @@ LDFLAGS+=-g
 endif
 
 ifeq ($(GPROFBUILD),yes)
+ifeq ($(CONFIG_DARWIN),yes)
+CFLAGS+=-fprofile-instr-generate
+LDFLAGS+=-fprofile-instr-generate
+else
 CFLAGS+=-pg
 LDFLAGS+=-pg
 endif
+endif
 
 LINKFLAGS=-L../../bin/gcc -L../../extra_lib/lib/gcc
-ifeq ($(CONFIG_DARWIN),yes)
+ifeq ($(CONFIG_EMSCRIPTEN),yes)
+else ifeq ($(CONFIG_DARWIN),yes)
 #LINKFLAGS+= -Wl,-rpath,'@loader_path'
 else
 LINKFLAGS+= -Wl,-rpath,'$$ORIGIN' -Wl,-rpath-link,../../bin/gcc

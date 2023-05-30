@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2012-2022
+ *			Copyright (c) Telecom ParisTech 2012-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / Adaptive HTTP Streaming sub-project
@@ -149,6 +149,8 @@ struct _gf_dash_io
 	u32 (*get_total_size)(GF_DASHFileIO *dashio, GF_DASHFileIOSession session);
 	/*! get the total size on bytes for the session*/
 	u32 (*get_bytes_done)(GF_DASHFileIO *dashio, GF_DASHFileIOSession session);
+	/*! get the status of the session - GF_OK for done, GF_NOT_READY for in progress, other error code indicate download error*/
+	GF_Err (*get_status)(GF_DASHFileIO *dashio, GF_DASHFileIOSession session);
 
 	/*! callback when manifest (DASH, HLS) or sub-playlist (HLS) is updated*/
 	void (*manifest_updated)(GF_DASHFileIO *dashio, const char *manifest_name, const char *local_path, s32 group_idx);
@@ -341,6 +343,12 @@ void gf_dash_group_select(GF_DashClient *dash, u32 group_idx, Bool select);
 \return ID of the group
 */
 s32 gf_dash_group_get_id(GF_DashClient *dash, u32 group_idx);
+
+/*! gets cuirrent period ID
+\param dash the target dash client
+\return ID of the current period or NULL
+*/
+const char*gf_dash_get_period_id(GF_DashClient *dash);
 
 /*! enables group selection  through the group attribute
 \param dash the target dash client
@@ -1100,6 +1108,13 @@ s32 gf_dash_group_get_as_id(GF_DashClient *dash, u32 group_idx);
 */
 Bool gf_dash_group_has_init_segment(GF_DashClient *dash, u32 group_idx);
 
+/*! get sample aspect ratio for video group
+\param dash the target dash client
+\param group_idx the 0-based index of the target group
+\param sar filled with representation SAR if any, set to 0 otherwise - may be NULL
+*/
+void gf_dash_group_get_sar(GF_DashClient *dash, u32 group_idx, GF_Fraction *sar);
+
 //any change to the structure below MUST be reflected in libgpac.py !!
 
 /*! Information passed to DASH custom algorithm*/
@@ -1127,7 +1142,7 @@ typedef struct
 	u32 buffer_occupancy_ms;
 	/*! degradation hint, 0 means no degradation, 100 means tile completely hidden*/
 	u32 quality_degradation_hint;
-	/*! cumulated download rate of all active groups - 0 means all files are local*/
+	/*! cumulated download rate of all active groups in bytes per seconds - 0 means all files are local*/
 	u32 total_rate;
 } GF_DASHCustomAlgoInfo;
 

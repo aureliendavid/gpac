@@ -1187,6 +1187,9 @@
     <ClCompile Include="..\..\src\filters\dec_ttxt.c">
       <Filter>filters</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\filters\dec_uncv.c">
+      <Filter>filters</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\src\filters\dec_vorbis.c">
       <Filter>filters</Filter>
     </ClCompile>
@@ -1206,6 +1209,12 @@
       <Filter>filters</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\filters\dmx_dash.c">
+      <Filter>filters</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\filters\dmx_ghi.c">
+      <Filter>filters</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\filters\dmx_gsf.c">
       <Filter>filters</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\filters\dmx_m2ts.c">
@@ -1233,6 +1242,9 @@
       <Filter>filters</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\filters\enc_png.c">
+      <Filter>filters</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\filters\evg_rescale.c">
       <Filter>filters</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\filters\ff_common.c">
@@ -1419,9 +1431,6 @@
       <Filter>filters</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\filters\bsrw.c">
-      <Filter>filters</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\src\filters\dmx_gsf.c">
       <Filter>filters</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\filters\in_pipe.c">

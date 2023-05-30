@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2019-2022
+ *			Copyright (c) Telecom ParisTech 2019-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / http server and output filter
@@ -24,6 +24,9 @@
  */
 
 #include <gpac/internal/media_dev.h>
+
+#ifndef GPAC_DISABLE_NETWORK
+
 #include <gpac/constants.h>
 #include <gpac/maths.h>
 
@@ -1245,6 +1248,13 @@ static void httpout_sess_io(void *usr_cbk, GF_NETIO_Parameter *parameter)
 			}
 			sess->dir_desc = di;
 		}
+		if (!full_path && !strcmp(url+1, "favicon.ico")) {
+			char path[GF_MAX_PATH];
+			if (gf_opts_default_shared_directory(path)) {
+				strcat(path, "/res/gpac.ico");
+				if (gf_file_exists(path)) full_path = gf_strdup(path);
+			}
+		}
 	}
 
 	cors_origin = (char *) gf_dm_sess_get_header(sess->http_sess, "Origin");
@@ -1431,6 +1441,7 @@ static void httpout_sess_io(void *usr_cbk, GF_NETIO_Parameter *parameter)
 				goto exit;
 			}
 		} else {
+			GF_FilterProbeScore probe_score=GF_FPROBE_NOT_SUPPORTED;
 			//no need to use gf_fopen_ex in mem mode, since the fullpath is the gfio:// URL of the mem resource
 			sess->resource = gf_fopen(full_path, "rb");
 			//we may not have the file if it is currently being created
@@ -1457,11 +1468,21 @@ static void httpout_sess_io(void *usr_cbk, GF_NETIO_Parameter *parameter)
 				}
 				if (read) {
 					probe_buf[read] = 0;
-					mime = gf_filter_probe_data(sess->ctx->filter, probe_buf, read);
+					mime = gf_filter_probe_data(sess->ctx->filter, probe_buf, read, &probe_score);
+				}
+			}
+			//set some default mimes for wasm and JS
+			if (!mime || (probe_score<=GF_FPROBE_MAYBE_SUPPORTED)) {
+				const char *ext = gf_file_ext_start(full_path);
+				if (ext) {
+					ext++;
+					if (!strcmp(ext, "wasm")) mime = "application/wasm";
+					if (!strcmp(ext, "js")) mime = "application/ecmascript";
 				}
 			}
 			if (source_sess) {
-				sess->file_size = 0;
+				//use uploaded size on source as max file size for this request
+				sess->file_size = source_sess->file_pos;
 				sess->use_chunk_transfer = GF_TRUE;
 				sess->put_in_progress = 1;
 			} else if (sess->resource) {
@@ -1519,6 +1540,10 @@ static void httpout_sess_io(void *usr_cbk, GF_NETIO_Parameter *parameter)
 	if (send_cors) {
 		gf_dm_sess_set_header(sess->http_sess, "Access-Control-Allow-Origin", cors_origin ? cors_origin : "*");
 		gf_dm_sess_set_header(sess->http_sess, "Access-Control-Expose-Headers", "*");
+		//for wasm sharedarraybuffer
+		gf_dm_sess_set_header(sess->http_sess, "Cross-Origin-Embedder-Policy", "require-corp");
+		gf_dm_sess_set_header(sess->http_sess, "Cross-Origin-Opener-Policy", "same-origin");
+//		gf_dm_sess_set_header(sess->http_sess, "Cross-Origin-Resource-Policy", "cross-origin");
 	}
 	if (cors_origin) gf_free(cors_origin);
 
@@ -1740,6 +1765,10 @@ exit:
 	if (send_cors) {
 		gf_dm_sess_set_header(sess->http_sess, "Access-Control-Allow-Origin", "*");
 		gf_dm_sess_set_header(sess->http_sess, "Access-Control-Expose-Headers", "*");
+		//for wasm sharedarraybuffer
+		gf_dm_sess_set_header(sess->http_sess, "Cross-Origin-Embedder-Policy", "require-corp");
+		gf_dm_sess_set_header(sess->http_sess, "Cross-Origin-Opener-Policy", "same-origin");
+//		gf_dm_sess_set_header(sess->http_sess, "Cross-Origin-Resource-Policy", "cross-origin");
 
 		if (is_options) {
 			gf_dm_sess_set_header(sess->http_sess, "Access-Control-Allow-Methods", "*");
@@ -4412,7 +4441,7 @@ GF_FilterRegister HTTPOutRegister = {
 	.process = httpout_process,
 	.process_event = httpout_process_event,
 	.use_alias = httpout_use_alias,
-	.flags = GF_FS_REG_TEMP_INIT
+	.flags = GF_FS_REG_TEMP_INIT|GF_FS_REG_USE_SYNC_READ
 };
 
 
@@ -4424,3 +4453,9 @@ const GF_FilterRegister *httpout_register(GF_FilterSession *session)
 	return &HTTPOutRegister;
 }
 
+#else
+const GF_FilterRegister *httpout_register(GF_FilterSession *session)
+{
+	return NULL;
+}
+#endif //GPAC_DISABLE_NETWORK

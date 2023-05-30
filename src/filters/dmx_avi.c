@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2005-2022
+ *			Copyright (c) Telecom ParisTech 2005-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / AVI demuxer filter
@@ -278,12 +278,14 @@ static void avidmx_setup(GF_Filter *filter, GF_AVIDmxCtx *ctx)
 			st->audio_done = GF_FALSE;
 
 			if (codecid==GF_CODECID_MPEG_AUDIO) {
-				u32 cid;
+				u32 cid=0;
 				char data[8];
 				AVI_set_audio_track(ctx->avi, i);
 				AVI_read_audio(ctx->avi, data, 8, (int*)&cid);
+#ifndef GPAC_DISABLE_AV_PARSERS
 				u32 hdr = GF_4CC(data[0], data[1], data[2], data[3]);
 				cid = gf_mp3_object_type_indication(hdr);
+#endif
 				AVI_set_audio_position(ctx->avi, 0);
 				if (cid) codecid = cid;
 			}
@@ -698,6 +700,8 @@ static const GF_FilterCapability AVIDmxCaps[] =
 	CAP_UINT(GF_CAPS_INPUT, GF_PROP_PID_STREAM_TYPE, GF_STREAM_FILE),
 	CAP_STRING(GF_CAPS_INPUT, GF_PROP_PID_FILE_EXT, "avi"),
 	CAP_STRING(GF_CAPS_INPUT, GF_PROP_PID_MIME, "video/avi|video/x-avi"),
+	//we need a file for this demuxer
+	CAP_STRING(GF_CAPS_INPUT, GF_PROP_PID_FILEPATH, "*"),
 	CAP_UINT(GF_CAPS_OUTPUT, GF_PROP_PID_STREAM_TYPE, GF_STREAM_AUDIO),
 	CAP_UINT(GF_CAPS_OUTPUT, GF_PROP_PID_STREAM_TYPE, GF_STREAM_VISUAL),
 };
@@ -718,6 +722,7 @@ GF_FilterRegister AVIDmxRegister = {
 	GF_FS_SET_DESCRIPTION("AVI demultiplexer")
 	GF_FS_SET_HELP("This filter demultiplexes AVI files to produce media PIDs and frames.")
 	.private_size = sizeof(GF_AVIDmxCtx),
+	.flags = GF_FS_REG_USE_SYNC_READ,
 	.initialize = avidmx_initialize,
 	.finalize = avidmx_finalize,
 	.args = AVIDmxArgs,

@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2008-2022
+ *			Copyright (c) Telecom ParisTech 2008-2023
  *					All rights reserved
  *
  *  This file is part of GPAC
@@ -127,6 +127,7 @@ This section documents the base data types of GPAC.
 #define GPAC_HAS_JPEG
 #define GPAC_HAS_PNG
 #define GPAC_HAS_HTTP2
+#define GPAC_HAS_IFADDRS
 
 /*Configuration for XCode OSX (not iOS) */
 #elif defined(GPAC_CONFIG_DARWIN) && !defined(GPAC_CONFIG_IOS)
@@ -136,6 +137,9 @@ This section documents the base data types of GPAC.
 #define GPAC_HAS_SSL
 //#endif
 #define GPAC_HAS_SOCK_UN
+
+#define GPAC_HAS_FD
+#define GPAC_HAS_IFADDRS
 
 //64-bits OSX
 #ifdef __LP64__
@@ -167,6 +171,7 @@ This section documents the base data types of GPAC.
 #define GPAC_HAS_JPEG
 #define GPAC_HAS_PNG
 #define GPAC_HAS_SOCK_UN
+#define GPAC_HAS_IFADDRS
 
 /*don't use fixed-point version on iOS, not needed*/
 //#define GPAC_FIXED_POINT
@@ -209,7 +214,7 @@ This section documents the base data types of GPAC.
 
 
 /*disables player */
-//#define GPAC_DISABLE_PLAYER
+//#define GPAC_DISABLE_COMPOSITOR
 
 /*disables scene manager */
 //#define GPAC_DISABLE_SMGR
@@ -337,15 +342,8 @@ this macro is currently defined in setup.h */
 /*disables DASH MPD */
 //#define GPAC_DISABLE_MPD
 
-/*disables HEVC */
-//#define GPAC_DISABLE_HEVC
-
-/*disables AOM AV1 */
-//#define GPAC_DISABLE_AV1
-
 /*disables VOBSUB */
 //#define GPAC_DISABLE_VOBSUB
-
 
 /*! @} */
 

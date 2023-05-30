@@ -97,6 +97,11 @@ print stats after execution
 print graph after execution
 .br
 .TP
+.B \-qe
+.br
+enable quick exit (no mem cleanup)
+.br
+.TP
 .B \-k
 .br
 enable keyboard interaction from command line
@@ -145,6 +150,11 @@ specify an output file - see filters help (-h doc)
 specify an input file to wrap as GF_FileIO object (testing of GF_FileIO)
 .br
 .TP
+.B \-ibx (string)
+.br
+specify an input file to wrap as GF_FileIO object without caching (testing of GF_FileIO)
+.br
+.TP
 .B \-ob (string)
 .br
 specify an output file to wrap as GF_FileIO object (testing of GF_FileIO)
@@ -177,6 +187,8 @@ Note: The @ character can be used in place of the * character. String parameter 
 * core: print the supported libgpac core options. Use -ha/-hx/-hh for advanced/expert options
 .br
 * cfg: print the GPAC configuration help
+.br
+* net: print network interfaces
 .br
 * prompt: print the GPAC prompt help when running in interactive mode (see .I -k )
 .br
@@ -223,7 +235,13 @@ Note: The @ character can be used in place of the * character. String parameter 
 .TP
 .B \-p (string)
 .br
-use indicated profile for the global GPAC config. If not found, config file is created. If a file path is indicated, this will load profile from that file. Otherwise, this will create a directory of the specified name and store new config there. Reserved name 0 means a new profile, not stored to disk. Appending :reload to the profile name will force recreating a new configuration file
+use indicated profile for the global GPAC config. If not found, config file is created. If a file path is indicated, this will load profile from that file. Otherwise, this will create a directory of the specified name and store new config there. The following reserved names create a temporary profile (not stored on disk):
+.br
+* 0: full profile
+.br
+* n: null profile disabling shared modules/filters and system paths in config (may break GUI and other filters)
+.br
+Appending :reload to the profile name will force recreating a new configuration file
 .br
 .TP
 .B \-alias (string)
@@ -292,6 +310,11 @@ log edges status in filter graph before dijkstra resolution (for debug). Edges a
 .B \-full-link
 .br
 throw error if any PID in the filter graph cannot be linked
+.br
+.TP
+.B \-no-dynf
+.br
+disable dynamically loaded filters
 .br
 .TP
 .B \-no-block (Enum, default: no)
@@ -755,7 +778,7 @@ disable javascript module loading
 .TP
 .B \-ifce (string)
 .br
-set default multicast interface through interface IP address (default is 127.0.0.1)
+set default multicast interface (default is ANY), either an IP address or a device name as listed by gpac -h net. Prefix '+' will force using IPv6 for dual interface
 .br
 .TP
 .B \-lang (string)
@@ -843,6 +866,16 @@ disable poll and use select for socket groups
 .B \-no-tls-rcfg
 .br
 disble automatic TCP to TLS reconfiguration
+.br
+.TP
+.B \-no-fd
+.br
+use buffered IO instead of file descriptor for read/write - this can speed up operations on small files
+.br
+.TP
+.B \-no-mx
+.br
+disable all mutexes, threads and semaphores (do not use if unsure about threading used)
 .br
 .TP
 .B \-cache (string)
@@ -968,6 +1001,11 @@ log edges status in filter graph before dijkstra resolution (for debug). Edges a
 .B \-full-link
 .br
 throw error if any PID in the filter graph cannot be linked
+.br
+.TP
+.B \-no-dynf
+.br
+disable dynamically loaded filters
 .br
 .TP
 .B \-no-block (Enum, default: no)
@@ -2798,6 +2836,11 @@ Decoder configuration data
 Decoder configuration data of the enhancement layer(s). Also used by 3GPP/Apple text streams to give the full sample description table used in SDP.
 .br
 .TP
+.B DSISuperset (DCFS,bool,  )
+.br
+Decoder config is a superset of previous decoder config
+.br
+.TP
 .B DecoderConfigIndex (ICFG,uint,  )
 .br
 1-based index of decoder config for ISO base media files
@@ -2906,11 +2949,6 @@ Video is interlaced
 .B SAR (PSAR,frac,  )
 .br
 Sample (i.e. pixel) aspect ratio
-.br
-.TP
-.B PAR (VPAR,frac,D )
-.br
-Picture aspect ratio
 .br
 .TP
 .B MaxWidth (MWID,uint,  )
@@ -3700,6 +3738,11 @@ Packet is a fragment start (value 1) or a segment start (value 2)
 Start and end position in bytes of fragment if packet is a fragment or segment start
 .br
 .TP
+.B FragTFDT (PFRT,luint,DP)
+.br
+Decode time of first packet in fragmentt
+.br
+.TP
 .B SIDXRange (PFSR,lfrac,DP)
 .br
 Start and end position in bytes of sidx if packet is a fragment or segment start
@@ -3843,6 +3886,11 @@ Chapter start times
 .B ChapNames (CHPN,strl,D )
 .br
 Chapter names
+.br
+.TP
+.B IsChap (PCHP,bool,D )
+.br
+Subtitle PID is chapter (for QT-like chapters)
 .br
 .TP
 .B SkipBegin (PCKS,uint, P)
@@ -4158,9 +4206,19 @@ Generic uncompressed format ISO/IEC 23001-17
 24 bit PCM
 .br
 .TP
+.B s24b (ext *.s24b)
+.br
+24 bit Big-Endian PCM
+.br
+.TP
 .B s32 (ext *.s32)
 .br
 32 bit PCM Little Endian
+.br
+.TP
+.B s32b (ext *.s32b)
+.br
+32 bit PCM Big Endian
 .br
 .TP
 .B flt (ext *.flt)
@@ -4168,9 +4226,19 @@ Generic uncompressed format ISO/IEC 23001-17
 32-bit floating point PCM
 .br
 .TP
+.B fltb (ext *.fltb)
+.br
+32-bit floating point PCM Big Endian
+.br
+.TP
 .B dbl (ext *.dbl)
 .br
 64-bit floating point PCM
+.br
+.TP
+.B dblb (ext *.dblb)
+.br
+64-bit floating point PCM Big Endian
 .br
 .TP
 .B u8p (ext *.pc8p)
@@ -4739,6 +4807,11 @@ Adobe Flash
 Raw media
 .br
 .TP
+.B uncv
+.br
+Raw Video
+.br
+.TP
 .B av1|ivf|obu|av1b
 .br
 AOM AV1 Video
@@ -4960,7 +5033,7 @@ Authors: GPAC developers, see git repo history (-log)
 .br
 For bug reports, feature requests, more information and source code, visit https://github.com/gpac/gpac
 .br
-build: 2.3-DEV-rev29-ga6c21ad14-master
+build: 2.3-DEV
 .br
 Copyright: (c) 2000-2023 Telecom Paris distributed under LGPL v2.1+ - http://gpac.io
 .br

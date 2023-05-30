@@ -373,7 +373,7 @@ GF_Err gf_fs_get_last_connect_error(GF_FilterSession *session);
 */
 GF_Err gf_fs_get_last_process_error(GF_FilterSession *session);
 
-/*! Adds a user-defined register to the session
+/*! Adds a user-defined register to the session - the register is added regardless of the session blacklist
 \param session filter session
 \param freg filter register to add
 */
@@ -1032,6 +1032,7 @@ enum
 	GF_PROP_PID_PROFILE_LEVEL = GF_4CC('P','R','P','L'),
 	GF_PROP_PID_DECODER_CONFIG = GF_4CC('D','C','F','G'),
 	GF_PROP_PID_DECODER_CONFIG_ENHANCEMENT = GF_4CC('E','C','F','G'),
+	GF_PROP_PID_DSI_SUPERSET = GF_4CC('D','C','F','S'),
 	GF_PROP_PID_CONFIG_IDX =  GF_4CC('I','C','F','G'),
 	GF_PROP_PID_SAMPLE_RATE = GF_4CC('A','U','S','R'),
 	GF_PROP_PID_SAMPLES_PER_FRAME = GF_4CC('F','R','M','S'),
@@ -1055,7 +1056,6 @@ enum
 	GF_PROP_PID_FPS = GF_4CC('V','F','P','F'),
 	GF_PROP_PID_INTERLACED = GF_4CC('V','I','L','C'),
 	GF_PROP_PID_SAR = GF_4CC('P','S','A','R'),
-	GF_PROP_PID_PAR = GF_4CC('V','P','A','R'),
 	GF_PROP_PID_WIDTH_MAX = GF_4CC('M', 'W','I','D'),
 	GF_PROP_PID_HEIGHT_MAX = GF_4CC('M', 'H','E','I'),
 	GF_PROP_PID_ZORDER = GF_4CC('V', 'Z','I','X'),
@@ -1154,6 +1154,8 @@ enum
 	GF_PROP_PID_ISOM_TRACK_TEMPLATE = GF_4CC('I','T','K','T'),
 	GF_PROP_PID_ISOM_TREX_TEMPLATE = GF_4CC('I','T','X','T'),
 	GF_PROP_PID_ISOM_STSD_TEMPLATE = GF_4CC('I','S','T','D'),
+	GF_PROP_PID_ISOM_STSD_TEMPLATE_IDX = GF_4CC('I','S','T','I'),
+	GF_PROP_PID_ISOM_STSD_ALL_TEMPLATES = GF_4CC('I','S','T','A'),
 	GF_PROP_PID_ISOM_UDTA = GF_4CC('I','M','U','D'),
 	GF_PROP_PID_ISOM_HANDLER = GF_4CC('I','H','D','L'),
 	GF_PROP_PID_ISOM_TRACK_FLAGS = GF_4CC('I','T','K','F'),
@@ -1215,6 +1217,7 @@ enum
 	GF_PROP_PID_MHA_COMPATIBLE_PROFILES = GF_4CC('M','H','C','P'),
 	GF_PROP_PCK_FRAG_START = GF_4CC('P','F','R','B'),
 	GF_PROP_PCK_FRAG_RANGE = GF_4CC('P','F','R','R'),
+	GF_PROP_PCK_FRAG_TFDT = GF_4CC('P','F','R','T'),
 	GF_PROP_PCK_SIDX_RANGE = GF_4CC('P','F','S','R'),
 	GF_PROP_PCK_MOOF_TEMPLATE = GF_4CC('M','F','T','P'),
 	GF_PROP_PCK_INIT = GF_4CC('P','C','K','I'),
@@ -1243,6 +1246,7 @@ enum
 
 	GF_PROP_PID_CHAP_TIMES = GF_4CC('C','H','P','T'),
 	GF_PROP_PID_CHAP_NAMES = GF_4CC('C','H','P','N'),
+	GF_PROP_PID_IS_CHAP = GF_4CC('P','C','H','P'),
 
 	//internal for HLS playlist reference, gives a unique ID identifying media mux, and indicated in packets carrying child playlists
 	GF_PROP_PCK_HLS_REF = GF_4CC('H','P','L','R'),
@@ -1263,6 +1267,8 @@ enum
 	GF_PROP_PID_CLEARKEY_URI = GF_4CC('C','C','K','U'),
 	//internal
 	GF_PROP_PID_CLEARKEY_KID = GF_4CC('C','C','K','I'),
+	//internal, indicate DASH segments are generated in sparse mode (from context)
+	GF_PROP_PID_DASH_SPARSE = GF_4CC('D','S','S','G'),
 
 
 	//internal property indicating pointer to associated GF_DownloadSession
@@ -1270,7 +1276,7 @@ enum
 
 	//PID has temi information
 	GF_PROP_PID_HAS_TEMI = GF_4CC('P','T','E','M'),
-	//PID has no init segment associated (file foward mode of dasher)
+	//PID has no init segment associated (file forward mode of dasher)
 	GF_PROP_PID_NO_INIT = GF_4CC('P','N','I','N'),
 
 	GF_PROP_PID_IS_MANIFEST = GF_4CC('P','H','S','M'),
@@ -1280,6 +1286,9 @@ enum
 
 	//internal, force creation of rewriter filter (only used for forcing reparse of NALU-based codecs)
 	GF_PROP_PID_FORCE_UNFRAME = GF_4CC('P','F','U','F'),
+
+	GF_PROP_PCK_SPLIT_START = GF_4CC('P','S','P','S'),
+	GF_PROP_PCK_SPLIT_END = GF_4CC('P','S','P','E'),
 
 
 	/*! Internal property used for meta demuxers ( FFMPEG, ...) codec ID
@@ -1406,16 +1415,18 @@ typedef enum
 	GF_PROP_DUMP_DATA_INFO,
 	/*! dump data to parsable property, as ADDRESS+'@'+POINTER*/
 	GF_PROP_DUMP_DATA_PTR,
+	/*! do not reduce fractions when dumping*/
+	GF_PROP_DUMP_NO_REDUCE = 1<<16,
 } GF_PropDumpDataMode;
 
 /*! Dumps a property value to string
 \param att property value
 \param dump buffer holding the resulting value for types requiring string conversions (integers, ...)
-\param dump_data_mode data dump mode
+\param dump_data_flags data dump mode and flags
 \param min_max_enum optional, gives the min/max or enum string when the property is a filter argument
 \return string
 */
-const char *gf_props_dump_val(const GF_PropertyValue *att, char dump[GF_PROP_DUMP_ARG_SIZE], GF_PropDumpDataMode dump_data_mode, const char *min_max_enum);
+const char *gf_props_dump_val(const GF_PropertyValue *att, char dump[GF_PROP_DUMP_ARG_SIZE], GF_PropDumpDataMode dump_data_flags, const char *min_max_enum);
 
 /*! Dumps a property value to string, resolving any built-in types (pix formats, codec id, ...)
 \param p4cc property 4CC
@@ -1442,8 +1453,10 @@ typedef struct {
 	u32 type;
 	/*! name */
 	const char *name;
+#ifndef GPAC_DISABLE_DOC
 	/*! description */
 	const char *description;
+#endif
 	/*! data type  (uint, float, etc ..) */
 	u8 data_type;
 	/*! flags for the property */
@@ -1639,7 +1652,7 @@ typedef struct
 	/*! params for GF_FEVT_PLAY and GF_FEVT_SET_SPEED*/
 	Double speed;
 
-	/*! GF_FEVT_PLAY only, indicates playback should start from given packet number - used by dasher when reloading sources*/
+	/*! GF_FEVT_PLAY only, indicates playback should start from given packet number - used by dasher and GHI when reloading sources*/
 	u32 from_pck;
 
 	/*! GF_FEVT_PLAY only, set when PLAY event is sent upstream to audio out, indicates HW buffer reset*/
@@ -1668,6 +1681,18 @@ typedef struct
 	/*! GF_FEVT_PLAY only, indicates  that a demuxer must not forward this event as a source seek because seek has already been done
 	(typically this play request is a segment play and byte range access within the file has already been performed by DASH client)*/
 	u8 no_byterange_forward;
+
+	/*! GF_FEVT_PLAY only, indicates playback should stop from given packet number - used by GHI when loading sources*/
+	u32 to_pck;
+	/*! GF_FEVT_PLAY only, indicates orginal delay applied to dts - used by GHI when loading sources*/
+	u32 orig_delay;
+	/*! GF_FEVT_PLAY only, hint DTS of first sample at ot just after start offset, in media timescale*/
+	u64 hint_first_dts;
+	/*! GF_FEVT_PLAY only, start offset in source - used by GHI when loading sources*/
+	u64 hint_start_offset;
+	/*! GF_FEVT_PLAY only, end offset in source - used by GHI when loading sources*/
+	u64 hint_end_offset;
+
 } GF_FEVT_Play;
 
 /*! Event structure for GF_FEVT_SOURCE_SEEK and GF_FEVT_SOURCE_SWITCH*/
@@ -1806,7 +1831,8 @@ typedef struct
 
 	/*! duration of intra (IDR, closed GOP) as expected by the dasher */
 	GF_Fraction intra_period;
-
+	/*! if TRUE codec should only generate DSI (possibly no input frame, and all output packets will be discarded) */
+	Bool gen_dsi_only;
 } GF_FEVT_EncodeHints;
 
 
@@ -2126,7 +2152,8 @@ typedef enum
 	/*! (de)mux format is not supported*/
 	GF_FPROBE_NOT_SUPPORTED = 0,
 	/*!
-		For demux only: format is maybe a match but garbage data was found at the start
+		For demux: format is maybe a match but garbage data was found at the start
+		For mux: protocol is supported but format is not - if :ext=foo is set on sink URL, probe_url will be recall with URL=test.foo
 	*/
 	GF_FPROBE_MAYBE_NOT_SUPPORTED,
 	/*!
@@ -2202,6 +2229,12 @@ typedef enum
 	GF_FS_REG_SINGLE_THREAD = 1<<13,
 	/*! Indicates the filter needs to be initialized even if temoorary - see \ref gf_filter_is_temporary. Always enabled if GF_FS_REG_META is set */
 	GF_FS_REG_TEMP_INIT = 1<<14,
+	/*! Indicates the filter uses libc sync file read - only needed for emscripten multithreaded support for now, translated into GF_FS_REG_MAIN_THREAD */
+	GF_FS_REG_USE_SYNC_READ = 1<<15,
+	/*! Indicates the filter may block the main thread (configure, process) - only needed for emscripten multithreaded support*/
+	GF_FS_REG_BLOCK_MAIN = 1<<16,
+	/*! Indicates the filter uses async tools (JS promises & co) blocking the calling thread until resolved - only needed for emscripten multithreaded support*/
+	GF_FS_REG_ASYNC_BLOCK = 1<<17,
 
 
 	/*! flag dynamically set at runtime for custom filters*/
@@ -3118,9 +3151,10 @@ const GF_FilterCapability *gf_filter_get_caps(GF_Filter *filter, u32 *nb_caps);
 \param filter target filter
 \param data buffer to probe
 \param size size of buffer
+\param score ste to the probing score, may be NULL
 \return the mime type probed, or NULL if not recognized
 */
-const char *gf_filter_probe_data(GF_Filter *filter, u8 *data, u32 size);
+const char *gf_filter_probe_data(GF_Filter *filter, u8 *data, u32 size, GF_FilterProbeScore *score);
 
 /*! checks if the given filter is an alias filter created by a multiple sink filter
 \param filter target filter
@@ -3231,6 +3265,14 @@ void gf_filter_meta_set_instances(GF_Filter *filter, const char *instance_names_
 \return NULL or space-separated names of meta filter instances, without meta registry name. eg "negate" for ffavf::f=negate
 */
 const char *gf_filter_meta_get_instances(GF_Filter *filter);
+
+
+/*! Locates start of gpac option separator in a url path
+\param filter target filter
+\param path path to analyze
+\return NULL or first option found (including option separator)
+*/
+const char *gf_filter_path_escape_colon(GF_Filter *filter, const char *path);
 
 /*! @} */
 
@@ -4005,6 +4047,19 @@ Bool gf_filter_pid_has_decoder(GF_FilterPid *PID);
 */
 GF_Err gf_filter_pid_set_rt_stats(GF_FilterPid *PID, u32 rtt_ms, u32 jitter_us, u32 loss_rate);
 
+
+/*! Returns RFC6381 "codec" string of a PID
+
+\param PID the target filter PID
+\param szCodec string to be written, must be RFC6381_CODEC_NAME_SIZE_MAX at least
+\param force_inband forces inband signaling for avc/hevc/etc
+\param force_sbr forces SBR signaling for AAC
+\param tile_base_dcd decoder config of tiled base track if known, may be NULL otherwise
+\param out_inband_forced set to 1 if inband is to be forced (dasher only) - may be NULL
+\return error if any
+*/
+GF_Err gf_filter_pid_get_rfc_6381_codec_string(GF_FilterPid *PID, char *szCodec, Bool force_inband, Bool force_sbr, const GF_PropertyValue *tile_base_dcd, u32 *out_inband_forced);
+
 /*! @} */
 
 
@@ -4091,6 +4146,17 @@ The packet has by default no DTS, no CTS, no duration framing set to full frame 
 */
 GF_FilterPacket *gf_filter_pck_new_ref(GF_FilterPid *PID, u32 data_offset, u32 data_size, GF_FilterPacket *source_packet);
 
+/*! Same as  \ref gf_filter_pck_new_ref with packet destructor callbacl
+
+\param PID the target output PID
+\param data_offset offset in the source data block
+\param data_size the size of the data block to dispatch - if 0, the entire data of the source packet beginning at offset is used
+\param source_packet the source packet this data belongs to (at least from the filter point of view).
+\param destruct the callback function used to destroy the packet when no longer used - may be NULL
+\return new packet or NULL if allocation error or not an output PID
+*/
+GF_FilterPacket *gf_filter_pck_new_ref_destructor(GF_FilterPid *PID, u32 data_offset, u32 data_size, GF_FilterPacket *source_packet, gf_fsess_packet_destructor destruct);
+
 /*! Allocates a new packet on the output PID with associated allocated data.
 The packet has by default no DTS, no CTS, no duration framing set to full frame (start=end=1) and all other flags set to 0 (including SAP type).
 \param PID the target output PID
@@ -4144,6 +4210,20 @@ Note that packets created with \ref gf_filter_pck_new_frame_interface are always
 \return error if any
 */
 GF_Err gf_filter_pck_set_readonly(GF_FilterPacket *pck);
+
+
+/*! Checks if packet data has been reallocated
+
+There are cases where memory allocated by \ref gf_filter_pck_new_ref allow needs to be reallocated without using \ref gf_filter_pck_expand .
+This function allows checking if the data has changed, and if so reassign the new block to the packet.
+If the data pointer was not changed, the packet data size is updated to the new size (acts as gf_filter_pck_truncate).
+The data shall have been reallocated with \ref gf_realloc.
+
+\param pck the target  packet to send
+\param data the reallocated data pointer
+\param size the reallocated data size
+*/
+void gf_filter_pck_check_realloc(GF_FilterPacket *pck, u8 *data, u32 size);
 
 /*! Sends the packet on its output PID. Packets SHALL be sent in processing order (eg, decoding order for video).
 However, packets don't have to be sent in their allocation order.
@@ -4386,7 +4466,7 @@ that the packet is a PATCH packet, replacing bytes located at gf_filter_pck_get_
 inserting bytes located at gf_filter_pck_get_byte_offset in file if the interlaced flag of the packet is set.
 If the corrupted flag is set, this indicates the data will be replaced later on.
 A seek packet is not meant to be displayed but is needed for decoding.
-\note If a packet is partially skiped but completely decoded, it shall not be marked as seek but have the property "SkipBegin" set.
+\note If a packet is partially skipped but completely decoded, it shall not be marked as seek but have the property "SkipBegin" set.
 \note Raw audio packets MUST be split at the proper boundary
 \param pck target packet
 \param is_seek indicates packet is seek frame

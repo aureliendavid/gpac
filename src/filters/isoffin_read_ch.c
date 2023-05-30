@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / ISOBMFF reader filter
@@ -30,6 +30,7 @@
 #include <gpac/network.h>
 #include <gpac/avparse.h>
 
+GF_Err gf_isom_set_sample_alloc(GF_ISOFile *the_file, u32 trackNumber, 	u8 *(*sample_realloc)(u32 size, void *cbk), void *udta);
 
 void isor_reset_reader(ISOMChannel *ch)
 {
@@ -63,6 +64,7 @@ void isor_check_producer_ref_time(ISOMReader *read)
 		return;
 	}
 
+#ifndef GPAC_DISABLE_ISOM_FRAGMENTS
 	if (gf_isom_get_last_producer_time_box(read->mov, &trackID, &ntp, &timestamp, GF_TRUE)) {
 #if !defined(_WIN32_WCE) && !defined(GPAC_DISABLE_LOG)
 
@@ -82,6 +84,7 @@ void isor_check_producer_ref_time(ISOMReader *read)
 		read->cts_for_last_sender_ntp = timestamp;
 		read->ntp_at_last_sender_ntp = gf_net_get_ntp_ts();
 	}
+#endif
 }
 
 
@@ -136,6 +139,7 @@ static void init_reader(ISOMChannel *ch)
 		}
 
 		if (ch->sample && !ch->sample->data && ch->owner->frag_type && !ch->has_edit_list) {
+			ch->static_sample->alloc_size = 0;
 			ch->sample = NULL;
 			ch->sample_num = 1;
 			ch->sample = gf_isom_get_sample_ex(ch->owner->mov, ch->track, ch->sample_num, &sample_desc_index, ch->static_sample, &ch->sample_data_offset);
@@ -291,13 +295,31 @@ void isor_reader_get_sample_from_item(ISOMChannel *ch)
 
 	ch->sample = ch->static_sample;
 	ch->sample->IsRAP = RAP;
-	ch->au_duration = 1000;
+	ch->sample->duration = 1000;
 	ch->dts = ch->cts = 1000 * ch->au_seq_num;
 	gf_isom_extract_meta_item_mem(ch->owner->mov, GF_TRUE, 0, ch->item_id, &ch->sample->data, &ch->sample->dataLength, &ch->static_sample->alloc_size, NULL, GF_FALSE);
 
 	if (ch->is_encrypted && ch->is_cenc) {
 		isor_update_cenc_info(ch, GF_TRUE);
 	}
+}
+
+u8 *isor_sample_alloc(u32 size, void *udta)
+{
+	u8 *output;
+	ISOMChannel *ch = (ISOMChannel *)udta;
+	if (ch->pck) {
+		if (size<ch->alloc_size) {
+			u32 size;
+			return (u8 *) gf_filter_pck_get_data(ch->pck, &size);
+		}
+		gf_filter_pck_expand(ch->pck, size - ch->alloc_size, &output, NULL, NULL);
+		ch->alloc_size = size;
+		return output;
+	}
+	ch->pck = gf_filter_pck_new_alloc(ch->pid, size, &output);
+	ch->alloc_size = size;
+	return output;
 }
 
 void isor_reader_get_sample(ISOMChannel *ch)
@@ -309,10 +331,14 @@ void isor_reader_get_sample(ISOMChannel *ch)
 
 	if (ch->next_track) {
 		ch->track = ch->next_track;
+		if (!ch->owner->nodata)
+			gf_isom_set_sample_alloc(ch->owner->mov, ch->track, isor_sample_alloc, ch);
 		ch->next_track = 0;
 	}
 
 	if (ch->to_init) {
+		if (!ch->owner->nodata)
+			gf_isom_set_sample_alloc(ch->owner->mov, ch->track, isor_sample_alloc, ch);
 		init_reader(ch);
 		sample_desc_index = ch->last_sample_desc_index;
 	} else if (ch->speed < 0) {
@@ -326,12 +352,14 @@ void isor_reader_get_sample(ISOMChannel *ch)
 		}
 
 		e = gf_isom_get_sample_for_movie_time(ch->owner->mov, ch->track, ch->sample_time + 1, &sample_desc_index, GF_ISOM_SEARCH_FORWARD, &ch->static_sample, &ch->sample_num, NULL);
+		ch->static_sample->alloc_size = 0;
 
 		if ((e==GF_EOS) || (ch->static_sample->IsRAP)) {
 			if (!ch->last_rap_sample_time) {
 				e = GF_EOS;
 			} else {
 				e = gf_isom_get_sample_for_movie_time(ch->owner->mov, ch->track, ch->last_rap_sample_time - 1, &sample_desc_index, GF_ISOM_SEARCH_SYNC_BACKWARD, &ch->static_sample, &ch->sample_num, NULL);
+				ch->static_sample->alloc_size = 0;
 			}
 		}
 
@@ -356,6 +384,7 @@ void isor_reader_get_sample(ISOMChannel *ch)
 	} else if (ch->has_edit_list) {
 		u32 prev_sample = ch->sample_num;
 		e = gf_isom_get_sample_for_movie_time(ch->owner->mov, ch->track, ch->sample_time + 1, &sample_desc_index, GF_ISOM_SEARCH_FORWARD, &ch->static_sample, &ch->sample_num, &ch->sample_data_offset);
+		ch->static_sample->alloc_size = 0;
 
 		if (e == GF_OK) {
 			ch->sample = ch->static_sample;
@@ -386,6 +415,7 @@ void isor_reader_get_sample(ISOMChannel *ch)
 						} else {
 							u32 time_diff = gf_isom_get_sample_duration(ch->owner->mov, ch->track, sample_num);
 							e = gf_isom_get_sample_for_movie_time(ch->owner->mov, ch->track, ch->sample_time + time_diff, &sample_desc_index, GF_ISOM_SEARCH_FORWARD, &ch->static_sample, &ch->sample_num, &ch->sample_data_offset);
+							ch->static_sample->alloc_size = 0;
 							if (e==GF_OK) {
 								if (ch->sample_num == prev_sample) {
 									ch->sample_time += time_diff;
@@ -407,6 +437,7 @@ void isor_reader_get_sample(ISOMChannel *ch)
 					ch->sample = NULL;
 					e = gf_isom_get_sample_for_movie_time(ch->owner->mov, ch->track, ch->sample_time + 1, &sample_desc_index, GF_ISOM_SEARCH_SYNC_BACKWARD, &ch->static_sample, &ch->sample_num, &ch->sample_data_offset);
 
+					ch->static_sample->alloc_size = 0;
 					ch->sample = (e == GF_OK) ? ch->static_sample : NULL;
 
 					/*if no sync point in the past, use the first non-sync for the given time*/
@@ -428,6 +459,12 @@ void isor_reader_get_sample(ISOMChannel *ch)
 	} else {
 		Bool do_fetch = GF_TRUE;
 		ch->sample_num++;
+		if (ch->sample_last && (ch->sample_last<ch->sample_num)) {
+			ch->sample = NULL;
+			ch->last_state = GF_EOS;
+			ch->playing = 2;
+			return;
+		}
 
 		if (ch->sap_only) {
 			Bool is_rap = gf_isom_get_sample_sync(ch->owner->mov, ch->track, ch->sample_num);
@@ -453,6 +490,10 @@ void isor_reader_get_sample(ISOMChannel *ch)
 			if (ch->sample && (ch->sample->IsRAP==RAP_REDUNDANT)) {
 				ch->sample = NULL;
 				ch->sample_num++;
+				if (ch->pck) {
+					gf_filter_pck_discard(ch->pck);
+					ch->pck = NULL;
+				}
 				isor_reader_get_sample(ch);
 				return;
 			}
@@ -466,6 +507,10 @@ void isor_reader_get_sample(ISOMChannel *ch)
 		ch->track = ch->next_track;
 		ch->next_track = 0;
 		ch->sample = NULL;
+		if (ch->pck) {
+			gf_filter_pck_discard(ch->pck);
+			ch->pck = NULL;
+		}
 		isor_reader_get_sample(ch);
 		return;
 	}
@@ -497,8 +542,10 @@ void isor_reader_get_sample(ISOMChannel *ch)
 		}
 		else if (!ch->sample_num
 		         || ((ch->speed >= 0) && (ch->sample_num >= sample_count))
+#ifndef GPAC_DISABLE_ISOM_FRAGMENTS
 		         || ((ch->speed < 0) && (ch->sample_time == gf_isom_get_current_tfdt(ch->owner->mov, ch->track) ))
-		        ) {
+#endif
+		) {
 
 			if (ch->owner->frag_type==1) {
 				/*if sample cannot be found and file is fragmented, rewind sample*/
@@ -522,6 +569,12 @@ void isor_reader_get_sample(ISOMChannel *ch)
 		return;
 	}
 
+	//first sample fetched has DTS, we have a tfdt so ignore the hinted one
+	if ((ch->sample_num==1) && ch->hint_first_tfdt && ch->sample->DTS) {
+		ch->hint_first_tfdt = 0;
+	}
+	ch->sample->DTS += ch->hint_first_tfdt;
+
 	if (sample_desc_index != ch->last_sample_desc_index) {
 		if (!ch->owner->stsd) {
 			//we used sample entry 1 by default to setup, if no active prev sample (edit list might trigger this)
@@ -536,7 +589,6 @@ void isor_reader_get_sample(ISOMChannel *ch)
 	}
 
 	ch->last_state = GF_OK;
-	ch->au_duration = gf_isom_get_sample_duration(ch->owner->mov, ch->track, ch->sample_num);
 
 	ch->sap_3 = GF_FALSE;
 	ch->sap_4_type = 0;
@@ -559,7 +611,7 @@ void isor_reader_get_sample(ISOMChannel *ch)
 			ch->dts = ch->start;
 		}
 
-		if (ch->end && (ch->end < ch->sample->DTS + ch->sample->CTS_Offset + ch->au_duration)) {
+		if (ch->end && (ch->end < ch->sample->DTS + ch->sample->CTS_Offset + ch->sample->duration)) {
 			GF_LOG(GF_LOG_DEBUG, GF_LOG_CONTAINER, ("[IsoMedia] End of Channel "LLD" (CTS "LLD")\n", ch->end, ch->sample->DTS + ch->sample->CTS_Offset));
 			ch->sample = NULL;
 			ch->last_state = GF_EOS;
@@ -605,15 +657,6 @@ void isor_reader_release_sample(ISOMChannel *ch)
 	ch->sai_buffer_size = 0;
 }
 
-static void isor_reset_seq_list(GF_List *list)
-{
-	while (gf_list_count(list)) {
-		GF_NALUFFParam *sl = gf_list_pop_back(list);
-		gf_free(sl->data);
-		gf_free(sl);
-	}
-}
-
 enum
 {
 	RESET_STATE_VPS=1,
@@ -623,8 +666,100 @@ enum
 	RESET_STATE_DCI=1<<4,
 };
 
-static void isor_replace_nal(ISOMChannel *ch, u8 *data, u32 size, u8 nal_type, u32 *reset_state)
+#include <gpac/internal/media_dev.h>
+
+//quick way of reading ID of AVC/HEVC/VVC param sets
+static s32 isor_ps_get_id(u8 nal_type, u8 *data, u32 size, Bool is_avc)
 {
+	s32 res=-1;
+	GF_BitStream *bs = gf_bs_new(data, size, GF_BITSTREAM_READ);
+	gf_bs_enable_emulation_byte_removal(bs, GF_TRUE);
+	switch (nal_type) {
+	case GF_AVC_NALU_PIC_PARAM:
+		gf_bs_read_u8(bs); //nal header
+		res = gf_bs_read_ue(bs);
+		break;
+	case GF_AVC_NALU_SEQ_PARAM:
+		gf_bs_read_u32(bs); //nal header + start of sps
+		res = gf_bs_read_ue(bs);
+		break;
+	case GF_HEVC_NALU_VID_PARAM:
+		gf_bs_read_u16(bs); //nal header
+		res = gf_bs_read_int(bs, 4);
+		break;
+	case GF_HEVC_NALU_SEQ_PARAM:
+#ifndef GPAC_DISABLE_AV_PARSERS
+		res = gf_hevc_read_sps(data, size, NULL);
+#else
+		res = -1;
+#endif
+		break;
+	case GF_HEVC_NALU_PIC_PARAM:
+		gf_bs_read_u16(bs); //nal header
+		res = gf_bs_read_ue(bs);
+		break;
+	case GF_VVC_NALU_VID_PARAM:
+		gf_bs_read_u16(bs); //nal header
+		res = gf_bs_read_int(bs, 4);
+		break;
+	case GF_VVC_NALU_SEQ_PARAM:
+		gf_bs_read_u16(bs); //nal header
+		res = gf_bs_read_int(bs, 4);
+		break;
+	case GF_VVC_NALU_PIC_PARAM:
+		gf_bs_read_u16(bs); //nal header
+		res = gf_bs_read_int(bs, 6);
+		break;
+	//case GF_AVC_NALU_SEQ_PARAM_EXT: - same value as VVC_DEC_PARAM
+	case GF_VVC_NALU_DEC_PARAM:
+		if (is_avc) {
+			gf_bs_read_u8(bs); //nal header
+			res = (s32) gf_bs_read_ue(bs);
+		} else {
+			res = 0; //no ID for DCI
+		}
+		break;
+	}
+	gf_bs_del(bs);
+	return res;
+}
+
+static void isor_reset_seq_list(GF_List *list)
+{
+   while (gf_list_count(list)) {
+		   GF_NALUFFParam *sl = gf_list_pop_back(list);
+		   gf_free(sl->data);
+		   gf_free(sl);
+   }
+}
+
+static void isor_reset_all_ps(ISOMChannel *ch)
+{
+	u32 i, count;
+	if (ch->avcc) {
+		isor_reset_seq_list(ch->avcc->pictureParameterSets);
+		isor_reset_seq_list(ch->avcc->sequenceParameterSets);
+		isor_reset_seq_list(ch->avcc->sequenceParameterSetExtensions);
+	}
+	else if (ch->hvcc) {
+		count = gf_list_count(ch->hvcc->param_array);
+		for (i=0; i<count; i++) {
+			GF_NALUFFParamArray *hvca = gf_list_get(ch->hvcc->param_array, i);
+			isor_reset_seq_list(hvca->nalus);
+		}
+	}
+	else if (ch->vvcc) {
+		count = gf_list_count(ch->vvcc->param_array);
+		for (i=0; i<count; i++) {
+			GF_NALUFFParamArray *vvca = gf_list_get(ch->vvcc->param_array, i);
+			isor_reset_seq_list(vvca->nalus);
+		}
+	}
+}
+
+static void isor_replace_nal(ISOMChannel *ch, u8 *data, u32 size, u8 nal_type, Bool *needs_reset)
+{
+	s32 ps_id;
 	u32 i, count, state=0;
 	GF_NALUFFParam *sl;
 	GF_List *list=NULL;
@@ -705,23 +840,52 @@ static void isor_replace_nal(ISOMChannel *ch, u8 *data, u32 size, u8 nal_type, u
 			break;
 		}
 	}
-
-	ch->xps_mask |= state;
+	//get ps
+	ps_id = 1 + isor_ps_get_id(nal_type, data, size, ch->avcc ? 1 : 0);
 
 	count = gf_list_count(list);
 	for (i=0; i<count; i++) {
 		sl = gf_list_get(list, i);
-		if ((sl->size==size) && !memcmp(sl->data, data, size)) return;
+		if (!sl->id) {
+			sl->id = 1 + isor_ps_get_id(nal_type, sl->data, sl->size, ch->avcc ? 1 : 0);
+		}
+		if (sl->id != ps_id) {
+			//reset everything whenever we change ID of seq / vps / dci
+			if (!ch->xps_mask && (state != RESET_STATE_PPS)) {
+				isor_reset_all_ps(ch);
+				break;
+			}
+			continue;
+		}
+
+		if ((sl->size==size) && !memcmp(sl->data, data, size)) {
+			ch->xps_mask |= state;
+			return;
+		}
+		if (state == RESET_STATE_PPS) {
+			//PS modified, copy
+			sl->data = gf_realloc(sl->data, size);
+			memcpy(sl->data, data, size);
+			sl->size = size;
+			*needs_reset = 1;
+			ch->xps_mask |= state;
+			return;
+		}
+		//reset, same as above
+		else if (!ch->xps_mask) {
+			isor_reset_all_ps(ch);
+			break;
+		}
 	}
-	if (! (*reset_state & state))  {
-		isor_reset_seq_list(list);
-		*reset_state |= state;
-	}
+	ch->xps_mask |= state;
+	*needs_reset = 1;
+
 	GF_SAFEALLOC(sl, GF_NALUFFParam);
 	if (!sl) return;
 	sl->data = gf_malloc(sizeof(char)*size);
 	memcpy(sl->data, data, size);
 	sl->size = size;
+	sl->id = ps_id;
 	gf_list_add(list, sl);
 }
 
@@ -801,10 +965,11 @@ void isor_sai_bytes_removed(ISOMChannel *ch, u32 pos, u32 removed)
 
 void isor_reader_check_config(ISOMChannel *ch)
 {
-	u32 nalu_len, reset_state, pos;
+	u32 nalu_len, pos;
+	Bool needs_reset;
 	if (!ch->check_hevc_ps && !ch->check_avc_ps && !ch->check_vvc_ps && !ch->check_mhas_pl) return;
 
-	if (!ch->sample) return;
+	if (!ch->sample || !ch->sample->data) return;
 	ch->xps_mask = 0;
 
 	//we cannot touch the payload if encrypted but not CENC !!
@@ -814,6 +979,7 @@ void isor_reader_check_config(ISOMChannel *ch)
 	if (ch->check_mhas_pl) {
 		//we cannot touch the payload if encrypted !!
 		if (ch->pck_encrypted) return;
+#ifndef GPAC_DISABLE_AV_PARSERS
 		u64 ch_layout = 0;
 		s32 PL = gf_mpegh_get_mhas_pl(ch->sample->data, ch->sample->dataLength, &ch_layout);
 		if (PL>0) {
@@ -822,6 +988,7 @@ void isor_reader_check_config(ISOMChannel *ch)
 			if (ch_layout)
 				gf_filter_pid_set_property(ch->pid, GF_PROP_PID_CHANNEL_LAYOUT, &PROP_LONGUINT(ch_layout));
 		}
+#endif
 		return;
 	}
 	//analyze mode, do not rewrite
@@ -837,7 +1004,7 @@ void isor_reader_check_config(ISOMChannel *ch)
 	else if (ch->vvcc) nalu_len = ch->vvcc->nal_unit_size;
 
 	if (!nalu_len) return;
-	reset_state = 0;
+	needs_reset = 0;
 
 	pos = 0;
 
@@ -896,7 +1063,7 @@ void isor_reader_check_config(ISOMChannel *ch)
 
 		if (replace_nal) {
 			u32 move_size = ch->sample->dataLength - size - pos - nalu_len;
-			isor_replace_nal(ch, ch->sample->data + pos + nalu_len, size, nal_type, &reset_state);
+			isor_replace_nal(ch, ch->sample->data + pos + nalu_len, size, nal_type, &needs_reset);
 			if (move_size)
 				memmove(ch->sample->data + pos, ch->sample->data + pos + size + nalu_len, ch->sample->dataLength - size - pos - nalu_len);
 
@@ -912,7 +1079,7 @@ void isor_reader_check_config(ISOMChannel *ch)
 		}
 	}
 
-	if (reset_state) {
+	if (needs_reset) {
 		u8 *dsi=NULL;
 		u32 dsi_size=0;
 		if (ch->check_avc_ps) {
@@ -936,29 +1103,35 @@ void isor_reader_check_config(ISOMChannel *ch)
 	}
 }
 
-
-
 void isor_set_sample_groups_and_aux_data(ISOMReader *read, ISOMChannel *ch, GF_FilterPacket *pck)
 {
-	char szPName[30];
+	char szPName[100];
 
 	u32 grp_idx=0;
 	while (1) {
-		u32 grp_type=0, grp_size=0, grp_parameter=0;
-		const u8 *grp_data=NULL;
-		GF_Err e = gf_isom_enum_sample_group(read->mov, ch->track, ch->sample_num, &grp_idx, &grp_type, &grp_parameter, &grp_data, &grp_size);
+		u32 grp_type=0, grp_size=0, grp_parameter=0, grp_flags=0;
+		u8 *grp_data=NULL;
+		GF_Err e = gf_isom_enum_sample_group(read->mov, ch->track, ch->sample_num, &grp_idx, &grp_type, &grp_flags, &grp_parameter, &grp_data, &grp_size);
 		if (e || !grp_type) break;
 		if (!grp_size || !grp_data) continue;
 
-		if (grp_type == GF_4CC('P','S','S','H')) {
-			gf_filter_pck_set_property(pck, GF_PROP_PID_CENC_PSSH, &PROP_DATA((u8*)grp_data, grp_size) );
-			continue;
-		}
-		//all other are mapped to sample groups
+		//prepare prop name sample groups
 		if (grp_parameter) sprintf(szPName, "grp_%s_%d", gf_4cc_to_str(grp_type), grp_parameter);
 		else sprintf(szPName, "grp_%s", gf_4cc_to_str(grp_type));
+		if (grp_flags) {
+			char szPFLags[30];
+			sprintf(szPFLags, "_z%x", grp_flags);
+			strcat(szPName, szPFLags);
+		}
 
-		gf_filter_pck_set_property_dyn(pck, szPName, &PROP_DATA((u8*)grp_data, grp_size) );
+		switch (grp_type) {
+		case GF_4CC('P','S','S','H'):
+			gf_filter_pck_set_property(pck, GF_PROP_PID_CENC_PSSH, &PROP_DATA_NO_COPY((u8*)grp_data, grp_size) );
+			break;
+		default:
+			gf_filter_pck_set_property_dyn(pck, szPName, &PROP_DATA_NO_COPY(grp_data, grp_size) );
+			break;
+		}
 	}
 
 	u32 sai_idx=0;

@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre - Cyril Concolato
- *			Copyright (c) Telecom ParisTech 2010-2022
+ *			Copyright (c) Telecom ParisTech 2010-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / 3GPP/MPEG Media Presentation Description input module
@@ -269,6 +269,10 @@ typedef struct
 	u8 can_merge;
 	/*! merge flag for byte-range subsegs 0: cannot merge, 1: can merge */
 	u8 is_first_part;
+
+
+	u64 first_tfdt, first_pck_seq, frag_start_offset, frag_tfdt;
+	u32 split_first_dur, split_last_dur;
 } GF_MPD_SegmentURL;
 
 /*! SegmentList*/
@@ -289,6 +293,11 @@ typedef struct
 	char *dasher_segment_name;
 	/*! GPAC internal, we store the previous xlink before resolution*/
 	char *previous_xlink_href;
+	/*! GPAC internal for index mode*/
+	Bool index_mode;
+	Bool use_split_dur;
+	u32 sample_duration, src_timescale, pid_delay;
+	s32 first_cts_offset;
 } GF_MPD_SegmentList;
 
 /*! SegmentTemplate*/
@@ -660,6 +669,10 @@ typedef struct {
 
 	GF_Fraction hls_max_seg_dur;
 
+	//download in progress for m3u8
+	Bool in_progress;
+	char *res_url;
+	u32 trackID;
 } GF_MPD_Representation;
 
 /*! AdaptationSet*/
@@ -873,7 +886,12 @@ typedef struct {
 	GF_List *supplemental_properties;
 
 	/* internal variables for dasher*/
+
+	/*! inject DASHIF-LL profile service desc*/
 	Bool inject_service_desc;
+
+	/*Generate index mode instead of MPD*/
+	Bool index_mode;
 
 	/*! dasher init NTP clock in ms - GPAC internal*/
 	u64 gpac_init_ntp_ms;
@@ -904,6 +922,12 @@ typedef struct {
 	Double llhls_part_holdback;
 	//als absolute url flag
 	u32 hls_abs_url;
+	Bool m3u8_use_repid;
+
+	/*! requested segment duration for index mode */
+	u32 segment_duration;
+	char *segment_template;
+	Bool allow_empty_reps;
 } GF_MPD;
 
 /*! parses an MPD Element (and subtree) from DOM
@@ -973,15 +997,28 @@ GF_Err gf_mpd_write(GF_MPD const * const mpd, FILE *out, Bool compact);
 */
 GF_Err gf_mpd_write_file(GF_MPD const * const mpd, const char *file_name);
 
+/*! write mode for M3U8 */
+typedef enum
+{
+	/*! write both master and child playlists */
+	GF_M3U8_WRITE_ALL=0,
+	/*! write master  playlist only */
+	GF_M3U8_WRITE_MASTER,
+	/*! write child playlist only */
+	GF_M3U8_WRITE_CHILD,
+} GF_M3U8WriteMode;
+
 /*! writes an MPD to a m3u8 playlist
 GF_Err gf_mpd_write(GF_MPD const * const mpd, FILE *out, Bool compact);
 \param mpd the target MPD to write
 \param out the target file object
 \param m3u8_name the base m3u8 name to use (needed when generating variant playlist file names)
 \param period the MPD period for that m3u8
+\param mode the write operation desired
 \return error if any
 */
-GF_Err gf_mpd_write_m3u8_master_playlist(GF_MPD const * const mpd, FILE *out, const char* m3u8_name, GF_MPD_Period *period);
+GF_Err gf_mpd_write_m3u8_master_playlist(GF_MPD const * const mpd, FILE *out, const char* m3u8_name, GF_MPD_Period *period, GF_M3U8WriteMode mode);
+
 
 /*! parses an MPD Period and appends it to the MPD period list
 GF_Err gf_mpd_write(GF_MPD const * const mpd, FILE *out, Bool compact);
@@ -1015,6 +1052,11 @@ struct _gf_file_get
 	void (*del_session)(GF_FileDownload *getter);
 	/*! callback function to get the local file name*/
 	const char *(*get_cache_name)(GF_FileDownload *getter);
+	/*! callback function to get download status - returns:
+		- GF_OK: session is done
+		- GF_NOT_READY: session is in progress
+		- Any other error: session done with error*/
+	GF_Err (*get_status)(GF_FileDownload *getter);
 	/*! user private*/
 	void *udta;
 	/*! created by user after new_session*/

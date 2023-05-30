@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / IETF RTP/RTSP/SDP sub-project
@@ -32,7 +32,7 @@
 #endif
 #include <gpac/internal/ietf_dev.h>
 
-#if !defined(GPAC_DISABLE_STREAMING) && !defined(GPAC_DISABLE_ISOM)
+#if !defined(GPAC_DISABLE_STREAMING)
 
 /*for ISOBMFF subtypes*/
 #include <gpac/isomedia.h>
@@ -223,7 +223,7 @@ GF_RTPStreamer *gf_rtp_streamer_new(u32 streamType, u32 codecid, u32 timeScale,
 			rtp_type = GF_RTP_PAYT_3GPP_DIMS;
 			has_mpeg4_mapping = GF_FALSE;
 #else
-			gf_free(stream);
+			gf_rtp_streamer_del(stream);
 			GF_LOG(GF_LOG_ERROR, GF_LOG_RTP, ("[RTP Packetizer] 3GPP DIMS over RTP disabled in build\n", streamType));
 			return NULL;
 #endif
@@ -421,6 +421,7 @@ GF_RTPStreamer *gf_rtp_streamer_new(u32 streamType, u32 codecid, u32 timeScale,
 	default:
 		if (!rtp_type) {
 			GF_LOG(GF_LOG_ERROR, GF_LOG_RTP, ("[RTP Packetizer] Unsupported stream type %x\n", streamType));
+			gf_rtp_streamer_del(stream);
 			return NULL;
 		}
 		break;
@@ -480,7 +481,7 @@ GF_RTPStreamer *gf_rtp_streamer_new(u32 streamType, u32 codecid, u32 timeScale,
 
 	if (!stream->packetizer) {
 		GF_LOG(GF_LOG_ERROR, GF_LOG_RTP, ("[RTP Packetizer] Failed to create packetizer\n"));
-		gf_free(stream);
+		gf_rtp_streamer_del(stream);
 		return NULL;
 	}
 
@@ -494,7 +495,7 @@ GF_RTPStreamer *gf_rtp_streamer_new(u32 streamType, u32 codecid, u32 timeScale,
 		e = rtp_stream_init_channel(stream, MTU + 12, ip_dest, port, TTL, ifce_addr);
 		if (e) {
 			GF_LOG(GF_LOG_ERROR, GF_LOG_RTP, ("[RTP Packetizer] Failed to create RTP channel - error %s\n", gf_error_to_string(e) ));
-			gf_free(stream);
+			gf_rtp_streamer_del(stream);
 			return NULL;
 		}
 	}
@@ -591,11 +592,13 @@ GF_Err gf_rtp_streamer_append_sdp_extended(GF_RTPStreamer *rtp, u16 ESID, const 
 	if ((rtp->packetizer->rtp_payt == GF_RTP_PAYT_AMR) || (rtp->packetizer->rtp_payt == GF_RTP_PAYT_AMR_WB)) {
 		sprintf(sdpLine, "a=fmtp:%d octet-align=1\n", rtp->packetizer->PayloadType);
 	}
+#if !defined(GPAC_DISABLE_ISOM) && !defined(GPAC_DISABLE_STREAMING)
 	/*Text*/
 	else if (rtp->packetizer->rtp_payt == GF_RTP_PAYT_3GPP_TEXT) {
 		gf_media_format_ttxt_sdp(rtp->packetizer, payloadName, sdpLine, tw, th, tx, ty, tl, width, height, (u8 *)dsi_enh);
 		strcat(sdpLine, "\n");
 	}
+#endif
 	/*EVRC/SMV in non header-free mode*/
 	else if ((rtp->packetizer->rtp_payt == GF_RTP_PAYT_EVRC_SMV) && (rtp->packetizer->auh_size>1)) {
 		sprintf(sdpLine, "a=fmtp:%d maxptime=%d\n", rtp->packetizer->PayloadType, rtp->packetizer->auh_size*20);

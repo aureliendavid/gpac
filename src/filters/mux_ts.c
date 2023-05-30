@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2018-2022
+ *			Copyright (c) Telecom ParisTech 2018-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / MPEG-2 TS mux filter
@@ -100,6 +100,7 @@ typedef struct
 	char *name, *provider, *temi;
 	u32 log_freq;
 	s32 subs_sidx;
+	Bool keepts;
 	GF_Fraction cdur;
 
 	//internal
@@ -675,6 +676,7 @@ static GF_Err tsmux_esi_ctrl(GF_ESInterface *ifce, u32 act_type, void *param)
 		}
 		//serialize webvtt cue formatting for TX3G
 		else if (tspid->codec_id == GF_CODECID_WEBVTT) {
+#ifndef GPAC_DISABLE_VTT
 			u32 i;
 			u64 start_ts, end_ts;
 			void webvtt_write_cue_bs(GF_BitStream *bs, GF_WebVTTCue *cue, Bool write_srt);
@@ -694,6 +696,7 @@ static GF_Err tsmux_esi_ctrl(GF_ESInterface *ifce, u32 act_type, void *param)
 			gf_bs_get_content(bs, &es_pck.data, &es_pck.data_len);
 			gf_bs_del(bs);
 			tspid->pck_data_buf = es_pck.data;
+#endif
 		}
 		//for TTML we keep the entire payload as a PES packet
 
@@ -1236,6 +1239,13 @@ static GF_Err tsmux_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is_
 
 		if (sname) gf_m2ts_mux_program_set_name(prog, sname, pname);
 
+		p = gf_filter_pid_get_property(tspid->ipid, GF_PROP_PID_DASH_SPARSE);
+		if (p && p->value.boolean) ctx->keepts = GF_TRUE;
+		//move to NO_TS, adjust min when checking buffering
+		if (ctx->keepts) {
+			prog->force_first_pts = GF_FILTER_NO_TS;
+		}
+
 		GF_LOG(GF_LOG_INFO, GF_LOG_CONTAINER, ("[M2TSMux] Setting up program ID %d - send rates: PSI %d ms PCR every %d ms max - PCR offset %d\n", service_id, ctx->pmt_rate, ctx->max_pcr, ctx->pcr_offset));
 	}
 	if (tspid->esi.stream_type != streamtype)
@@ -1373,6 +1383,7 @@ static Bool tsmux_init_buffering(GF_Filter *filter, GF_TSMuxCtx *ctx)
 	u32 not_ready=0;
 	u32 mbuf = ctx->breq*1000;
 	u32 i, count = gf_list_count(ctx->pids);
+
 	for (i=0; i<count; i++) {
 		u32 buf;
 		Bool buf_ok;
@@ -1381,11 +1392,28 @@ static Bool tsmux_init_buffering(GF_Filter *filter, GF_TSMuxCtx *ctx)
 		if (buf_ok && (buf < mbuf) && !gf_filter_pid_has_seen_eos(tspid->ipid)) {
 			if (!tspid->is_sparse) not_ready++;
 		}
+		if (!ctx->keepts) continue;
+
+		GF_FilterPacket *pck = gf_filter_pid_get_packet(tspid->ipid);
+		if (!pck) {
+			if (!tspid->is_sparse && !gf_filter_pid_has_seen_eos(tspid->ipid)) not_ready++;
+			continue;
+		}
+		u64 min_ts = gf_filter_pck_get_cts(pck);
+		if (min_ts==GF_FILTER_NO_TS) min_ts = gf_filter_pck_get_dts(pck);
+		if (min_ts==GF_FILTER_NO_TS) continue;
+ 		min_ts += tspid->max_media_skip + tspid->media_delay;
+
+		min_ts = gf_timestamp_rescale(min_ts, gf_filter_pid_get_timescale(tspid->ipid), 90000);
+		if ((tspid->prog->force_first_pts == GF_FILTER_NO_TS) || (tspid->prog->force_first_pts>min_ts)) {
+			tspid->prog->force_first_pts = min_ts;
+		}
 	}
 	if (not_ready) {
 		u32 now = gf_sys_clock();
 		if (!ctx->sync_init_time) {
 			ctx->sync_init_time = now;
+			return GF_FALSE;
 		} else if (now - ctx->sync_init_time < 5000) {
 			return GF_FALSE;
 		} else {
@@ -2033,7 +2061,9 @@ static const GF_FilterArgs TSMuxArgs[] =
 	{ OFFS(log_freq), "delay between logs for realtime mux", GF_PROP_UINT, "500", NULL, GF_FS_ARG_HINT_ADVANCED},
 	{ OFFS(latm), "use LATM AAC encapsulation instead of regular ADTS", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_ADVANCED},
 	{ OFFS(subs_sidx), "number of subsegments per sidx (negative value disables sidx)", GF_PROP_SINT, "-1", NULL, GF_FS_ARG_HINT_ADVANCED},
+	{ OFFS(keepts), "keep cts/dts untouched and adjust PCR accordingly, used to keep TS unmodified when dashing", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_EXPERT},
 	{ OFFS(cdur), "chunk duration for fragmentation modes", GF_PROP_FRACTION, "-1/1", NULL, GF_FS_ARG_HINT_HIDE},
+
 	{0}
 };
 
@@ -2112,14 +2142,14 @@ GF_FilterRegister TSMuxRegister = {
 };
 
 
-const GF_FilterRegister *tsmux_register(GF_FilterSession *session)
+const GF_FilterRegister *m2tsmx_register(GF_FilterSession *session)
 {
 	return &TSMuxRegister;
 }
 
 #else
 
-const GF_FilterRegister *tsmux_register(GF_FilterSession *session)
+const GF_FilterRegister *m2tsmx_register(GF_FilterSession *session)
 {
 	return NULL;
 }

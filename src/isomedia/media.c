@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / ISO Media File Format sub-project
@@ -464,7 +464,7 @@ Bool Media_IsSampleSyncShadow(GF_ShadowSyncBox *stsh, u32 sampleNumber)
 	return 0;
 }
 
-GF_Err Media_GetSample(GF_MediaBox *mdia, u32 sampleNumber, GF_ISOSample **samp, u32 *sIDX, Bool no_data, u64 *out_offset)
+GF_Err Media_GetSample(GF_MediaBox *mdia, u32 sampleNumber, GF_ISOSample **samp, u32 *sIDX, Bool no_data, u64 *out_offset, Bool ext_realloc)
 {
 	GF_Err e;
 	u32 bytesRead;
@@ -493,7 +493,7 @@ GF_Err Media_GetSample(GF_MediaBox *mdia, u32 sampleNumber, GF_ISOSample **samp,
 
 	if (mdia->information->sampleTable->TimeToSample) {
 		//get the DTS
-		e = stbl_GetSampleDTS(mdia->information->sampleTable->TimeToSample, sampleNumber, &(*samp)->DTS);
+		e = stbl_GetSampleDTS_and_Duration(mdia->information->sampleTable->TimeToSample, sampleNumber, &(*samp)->DTS, &(*samp)->duration);
 		if (e) return e;
 	} else {
 		(*samp)->DTS=0;
@@ -610,6 +610,8 @@ GF_Err Media_GetSample(GF_MediaBox *mdia, u32 sampleNumber, GF_ISOSample **samp,
 			data_size *= left_in_chunk;
 			(*samp)->nb_pack = left_in_chunk;
 		}
+		if (! (*samp)->data)
+			(*samp)->alloc_size = 0;
 
 		/*and finally get the data, include padding if needed*/
 		if ((*samp)->alloc_size) {
@@ -620,7 +622,11 @@ GF_Err Media_GetSample(GF_MediaBox *mdia, u32 sampleNumber, GF_ISOSample **samp,
 				(*samp)->alloc_size = data_size + mdia->mediaTrack->padding_bytes;
 			}
 		} else {
-			(*samp)->data = (char *) gf_malloc(sizeof(char) * ( data_size + mdia->mediaTrack->padding_bytes) );
+			if (ext_realloc) {
+				(*samp)->data = mdia->mediaTrack->sample_alloc_cbk(data_size + mdia->mediaTrack->padding_bytes, mdia->mediaTrack->sample_alloc_udta);
+			} else {
+				(*samp)->data = (u8 *) gf_malloc(data_size + mdia->mediaTrack->padding_bytes);
+			}
 			if (! (*samp)->data) return GF_OUT_OF_MEM;
 		}
 		(*samp)->dataLength = data_size;
@@ -657,14 +663,14 @@ GF_Err Media_GetSample(GF_MediaBox *mdia, u32 sampleNumber, GF_ISOSample **samp,
 		}
 	}
 	else if (gf_isom_is_nalu_based_entry(mdia, entry)) {
-		GF_ISOSAPType gf_isom_nalu_get_sample_sap(GF_MediaBox *mdia, GF_ISOSample *sample, GF_MPEGVisualSampleEntryBox *entry);
+		GF_ISOSAPType gf_isom_nalu_get_sample_sap(GF_MediaBox *mdia, u32 sampleNumber, GF_ISOSample *sample, GF_MPEGVisualSampleEntryBox *entry);
 
 		if (!gf_isom_is_encrypted_entry(entry->type)) {
 			e = gf_isom_nalu_sample_rewrite(mdia, *samp, sampleNumber, (GF_MPEGVisualSampleEntryBox *)entry);
 			if (e) return e;
 		}
 		if (!gf_sys_old_arch_compat()) {
-			GF_ISOSAPType sap = gf_isom_nalu_get_sample_sap(mdia, *samp, (GF_MPEGVisualSampleEntryBox *)entry);
+			GF_ISOSAPType sap = gf_isom_nalu_get_sample_sap(mdia, sampleNumber, *samp, (GF_MPEGVisualSampleEntryBox *)entry);
 			if (sap && ! (*samp)->IsRAP) (*samp)->IsRAP = sap;
 			else if ((*samp)->IsRAP < sap) (*samp)->IsRAP = sap;
 		}

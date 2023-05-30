@@ -118,6 +118,12 @@ GF_Err ac3dmx_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is_remove
 		ctx->opid = gf_filter_pid_new(filter);
 		gf_filter_pid_copy_properties(ctx->opid, ctx->ipid);
 		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_UNFRAMED, NULL);
+
+		//make sure we move to audio (may happen if source filter is writegen)
+		p = gf_filter_pid_get_property(ctx->ipid, GF_PROP_PID_STREAM_TYPE);
+		if (!p || (p->value.uint==GF_STREAM_FILE)) {
+			gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_STREAM_TYPE, &PROP_UINT(GF_STREAM_AUDIO));
+		}
 	}
 	if (ctx->timescale) ctx->copy_props = GF_TRUE;
 	return GF_OK;
@@ -216,9 +222,10 @@ static void ac3dmx_check_pid(GF_Filter *filter, GF_AC3DmxCtx *ctx)
 	ctx->copy_props = GF_FALSE;
 	//copy properties at init or reconfig
 	gf_filter_pid_copy_properties(ctx->opid, ctx->ipid);
-	//don't change codec type if reframing an ES (for HLS SAES)
-	if (!ctx->timescale)
-		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_STREAM_TYPE, & PROP_UINT( GF_STREAM_AUDIO));
+	const GF_PropertyValue *p = gf_filter_pid_get_property(ctx->ipid, GF_PROP_PID_STREAM_TYPE);
+	if (!p || (p->value.uint==GF_STREAM_FILE)) {
+		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_STREAM_TYPE, &PROP_UINT(GF_STREAM_AUDIO));
+	}
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_SAMPLES_PER_FRAME, & PROP_UINT(AC3_FRAME_SIZE) );
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_UNFRAMED, & PROP_BOOL(GF_FALSE) );
 
@@ -334,7 +341,10 @@ GF_Err ac3dmx_process(GF_Filter *filter)
 	u8 *output;
 	u8 *start;
 	u32 pck_size, remain, prev_pck_size;
-	u64 cts = GF_FILTER_NO_TS;
+	u64 cts;
+	
+restart:
+	cts = GF_FILTER_NO_TS;
 
 	//always reparse duration
 	if (!ctx->duration.num)
@@ -428,16 +438,18 @@ GF_Err ac3dmx_process(GF_Filter *filter)
 
 		sync_pos = (u32) gf_bs_get_position(ctx->bs);
 
-		//startcode not found or not enough bytes, gather more
-		if (!res || (remain < sync_pos + ctx->hdr.framesize)) {
-			if (sync_pos && ctx->hdr.framesize) {
-				start += sync_pos;
-				remain -= sync_pos;
+		//if not end of stream or no valid frame
+		if (pck || !ctx->hdr.framesize) {
+			//startcode not found or not enough bytes, gather more
+			if (!res || (remain < sync_pos + ctx->hdr.framesize)) {
+				if (sync_pos && ctx->hdr.framesize) {
+					start += sync_pos;
+					remain -= sync_pos;
+				}
+				break;
 			}
-			break;
+			ac3dmx_check_pid(filter, ctx);
 		}
-
-		ac3dmx_check_pid(filter, ctx);
 
 		if (!ctx->is_playing) {
 			ctx->resume_from = 1 + ctx->ac3_buffer_size - remain;
@@ -474,7 +486,10 @@ GF_Err ac3dmx_process(GF_Filter *filter)
 			memcpy(output, sync, ctx->hdr.framesize);
 			gf_filter_pck_set_dts(dst_pck, ctx->cts);
 			gf_filter_pck_set_cts(dst_pck, ctx->cts);
-			gf_filter_pck_set_duration(dst_pck, AC3_FRAME_SIZE);
+			if (ctx->timescale && (ctx->timescale!=ctx->sample_rate))
+				gf_filter_pck_set_duration(dst_pck, (u32) gf_timestamp_rescale(AC3_FRAME_SIZE, ctx->sample_rate, ctx->timescale));
+			else
+				gf_filter_pck_set_duration(dst_pck, AC3_FRAME_SIZE);
 			gf_filter_pck_set_sap(dst_pck, GF_FILTER_SAP_1);
 			gf_filter_pck_set_framing(dst_pck, GF_TRUE, GF_TRUE);
 
@@ -515,7 +530,8 @@ GF_Err ac3dmx_process(GF_Filter *filter)
 
 	if (!pck) {
 		ctx->ac3_buffer_size = 0;
-		return ac3dmx_process(filter);
+		//avoid recursive call
+		goto restart;
 	} else {
 		if (remain && (remain < ctx->ac3_buffer_size)) {
 			memmove(ctx->ac3_buffer, start, remain);
@@ -657,14 +673,14 @@ GF_FilterRegister AC3DmxRegister = {
 };
 
 
-const GF_FilterRegister *ac3dmx_register(GF_FilterSession *session)
+const GF_FilterRegister *rfac3_register(GF_FilterSession *session)
 {
 	return &AC3DmxRegister;
 }
 
 #else
 
-const GF_FilterRegister *ac3dmx_register(GF_FilterSession *session)
+const GF_FilterRegister *rfac3_register(GF_FilterSession *session)
 {
 	return NULL;
 }

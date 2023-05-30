@@ -36,7 +36,7 @@ Note: specifying .I xml, .I analyze, .I fmt or using -for-test will force .I ful
 .br
 
 .br
-.SH Custom property duming
+.SH Custom property dumping
 .LP
 .br
 The packet inspector can be configured to dump specific properties of packets using .I fmt.
@@ -168,7 +168,7 @@ gpac -i SRC reframer:rt=on inspect:buffer=10000:rbuffer=1000:mbuffer=30000:speed
 .br
 
 .br
-This will play the session at 2x speed, using 30s of maximum buffering, consumming packets after 10s of media are ready and rebuffering if less than 1s of media.
+This will play the session at 2x speed, using 30s of maximum buffering, consuming packets after 10s of media are ready and rebuffering if less than 1s of media.
 .br
 
 .br
@@ -498,7 +498,7 @@ ach (uint, default: 0):        force output channels (0 for auto)
 .br
 alayout (uint, default: 0):    force output channel layout (0 for auto)
 .br
-afmt (afmt, default: s16, minmax: none,u8,s16,s16b,s24,s32,flt,dbl,u8p,s16p,s24p,s32p,fltp,dblp): force output channel format (0 for auto)
+afmt (afmt, default: s16, minmax: none,u8,s16,s16b,s24,s24b,s32,s32b,flt,fltb,dbl,dblb,u8p,s16p,s24p,s32p,fltp,dblp): force output channel format (0 for auto)
 .br
 asize (uint, default: 1024):   audio output packet size in samples
 .br
@@ -844,7 +844,7 @@ frame_size (uint, default: 1024): frame size for raw audio samples (dispatches f
 .br
 expart (bool, default: false): expose cover art as a dedicated video PID
 .br
-sigfrag (bool, default: false): signal fragment and segment boundaries of source on output packets
+sigfrag (bool, default: false): signal fragment and segment boundaries of source on output packets, fails if source is not fragmented
 .br
 tkid (str):                    declare only track based on given param
 .br
@@ -881,6 +881,8 @@ xps_check (enum, default: auto): parameter sets extraction mode from AVC/HEVC/VV
 
 .br
 nodata (bool, default: false): do not load sample data
+.br
+lightp (bool, default: false): load minimal set of properties
 .br
 initseg (str):                 local init segment name when input is a single ISOBMFF segment
 .br
@@ -1016,7 +1018,7 @@ src (cstr):                    URL of source content
 .br
 block_size (uint, default: 100000): block size used to read file
 .br
-cache (enum, default: disk):   set cache mode
+cache (enum, default: none):   set cache mode
 .br
 * auto: cache to disk if content length is known, no cache otherwise
 .br
@@ -1219,32 +1221,6 @@ This filter decodes MPEG 1/2 audio streams through libmad library.
 
 .br
 No options
-.br
-
-.br
-.SH xviddec
-.LP
-.br
-Description: XVid decoder
-.br
-
-.br
-This filter decodes MPEG-4 part 2 (and DivX) through libxvidcore library.
-.br
-
-.br
-.SH Options (expert):
-.LP
-.br
-deblock_y (bool, default: false): enable Y deblocking
-.br
-deblock_uv (bool, default: false): enable UV deblocking
-.br
-film_effect (bool, default: false): enable film effect
-.br
-dering_y (bool, default: false): enable Y deblocking
-.br
-dering_uv (bool, default: false): enable UV deblocking
 .br
 
 .br
@@ -1963,7 +1939,7 @@ hls_cenc_patch_iv (bool, default: false): ignore IV updates in some broken HLS+C
 .SH cecrypt
 .LP
 .br
-Description: CENC  encryptor
+Description: CENC encryptor
 .br
 
 .br
@@ -2108,6 +2084,8 @@ The filter will look for the following PID properties to create user data entrie
 .br
 * `mudta_U4CC`: set movie user-data box entry of type U4CC to property value
 .br
+* `tkgp_T4CC`: set/remove membership to track group with type T4CC and ID given by property value. A negative value N removes from track group with ID -N
+.br
   
 .br
 Example
@@ -2171,6 +2149,28 @@ Such packets are only injected when a whole in the timeline is detected.
 - if Sparse is true, empty packet is inserted for all stream types
 .br
 - if Sparse is false, empty packet is never injected
+.br
+  
+.br
+The default media type used for a PID can be overriden using property StreamSubtype. 
+.br
+Example
+.br
+-i src.srt:#StreamSubtype=sbtl [-i ...]  -o test.mp4 
+.br
+
+.br
+This will force the text stream to use sbtl handler type instead of default text one.
+.br
+Subtitle streams may be used as chapters by setting the property IsChap on the desired PID.
+.br
+Example
+.br
+-i src.srt:#IsChap  [-i ...] -o test.mp4 
+.br
+
+.br
+This will force the text stream to be used as a QT chapter track.  
 .br
 
 .br
@@ -2345,6 +2345,8 @@ ase (enum, default: v0):       set audio sample entry mode for more than stereo 
 .br
 * v1qt: use v1 signaling, QTFF style
 .br
+* v2qt: use v2 signaling, QTFF style (lpcm entry type)
+.br
 
 .br
 ssix (bool, default: false):   create ssix box when sidx box is present, level 1 mapping I-frames byte ranges, level 0xFF mapping the rest
@@ -2365,7 +2367,7 @@ compress (enum, default: no):  set top-level box compression mode
 .br
 * no: disable box compression
 .br
-* moov: compress only moov box
+* moov: compress only moov box (uses cmov for QT)
 .br
 * moof: compress only moof boxes
 .br
@@ -2427,7 +2429,35 @@ pad_sparse (bool, default: true): inject sample with no data (size 0) to keep du
 .br
 force_dv (bool, default: false): force DV sample entry types even when AVC/HEVC compatibility is signaled
 .br
-tsalign (bool, default: true): enable timeline realignment to 0 for first sample in fragmented mode
+dvsingle (bool, default: false): ignore DolbyVision profile 8 in xps inband mode if profile 5 is already set
+.br
+tsalign (bool, default: true): enable timeline realignment to 0 for first sample - if false, this will keep original timing with empty edit (possibly long) at begin)
+.br
+chapm (enum, default: both):   chapter storage mode
+.br
+* off: disable chapters
+.br
+* tk: use chapter track (QT-style)
+.br
+* udta: use user-data box chapters
+.br
+* both: use both chapter tracks and udta
+.br
+
+.br
+patch_dts (bool, default: false): patch previous samples duration when dts do not increase monotonically
+.br
+uncv (enum, default: prof):    use uncv (ISO 23001-17) for raw video
+.br
+* off: disabled (always the case when muxing to QT)
+.br
+* gen: enabled, do not write profile
+.br
+* prof: enabled and write profile if known
+.br
+* tiny: enabled and write reduced version if profile known and compatible
+.br
+
 .br
 
 .br
@@ -3170,13 +3200,23 @@ cat (enum, default: none):     cat each file of input PID rather than creating o
 .br
 
 .br
-ow (bool, default: true):      overwrite output if existing
+ow (enum, default: yes):       overwrite output mode when concatenation is not used
+.br
+* yes: override file if existing
+.br
+* no: throw error if file existing
+.br
+* ask: interactive prompt
+.br
+
 .br
 mvbk (uint, default: 8192):    block size used when moving parts of the file around in patch mode
 .br
 redund (bool, default: false): keep redundant packet in output file
 .br
 max_cache_segs (sint, default: 0): maximum number of segments cached per HAS quality when recording live sessions (0 means no limit)
+.br
+force_null (bool, default: false): force no output regardless of file name
 .br
 
 .br
@@ -3567,6 +3607,8 @@ utc_ref (enum, default: any):  set reference mode for UTC range extraction
 .br
 utc_probe (uint, default: 5000): timeout in milliseconds to try to acquire UTC reference from media
 .br
+copy (bool, default: false):   try copying frame interface into packets
+.br
 
 .br
 .SH writegen
@@ -3589,7 +3631,7 @@ exporter (bool, default: false): compatibility with old exporter, displays expor
 .br
 pfmt (pfmt, default: none, minmax: none,yuv420,yvu420,yuv420_10,yuv422,yuv422_10,yuv444,yuv444_10,uyvy,vyuy,yuyv,yvyu,uyvl,vyul,yuyl,yvyl,nv12,nv21,nv1l,nv2l,yuva,yuvd,yuv444a,yuv444p,v308,yuv444ap,v408,v410,v210,grey,algr,gral,rgb4,rgb5,rgb6,rgba,argb,bgra,abgr,rgb,bgr,xrgb,rgbx,xbgr,bgrx,rgbd,rgbds,uncv): pixel format for raw extract. If not set, derived from extension
 .br
-afmt (afmt, default: none, minmax: none,u8,s16,s16b,s24,s32,flt,dbl,u8p,s16p,s24p,s32p,fltp,dblp): audio format for raw extract. If not set, derived from extension
+afmt (afmt, default: none, minmax: none,u8,s16,s16b,s24,s24b,s32,s32b,flt,fltb,dbl,dblb,u8p,s16p,s24p,s32p,fltp,dblp): audio format for raw extract. If not set, derived from extension
 .br
 decinfo (enum, default: auto): decoder config insert mode
 .br
@@ -4153,7 +4195,7 @@ This filter parses raw PCM file/data or WAVE files and outputs corresponding raw
 .br
 sr (uint, default: 44100):     sample rate
 .br
-safmt (afmt, default: none, minmax: none,u8,s16,s16b,s24,s32,flt,dbl,u8p,s16p,s24p,s32p,fltp,dblp): audio format
+safmt (afmt, default: none, minmax: none,u8,s16,s16b,s24,s24b,s32,s32b,flt,fltb,dbl,dblb,u8p,s16p,s24p,s32p,fltp,dblp): audio format
 .br
 ch (uint, default: 2):         number of channels
 .br
@@ -4574,6 +4616,8 @@ sigcues (bool, default: false): inject CueStart property at each source begin (n
 .br
 fdel (bool, default: false):   delete source files after processing in playlist mode (does not delete the playlist)
 .br
+keepts (bool, default: false): keep initial timestamps unmodified (no reset to 0)
+.br
 raw (enum, default: no):       force input AV streams to be in raw format
 .br
 * no: do not force decoding of inputs
@@ -4820,6 +4864,8 @@ latm (bool, default: false):   use LATM AAC encapsulation instead of regular ADT
 .br
 subs_sidx (sint, default: -1): number of subsegments per sidx (negative value disables sidx)
 .br
+keepts (bool, default: false): keep cts/dts untouched and adjust PCR accordingly, used to keep TS unmodified when dashing
+.br
 
 .br
 .SH dasher
@@ -4899,11 +4945,15 @@ Additional replacement strings (not DASH, not generic GPAC replacements but may 
 .br
 * $XInit=NAME$: complete replace by NAME for init segment, ignored otherwise
 .br
+* $InitExt=EXT$: replaced by EXT for init segment file extensions, ignored otherwise
+.br
 * $Index=NAME$: replaced by NAME for index segments, ignored otherwise
 .br
 * $Path=PATH$: replaced by PATH when creating segments, ignored otherwise
 .br
 * $Segment=NAME$: replaced by NAME for media segments, ignored for init segments
+.br
+* $SegExt=EXT$: replaced by EXT for media segment file extensions, ignored for init segments
 .br
 * $FS$ (FileSuffix): replaced by _trackN in case the input is an AV multiplex, or kept empty otherwise
 .br
@@ -5079,11 +5129,11 @@ The segmenter can also be configured to:
 .br
 
 .br
-The segmenter will by default announce a new segment in the manifest(s) as soon as its size/offset is known or its name is known, but the segment (or part in LL-HLS) may still not be completely written/sent.
+When .I seg_sync is disabled, the segmenter will by default announce a new segment in the manifest(s) as soon as its size/offset is known or its name is known, but the segment (or part in LL-HLS) may still not be completely written/sent.
 .br
 This may result in temporary mismatches between segment/part size currently received versus size as advertized in manifest.
 .br
-If the target destination cannot support this, use .I seg_sync to update manifest(s) only once segments/parts are completely flushed; this will however slightly increase the latency of manifest updates.
+When .I seg_sync is enabled, the segmenter will wait for the last byte of the fragment/segment to be pushed before announcing a new segment in the manifest(s). This can however slightly increase the latency in MPEG-DASH low-latency.
 .br
 
 .br
@@ -5111,7 +5161,7 @@ For low latency segmentation with fMP4, you will need to specify the following o
 .br
 
 .br
-Note: .I llhls will force CMAF to cmfc if .I cmaf is not set.
+Note: .I llhls does not force cmaf mode to allow for multiplexed media in segments but it enforces to tfdt_traf in the muxer.
 .br
 
 .br
@@ -5402,6 +5452,8 @@ dmode (enum, default: static, updatable): dash content mode
 .br
 * dynlast: last call for live, will turn the MPD into static
 .br
+* dynauto: live generation and move to static manifest upon end of stream
+.br
 
 .br
 sseg (bool, default: false):   single segment is used
@@ -5666,7 +5718,15 @@ hls_absu (enum, default: no):  use absolute url in HLS generation using first UR
 .br
 
 .br
-seg_sync (bool, default: false): force waiting for last packet of fragment/segment to be written before announcing segment in DASH/HLS playlist
+seg_sync (enum, default: auto): control how waiting on last packet P of fragment/segment to be written impacts segment injection in manifest
+.br
+* no: do not wait for P
+.br
+* yes: wait for P
+.br
+* auto: wait for P if HLS is used
+.br
+
 .br
 cmaf (enum, default: no):      use cmaf guidelines
 .br
@@ -5675,6 +5735,16 @@ cmaf (enum, default: no):      use cmaf guidelines
 * cmfc: use CMAF cmfc guidelines
 .br
 * cmf2: use CMAF cmf2 guidelines
+.br
+
+.br
+pswitch (enum, default: single): period switch control mode
+.br
+* single: change period if PID configuration changes
+.br
+* force: force period switch at each PID reconfiguration instead of absorbing PID reconfiguration (for splicing or add insertion not using periodID)
+.br
+* stsd: change period if PID configuration changes unless new configuration was advertised in initial config
 .br
 
 .br
@@ -5916,7 +5986,7 @@ speed (dbl, default: 1.0):     set playback speed. If negative and start is 0, s
 .br
 mkp (bool, default: false):    create pipe if not found
 .br
-block_size (uint, default: 5000): buffer size used to write to pipe, windows only
+block_size (uint, default: 5000): buffer size used to write to pipe, Windows only
 .br
 ka (bool, default: false):     keep pipe alive when broken pipe is detected
 .br
@@ -7776,7 +7846,7 @@ No options
 .br
 Description: FFMPEG demultiplexer
 .br
-Version: Lavf59.34.102
+Version: Lavf60.4.100
 .br
 
 .br
@@ -7799,6 +7869,12 @@ For example, if ffdmx:rtmp is listed as input protocol, this means rtmp:// sourc
 .br
 src (cstr):                    URL of source content
 .br
+reparse (bool, default: false): force reparsing of stream content (AVC,HEVC,VVC,AV1 only for now)
+.br
+block_size (uint, default: 4096): block size used to read file when using GFIO context
+.br
+strbuf_min (uint, default: 1MB): internal buffer size when demuxing from GPAC's input stream
+.br
 * (str):                       any possible options defined for AVFormatContext and sub-classes. See gpac -hx ffdmx and gpac -hx ffdmx:*
 .br
 
@@ -7808,7 +7884,7 @@ src (cstr):                    URL of source content
 .br
 Description: FFMPEG decoder
 .br
-Version: Lavc59.55.100
+Version: Lavc60.6.101
 .br
 
 .br
@@ -7867,7 +7943,7 @@ c (str):                       codec name (GPAC or ffmpeg), only used to query p
 .br
 Description: FFMPEG AV Capture
 .br
-Version: Lavd59.8.101
+Version: Lavd60.2.100
 .br
 
 .br
@@ -7951,8 +8027,6 @@ sclock (bool, default: false): use system clock (us) instead of device timestamp
 .br
 probes (uint, default: 10, minmax: 0-100): probe a given number of video frames before emitting (this usually helps with bad timing of the first frames)
 .br
-block_size (uint, default: 4096): block size used to read file when using avio context
-.br
 * (str):                       any possible options defined for AVInputFormat and AVFormatContext (see gpac -hx ffavin and gpac -hx ffavin:*)
 .br
 
@@ -7962,7 +8036,7 @@ block_size (uint, default: 4096): block size used to read file when using avio c
 .br
 Description: FFMPEG video rescaler
 .br
-Version: SwS6.8.112
+Version: SwS7.2.100
 .br
 
 .br
@@ -8080,7 +8154,7 @@ osar (frac, default: 0/1):     force output pixel aspect ratio
 .br
 Description: FFMPEG encoder
 .br
-Version: Lavc59.55.100
+Version: Lavc60.6.101
 .br
 
 .br
@@ -8158,7 +8232,7 @@ rld (bool, default: false, updatable): force reloading of encoder when arguments
 .br
 Description: FFMPEG multiplexer
 .br
-Version: Lavf59.34.102
+Version: Lavf60.4.100
 .br
 
 .br
@@ -8218,7 +8292,7 @@ keepts (bool, default: true):  do not shift input timeline back to 0
 .br
 Description: FFMPEG AVFilter
 .br
-Version: Lavf59.34.102
+Version: Lavfi9.4.100
 .br
 
 .br
@@ -8361,7 +8435,51 @@ dump (bool, default: false, updatable): dump graph as log media@info or stderr i
 .br
 Description: FFMPEG BitStream filter
 .br
-Version: Lavc59.55.100
+Version: Lavu58.3.100
+.br
+
+.br
+This filter provides bitstream filters (BSF) for compressed audio and video formats.
+.br
+See FFMPEG documentation (https://ffmpeg.org/documentation.html) for more details
+.br
+To list all supported bitstream filters for your GPAC build, use gpac -h ffbsf:*.
+.br
+
+.br
+Several BSF may be specified in .I f for different coding types. BSF not matching the coding type are silently ignored.
+.br
+When no BSF matches the input coding type, or when .I f is empty, the filter acts as a passthrough filter.
+.br
+
+.br
+Options are specified after the desired filters:
+.br
+- ffbsf:f=h264_metadata:video_full_range_flag=0
+.br
+- ffbsf:f=h264_metadata,av1_metadata:video_full_range_flag=0:color_range=tv
+.br
+
+.br
+Note: Using BSFs on some media types (e.g. avc, hevc) may trigger creation of a reframer filter (e.g. rfnalu)
+.br
+
+.br
+.SH Options (expert):
+.LP
+.br
+f (strl):                      bitstream filters name - see filter help
+.br
+* (str):                       any possible options defined for AVBitstreamFilter and sub-classes. See gpac -hx ffbsf and gpac -hx ffbsf:*
+.br
+
+.br
+.SH ffbsf
+.LP
+.br
+Description: FFMPEG BitStream filter
+.br
+Version: Lavu58.3.100
 .br
 
 .br
@@ -8898,6 +9016,316 @@ No options
 .br
 
 .br
+.SH uncvdec
+.LP
+.br
+Description: UNCV decoder
+.br
+
+.br
+This filter translates UNCV pixel format to a usable pixel format.
+.br
+
+.br
+.SH Options (expert):
+.LP
+.br
+force_pf (bool, default: false): ignore possible mapping to GPAC pixel formats
+.br
+no_tile (bool, default: false): ignore tiling info (debug)
+.br
+
+.br
+.SH ghidmx
+.LP
+.br
+Description: GHI demultiplexer
+.br
+
+.br
+This filter handles pre-indexed content for just-in-time processing of HAS manifest, init segment and segments
+.br
+
+.br
+Warning: This is work in progress, the format of indexes (binary or XML) may change until finalization of this filter.
+.br
+
+.br
+.SH Generating indexes
+.LP
+.br
+Indexes are constructed using the dasher filter and a given segment duration.
+.br
+Example
+.br
+gpac -i SRC [... -i SRCn] -o index.ghi:segdur=2
+.br
+
+.br
+This constructs a binary index for the DASH session.
+.br
+Example
+.br
+gpac -i SRC -o index.ghix:segdur=2
+.br
+
+.br
+This constructs an XML index for the DASH session.
+.br
+
+.br
+Warning: XML indexes should only be used for debug purposes as they can take a significant amount of time to be parsed.
+.br
+
+.br
+When indexing, the default template used is $Representation$_$Number$. The template is stored in the index and shouldn't be re-specified when generating content.
+.br
+
+.br
+.SH Using indexes
+.LP
+.br
+The index can be used to generate manifest, child variants for HLS, init segments and segments.
+.br
+Example
+.br
+gpac -i index.ghi:gm=all -o dash/vod.mpd
+.br
+
+.br
+This generates manifest(s) and init segment(s).
+.br
+
+.br
+Example
+.br
+gpac -i index.ghi:rep=FOO:sn=10 -o dash/vod.mpd
+.br
+
+.br
+This generates the 10th segment of representation with ID FOO.
+.br
+
+.br
+Note: The manifest file(s) and init segment(s) are not written when generating a segment. The manifest target (mpd or m3u8) is only used to setup the filter chain and target output path.
+.br
+
+.br
+Example
+.br
+gpac -i index.ghi:gm=main -o dash/vod.m3u8
+.br
+
+.br
+This generates main manifest only (MPD or master HLS playlist).
+.br
+
+.br
+Example
+.br
+gpac -i index.ghi:gm=child:rep=FOO:out=BAR -o dash/vod.m3u8
+.br
+
+.br
+This generates child manifest for representation FOO in file BAR.
+.br
+
+.br
+Example
+.br
+gpac -i index.ghi:gm=init:rep=FOO:out=BAR2 -o dash/vod.m3u8
+.br
+
+.br
+This generates init segment for representation FOO in file BAR2.
+.br
+
+.br
+The filter outputs are PIDs using framed packets marked with segment boundaries and can be chained to other filters before entering the dasher (e.g. for encryption, transcode...).
+.br
+
+.br
+If representation IDs are not assigned during index creation, they default to the 1-based index of the source. You can check them using:
+.br
+EX: gpac -i src.ghi inspect:full
+.br
+
+.br
+.SH Muxed Representations
+.LP
+.br
+The filter can be used to generate muxed representations, either at manifest generation time or when generating a segment.
+.br
+Example
+.br
+gpac -i index.ghi:mux=A@V1@V2 -o dash/vod.mpd
+.br
+
+.br
+This will generate a manifest muxing representations A with representations V1 and V2.
+.br
+
+.br
+Example
+.br
+gpac -i index.ghi:mux=A@V1@V2,T@V1@V2 -o dash/vod.mpd
+.br
+
+.br
+This will generate a manifest muxing representations A and T with representations V1 and V2.
+.br
+
+.br
+Example
+.br
+gpac -i index.ghi:rep=V2:sn=5:mux=A@V2 -o dash/vod.mpd
+.br
+
+.br
+This will generate the 5th segment containing representations A and V2.
+.br
+
+.br
+The filter does not store any state, it is the user responsability to use consistent informations across calls:
+.br
+- do not change segment templates
+.br
+- do not change muxed representations to configurations not advertised in the generated manifests
+.br
+
+.br
+.SH Recommandations
+.LP
+.br
+Indexing supports fragmented and non-fragmented MP4, MPEG-2 TS and seekable inputs.
+.br
+- It is recommended to use fragmented MP4 as input format since this greatly reduces file loading times.
+.br
+- If non-fragmented MP4 are used, it is recommended to use single-track files to decrease the movie box size and speedup parsing.
+.br
+- MPEG-2 TS sources will be slower since they require PES reframing and AU reformating, resulting in more IOs than with mp4.
+.br
+- other seekable sources will likely be slower (seeking, reframing) and are not recommended.
+.br
+
+.br
+.SH Options (expert):
+.LP
+.br
+gm (enum, default: main):      manifest generation mode
+.br
+* none: no manifest generation (implied if sn is not 0)
+.br
+* all: generate all manifests and init segments
+.br
+* main: generate main manifest (MPD or master M3U8)
+.br
+* child: generate child playlist for HLS
+.br
+* init: generate init segment
+.br
+
+.br
+force (bool, default: false):  force loading sources in manifest generation for debug
+.br
+rep (str):                     representation to generate
+.br
+sn (uint):                     segment number to generate, 0 means init segment
+.br
+mux (strl):                    representation to mux - cf filter help
+.br
+out (str):                     output filename to generate
+.br
+
+.br
+.SH evgs
+.LP
+.br
+Description: EVG video rescaler
+.br
+
+.br
+This filter rescales raw video data using GPAC's EVG library to the specified size and pixel format.
+.br
+.SS Output size assignment
+.br
+If .I osize is {0,0}, the output dimensions will be set to the input size, and input aspect ratio will be ignored.
+.br
+
+.br
+If .I osize is {0,H} (resp. {W,0}), the output width (resp. height) will be set to respect input aspect ratio. If .I keepar=nosrc, input sample aspect ratio is ignored.
+.br
+.SS Aspect Ratio and Sample Aspect Ratio
+.br
+When output sample aspect ratio is set, the output dimensions are divided by the output sample aspect ratio.
+.br
+Example
+.br
+evgs:osize=288x240:osar=3/2
+.br
+
+.br
+The output dimensions will be 192x240.
+.br
+
+.br
+When aspect ratio is not kept (.I keepar=off):
+.br
+- source is resampled to desired dimensions
+.br
+- if output aspect ratio is not set, output will use source sample aspect ratio
+.br
+
+.br
+When aspect ratio is partially kept (.I keepar=nosrc):
+.br
+- resampling is done on the input data without taking input sample aspect ratio into account
+.br
+- if output sample aspect ratio is not set (.I osar=0/N), source aspect ratio is forwarded to output.
+.br
+
+.br
+When aspect ratio is fully kept (.I keepar=full), output aspect ratio is force to 1/1 if not set.
+.br
+
+.br
+When sample aspect ratio is kept, the filter will:
+.br
+- center the rescaled input frame on the output frame
+.br
+- fill extra pixels with .I padclr
+.br
+
+.br
+.SH Options (expert):
+.LP
+.br
+osize (v2di):                  osize of output video
+.br
+ofmt (pfmt, default: none):    pixel format for output video. When not set, input format is used
+.br
+ofr (bool, default: false):    force output full range
+.br
+keepar (enum, default: off):   keep aspect ratio
+.br
+* off: ignore aspect ratio
+.br
+* full: respect aspect ratio, applying input sample aspect ratio info
+.br
+* nosrc: respect aspect ratio but ignore input sample aspect ratio
+.br
+
+.br
+padclr (str, default: black):  clear color when aspect ration preservation is used
+.br
+osar (frac, default: 0/1):     force output pixel aspect ratio
+.br
+nbth (sint, default: -1):      number of threads to use, -1 means all cores
+.br
+hq (bool, default: false):     use bilinear interpolation instead of closest pixel
+.br
+
+.br
 .SH dtout
 .LP
 .br
@@ -8961,6 +9389,124 @@ seek_reset (bool, default: false): reset decoder when seeking
 force_stereo (bool, default: true): use stereo output for multiview (top-bottom only)
 .br
 reset_switch (bool, default: false): reset decoder at config change
+.br
+
+.br
+.SH uncvg
+.LP
+.br
+Description: Uncompressed Video File Format Generator Utility
+.br
+Version: 1.0
+.br
+Author: GPAC team - (c) Telecom ParisTech 2023 - license LGPL v2
+.br
+
+.br
+This filter provides generation of test images for ISO/IEC 23001-17
+.br
+Generated pixels can be:
+.br
+- a pattern of colors in columns, or in rectangles if .I sq is set, using the specified palette.
+.br
+- an image source if .I img is used.
+.br
+
+.br
+Colors specified in the palette can be default GPAC colors (see gpac -h colors), 0xRRGGBB or 0xAARRGGBB
+.br
+
+.br
+When generating video, the pixels are shifted to the left at every frame
+.br
+
+.br
+Components are described as N[bpc][+k] with
+.br
+* N: component type, one of M(ono), Y, U, V, R, G, B, A, d(epth), disp, p(alette), f(ilterArray), x (pad)
+.br
+* bpc: bits per component value, default is 8
+.br
+* k: force component alignment on k bytes, default is 0 (no alignment)
+.br
+
+.br
+.SH Options (expert):
+.LP
+.br
+vsize (v2d, default: 128x128): width and height of output image
+.br
+c (strl, default: R8,G8,B8):   image components
+.br
+tiles (v2d, default: 1x1):     number of horizontal and vertical tiles
+.br
+interleave (enum, default: pix): interleave type
+.br
+* comp: component-based interleaving (planar modes)
+.br
+* pix: pixel-based interleaving (packed modes)
+.br
+* mix: pixel-based interleaving for UV (semi-planar modes)
+.br
+* row: row-based interleaving
+.br
+* tile: tile-component interleaving
+.br
+* multi: pixel-based interleaving (packed modes) for subsampled modes
+.br
+
+.br
+sampling (enum, default: none): sampling types
+.br
+* none: no subsampling
+.br
+* 422: YUV 4:2:2 subsampling
+.br
+* 420: YUV 4:2:0 subsampling
+.br
+* 411: YUV 4:1:1 subsampling
+.br
+
+.br
+block_size (uint, default: 0): block size in bytes
+.br
+pad_lsb (bool, default: false): padded bits are at LSB in the block
+.br
+ble (bool, default: false):    block is little endian
+.br
+br (bool, default: false):     block has reversed components
+.br
+pixel_size (uint, default: 0): size of pixel in bytes
+.br
+row_align (uint, default: 0):  row alignment in bytes
+.br
+tile_align (uint, default: 0): tile alignment in bytes
+.br
+cle (bool, default: false):    byte-aligned components are little endian
+.br
+img (str, default: ):          use specified image as input instead of RGB generation
+.br
+asize (bool, default: false):  use input image size
+.br
+pal (strl, default: red,green,blue,white,black,yellow,cyan,grey,orange,violet): default palette for color generation
+.br
+fa (strl, default: B,G,G,R):   bayer-like filter - only 2x2 on R,G,B components is supported
+.br
+bpm (strl, default: ):         set sensor bad pixel map
+.br
+fps (frac, default: 25/1):     frame rate to generate - using 0 will trigger item muxing
+.br
+dur (frac, default: 1/1):      duration to generate - using 0 will trigger item muxing
+.br
+cloc (uint, default: -1, minmax: -1,6): set chroma location type
+.br
+stereo (bool, default: false): dump a stereo image
+.br
+sq (flt, default: 0):          generate square patterns instead of columns
+.br
+shade (bool, default: false):  shade pixels from black at bottom to full intensity at top
+.br
+scpt (bool, default: false):   use single color per tile, first tile using the first color in palette
 .br
 
 .br
@@ -11125,7 +11671,7 @@ Authors: GPAC developers, see git repo history (-log)
 .br
 For bug reports, feature requests, more information and source code, visit https://github.com/gpac/gpac
 .br
-build: 2.3-DEV-rev29-ga6c21ad14-master
+build: 2.3-DEV
 .br
 Copyright: (c) 2000-2023 Telecom Paris distributed under LGPL v2.1+ - http://gpac.io
 .br

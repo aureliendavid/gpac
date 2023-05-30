@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2017-2022
+ *			Copyright (c) Telecom ParisTech 2017-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / generic FILE input filter
@@ -27,6 +27,12 @@
 #include <gpac/filters.h>
 #include <gpac/constants.h>
 
+#ifdef GPAC_HAS_FD
+#include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#endif
+
 enum{
 	FILE_RAND_NONE=0,
 	FILE_RAND_ANY,
@@ -49,6 +55,9 @@ typedef struct
 	GF_FilterPid *pid;
 
 	FILE *file;
+#ifdef GPAC_HAS_FD
+	int fd;
+#endif
 	u64 file_size;
 	u64 file_pos, end_pos;
 	Bool is_end, pck_out;
@@ -62,7 +71,7 @@ typedef struct
 } GF_FileInCtx;
 
 
-static GF_Err filein_initialize(GF_Filter *filter)
+static GF_Err filein_initialize_ex(GF_Filter *filter)
 {
 	GF_FileInCtx *ctx = (GF_FileInCtx *) gf_filter_get_udta(filter);
 	FILE *old_file = NULL;
@@ -78,6 +87,7 @@ static GF_Err filein_initialize(GF_Filter *filter)
 		GF_FilterPacket *opck;
 		GF_Err e = gf_filter_pid_raw_new(filter, NULL, NULL, NULL, NULL, ctx->pck.ptr, ctx->pck.size, GF_FALSE, &ctx->pid);
 		if (e) return e;
+		gf_filter_pid_set_property(ctx->pid, GF_PROP_PID_URL, &PROP_STRING("NULL"));
 		opck = gf_filter_pck_new_shared(ctx->pid, ctx->pck.ptr, ctx->pck.size, NULL);
 		gf_filter_pck_send(opck);
 		gf_filter_pid_set_eos(ctx->pid);
@@ -141,8 +151,22 @@ static GF_Err filein_initialize(GF_Filter *filter)
 		ctx->file = NULL;
 		if (gf_fileio_check(old_file))
 			prev_url = gf_fileio_url((GF_FileIO *)old_file);
+
+#ifdef GPAC_HAS_FD
+		if (ctx->fd>=0) {
+			close(ctx->fd);
+			ctx->fd = -1;
+		}
+#endif
 	}
 
+#ifdef GPAC_HAS_FD
+	if ((ctx->fd<0) && strncmp(src, "gfio://", 7) && !gf_opts_get_bool("core", "no-fd")
+		&& (!prev_url || strncmp(prev_url, "gfio://", 7))
+	) {
+		ctx->fd = open(src, O_RDONLY);
+	} else
+#endif
 	if (!ctx->file) {
 		ctx->file = gf_fopen_ex(src, prev_url, "rb", GF_FALSE);
 	}
@@ -151,7 +175,11 @@ static GF_Err filein_initialize(GF_Filter *filter)
 		gf_fclose(old_file);
 	}
 
-	if (!ctx->file) {
+	if (!ctx->file
+#ifdef GPAC_HAS_FD
+		&& (ctx->fd<0)
+#endif
+	) {
 		GF_LOG(GF_LOG_ERROR, GF_LOG_MMIO, ("[FileIn] Failed to open %s\n", src));
 
 		if (frag_par) frag_par[0] = '#';
@@ -171,7 +199,15 @@ static GF_Err filein_initialize(GF_Filter *filter)
 		return GF_URL_ERROR;
 	}
 	GF_LOG(GF_LOG_INFO, GF_LOG_MMIO, ("[FileIn] opening %s\n", src));
-	ctx->file_size = gf_fsize(ctx->file);
+
+#ifdef GPAC_HAS_FD
+	if (ctx->fd>=0) {
+		struct stat sb;
+		fstat(ctx->fd, &sb);
+		ctx->file_size = sb.st_size;
+	} else
+#endif
+		ctx->file_size = gf_fsize(ctx->file);
 
 	ctx->cached_set = GF_FALSE;
 	ctx->full_file_only = GF_FALSE;
@@ -190,7 +226,13 @@ static GF_Err filein_initialize(GF_Filter *filter)
 			ctx->range.den = ctx->end_pos = ctx->file_size;
 		}
 	}
-	gf_fseek(ctx->file, ctx->file_pos, SEEK_SET);
+#ifdef GPAC_HAS_FD
+	if (ctx->fd>=0) {
+		lseek(ctx->fd, ctx->file_pos, SEEK_SET);
+	} else
+#endif
+		gf_fseek(ctx->file, ctx->file_pos, SEEK_SET);
+
 	ctx->is_end = GF_FALSE;
 
 	if (frag_par) frag_par[0] = '#';
@@ -206,11 +248,23 @@ static GF_Err filein_initialize(GF_Filter *filter)
 	return GF_OK;
 }
 
+static GF_Err filein_initialize(GF_Filter *filter)
+{
+	GF_FileInCtx *ctx = (GF_FileInCtx *) gf_filter_get_udta(filter);
+#ifdef GPAC_HAS_FD
+	ctx->fd = -1;
+#endif
+	return filein_initialize_ex(filter);
+}
+
 static void filein_finalize(GF_Filter *filter)
 {
 	GF_FileInCtx *ctx = (GF_FileInCtx *) gf_filter_get_udta(filter);
 
 	if (ctx->file) gf_fclose(ctx->file);
+#ifdef GPAC_HAS_FD
+	if (ctx->fd>=0) close(ctx->fd);
+#endif
 	if (ctx->block) gf_free(ctx->block);
 }
 
@@ -258,6 +312,7 @@ static GF_FilterProbeScore filein_probe_url(const char *url, const char *mime_ty
 
 static Bool filein_process_event(GF_Filter *filter, const GF_FilterEvent *evt)
 {
+	s64 res;
 	GF_FileInCtx *ctx = (GF_FileInCtx *) gf_filter_get_udta(filter);
 
 	if (evt->base.on_pid && (evt->base.on_pid != ctx->pid))
@@ -288,12 +343,18 @@ static Bool filein_process_event(GF_Filter *filter, const GF_FilterEvent *evt)
 			ctx->cached_set = GF_FALSE;
 		}
 
-		if (ctx->file) {
-			int res = gf_fseek(ctx->file, evt->seek.start_offset, SEEK_SET);
-			if (res) {
-				GF_LOG(GF_LOG_ERROR, GF_LOG_MMIO, ("[FileIn] Seek on file failed: %d\n", res));
-				return GF_TRUE;
-			}
+#ifdef GPAC_HAS_FD
+		res=0;
+		if (ctx->fd>=0) {
+			res = lseek(ctx->fd, evt->seek.start_offset, SEEK_SET);
+			if (res>=0) res = 0;
+		} else
+#endif
+			res = gf_fseek(ctx->file, evt->seek.start_offset, SEEK_SET);
+
+		if (res) {
+			GF_LOG(GF_LOG_ERROR, GF_LOG_MMIO, ("[FileIn] Seek on file failed: %d\n", res));
+			return GF_TRUE;
 		}
 
 		ctx->file_pos = evt->seek.start_offset;
@@ -322,11 +383,17 @@ static Bool filein_process_event(GF_Filter *filter, const GF_FilterEvent *evt)
 		}
 		//don't send a setup failure on source switch (this would destroy ourselves which we don't want in DASH)
 		ctx->no_failure = GF_TRUE;
-		filein_initialize(filter);
+		filein_initialize_ex(filter);
 		gf_filter_post_process_task(filter);
 		break;
 	case GF_FEVT_FILE_DELETE:
 		if (ctx->is_end && !strcmp(evt->file_del.url, "__gpac_self__")) {
+#ifdef GPAC_HAS_FD
+			if (ctx->fd>=0) {
+				close(ctx->fd);
+				ctx->fd = -1;
+			}
+#endif
 			if (ctx->file) {
 				gf_fclose(ctx->file);
 				ctx->file = NULL;
@@ -371,7 +438,6 @@ static GF_Err filein_process(GF_Filter *filter)
 	if (ctx->full_file_only && ctx->pid && !ctx->do_reconfigure && ctx->cached_set) {
 		pck = gf_filter_pck_new_shared(ctx->pid, ctx->block, 0, filein_pck_destructor);
 		if (!pck) return GF_OUT_OF_MEM;
-
 		ctx->is_end = GF_TRUE;
 		gf_filter_pck_set_framing(pck, ctx->file_pos ? GF_FALSE : GF_TRUE, ctx->is_end);
 		gf_filter_pck_set_sap(pck, GF_FILTER_SAP_1);
@@ -465,12 +531,57 @@ static GF_Err filein_process(GF_Filter *filter)
 	else
 		to_read = (u32) lto_read;
 
-	nb_read = (u32) gf_fread(ctx->block, to_read, ctx->file);
-	if (!nb_read)
-		ctx->file_size = ctx->file_pos;
+	//force eof flush
+	if (!to_read) {
+#ifdef GPAC_HAS_FD
+		if (ctx->fd>=0) {
+			nb_read = (u32) read(ctx->fd, ctx->block, 1);
+			if (nb_read==0xFFFFFFFF) nb_read=0;
+		} else
+#endif
+			nb_read = (u32) gf_fread(ctx->block, 1, ctx->file);
+		if (nb_read) to_read=1;
+	} else {
+#ifdef GPAC_HAS_FD
+		if (ctx->fd>=0) {
+			nb_read = (u32) read(ctx->fd, ctx->block, to_read);
+			if (nb_read==0xFFFFFFFF) return GF_IO_ERR;
+		} else
+#endif
+			nb_read = (u32) gf_fread(ctx->block, to_read, ctx->file);
+	}
 
 	ctx->block[nb_read] = 0;
 	if (!ctx->pid || ctx->do_reconfigure) {
+		GF_FileIOCacheState cstate;
+		u64 fsize;
+		const char *file_path = ctx->src;
+		if (!nb_read && !ctx->pid) {
+			if (
+#ifdef GPAC_HAS_FD
+				(ctx->fd>=0) ||
+#endif
+				(ctx->file && gf_feof(ctx->file))
+			) {
+				gf_filter_setup_failure(filter, GF_NOT_READY);
+				return GF_EOS;
+			}
+			return GF_OK;
+		}
+		if (ctx->file && gf_fileio_get_stats((GF_FileIO *)ctx->file, NULL, &fsize, &cstate, NULL)) {
+			if (cstate==GF_FILEIO_NO_CACHE) {
+				file_path = NULL;
+			}
+			if (!ctx->file_size) {
+				ctx->file_size = fsize;
+				if (ctx->block_size==5000) {
+					if (ctx->file_size>500000000) ctx->block_size = 1000000;
+					else ctx->block_size = 5000;
+				}
+				ctx->block = gf_realloc(ctx->block, ctx->block_size +1);
+			}
+		}
+
 		//quick hack for ID3v2: if detected, increase block size to have the full id3v2 + some frames in the initial block
 		//to avoid relying on file extension for demux
 		if (!ctx->pid && (nb_read>10)
@@ -484,16 +595,22 @@ static GF_Err filein_process(GF_Filter *filter)
 
 				ctx->block_size = probe_size;
 				ctx->block = gf_realloc(ctx->block, ctx->block_size+1);
-				nb_read += (u32) gf_fread(ctx->block + nb_read, probe_size-nb_read, ctx->file);
+#ifdef GPAC_HAS_FD
+				if (ctx->fd>=0) {
+					nb_read += (u32) read(ctx->fd, ctx->block + nb_read, probe_size-nb_read);
+				} else
+#endif
+					nb_read += (u32) gf_fread(ctx->block + nb_read, probe_size-nb_read, ctx->file);
 			}
 		}
 
 		ctx->do_reconfigure = GF_FALSE;
-		e = gf_filter_pid_raw_new(filter, ctx->src, ctx->src, ctx->mime, ctx->ext, ctx->block, nb_read, GF_TRUE, &ctx->pid);
+		e = gf_filter_pid_raw_new(filter, ctx->src, file_path, ctx->mime, ctx->ext, ctx->block, nb_read, GF_TRUE, &ctx->pid);
 		if (e) return e;
 
 		if (!gf_fileio_check(ctx->file)) {
-			gf_filter_pid_set_property(ctx->pid, GF_PROP_PID_FILE_CACHED, &PROP_BOOL(GF_TRUE) );
+			if (file_path)
+				gf_filter_pid_set_property(ctx->pid, GF_PROP_PID_FILE_CACHED, &PROP_BOOL(GF_TRUE) );
 
 			gf_filter_pid_set_property(ctx->pid, GF_PROP_PID_DOWN_SIZE, ctx->file_size ? &PROP_LONGUINT(ctx->file_size) : NULL);
 
@@ -507,38 +624,50 @@ static GF_Err filein_process(GF_Filter *filter)
 	//GFIO wrapper, gets stats and update
 	if (!ctx->cached_set) {
 		u64 bdone, btotal;
-		Bool fcached;
+		GF_FileIOCacheState cstate;
 		u32 bytes_per_sec;
-		if (gf_fileio_get_stats((GF_FileIO *)ctx->file, &bdone, &btotal, &fcached, &bytes_per_sec)) {
-			if (fcached) {
-				gf_filter_pid_set_property(ctx->pid, GF_PROP_PID_FILE_CACHED, &PROP_BOOL(fcached) );
+		if (gf_fileio_get_stats((GF_FileIO *)ctx->file, &bdone, &btotal, &cstate, &bytes_per_sec)) {
+			if (cstate==GF_FILEIO_CACHE_DONE) {
+				gf_filter_pid_set_property(ctx->pid, GF_PROP_PID_FILE_CACHED, &PROP_BOOL(GF_TRUE) );
 				ctx->cached_set = GF_TRUE;
 			}
-
 			gf_filter_pid_set_info(ctx->pid, GF_PROP_PID_DOWN_SIZE, &PROP_LONGUINT(btotal) );
 			gf_filter_pid_set_info(ctx->pid, GF_PROP_PID_DOWN_BYTES, &PROP_LONGUINT(bdone) );
 			gf_filter_pid_set_info(ctx->pid, GF_PROP_PID_DOWN_RATE, &PROP_UINT(bytes_per_sec*8) );
 		}
 	}
 
-	pck = gf_filter_pck_new_shared(ctx->pid, ctx->block, nb_read, filein_pck_destructor);
-	if (!pck) return GF_OUT_OF_MEM;
-
-	gf_filter_pck_set_byte_offset(pck, ctx->file_pos);
+	Bool is_eof=GF_FALSE;
+	if (!nb_read) {
+#ifdef GPAC_HAS_FD
+		if (ctx->fd>=0) {
+			is_eof = (ctx->file_pos==ctx->file_size);
+		} else
+#else
+		is_eof = gf_feof(ctx->file);
+#endif
+		if (is_eof)
+			ctx->file_size = ctx->file_pos;
+	}
 
 	if (ctx->file_size && (ctx->file_pos + nb_read == ctx->file_size)) {
-		ctx->is_end = GF_TRUE;
-		gf_filter_pid_set_info(ctx->pid, GF_PROP_PID_DOWN_BYTES, &PROP_LONGUINT(ctx->file_size) );
+		if (ctx->cached_set
+#ifdef GPAC_HAS_FD
+			|| (ctx->fd>=0)
+#endif
+			|| (ctx->file && gf_feof(ctx->file))
+		) {
+			ctx->is_end = GF_TRUE;
+			gf_filter_pid_set_info(ctx->pid, GF_PROP_PID_DOWN_BYTES, &PROP_LONGUINT(ctx->file_size) );
+		}
 	} else if (ctx->end_pos && (ctx->file_pos + nb_read == ctx->end_pos)) {
 		ctx->is_end = GF_TRUE;
 		gf_filter_pid_set_info(ctx->pid, GF_PROP_PID_DOWN_BYTES, &PROP_LONGUINT(ctx->range.den - ctx->range.num) );
-	} else {
+	} else if (nb_read) {
 		if (nb_read < to_read) {
-			Bool is_eof;
-			GF_LOG(GF_LOG_WARNING, GF_LOG_MMIO, ("[FileIn] Asked to read %d but got only %d\n", to_read, nb_read));
-
-			is_eof = gf_feof(ctx->file);
-
+			if (ctx->cached_set) {
+				GF_LOG(GF_LOG_WARNING, GF_LOG_MMIO, ("[FileIn] Asked to read %d but got only %d\n", to_read, nb_read));
+			}
 			if (is_eof) {
 				gf_filter_pid_set_info(ctx->pid, GF_PROP_PID_DOWN_BYTES, &PROP_LONGUINT(ctx->file_size) );
 				ctx->is_end = GF_TRUE;
@@ -548,12 +677,19 @@ static GF_Err filein_process(GF_Filter *filter)
 			gf_filter_pid_set_info(ctx->pid, GF_PROP_PID_DOWN_BYTES, &PROP_LONGUINT(ctx->file_pos) );
 		}
 	}
-	gf_filter_pck_set_framing(pck, ctx->file_pos ? GF_FALSE : GF_TRUE, ctx->is_end);
-	gf_filter_pck_set_sap(pck, GF_FILTER_SAP_1);
-	ctx->file_pos += nb_read;
 
-	ctx->pck_out = GF_TRUE;
-	gf_filter_pck_send(pck);
+	if (nb_read) {
+		pck = gf_filter_pck_new_shared(ctx->pid, ctx->block, nb_read, filein_pck_destructor);
+		if (!pck) return GF_OUT_OF_MEM;
+
+		gf_filter_pck_set_byte_offset(pck, ctx->file_pos);
+		gf_filter_pck_set_framing(pck, ctx->file_pos ? GF_FALSE : GF_TRUE, ctx->is_end);
+		gf_filter_pck_set_sap(pck, GF_FILTER_SAP_1);
+		ctx->file_pos += nb_read;
+
+		ctx->pck_out = GF_TRUE;
+		gf_filter_pck_send(pck);
+	}
 
 	if (ctx->file_size && gf_filter_reporting_enabled(filter)) {
 		char szStatus[1024], *szSrc;
@@ -606,7 +742,7 @@ GF_FilterRegister FileInRegister = {
 	.private_size = sizeof(GF_FileInCtx),
 	.args = FileInArgs,
 	.initialize = filein_initialize,
-	.flags = GF_FS_REG_FORCE_REMUX,
+	.flags = GF_FS_REG_FORCE_REMUX|GF_FS_REG_USE_SYNC_READ,
 	SETCAPS(FileInCaps),
 	.finalize = filein_finalize,
 	.process = filein_process,
@@ -615,7 +751,7 @@ GF_FilterRegister FileInRegister = {
 };
 
 
-const GF_FilterRegister *filein_register(GF_FilterSession *session)
+const GF_FilterRegister *fin_register(GF_FilterSession *session)
 {
 	if (gf_opts_get_bool("temp", "get_proto_schemes")) {
 		gf_opts_set_key("temp_in_proto", FileInRegister.name, "file,isobmf,gmem,gfio");

@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / AAC ADTS reframer filter
@@ -74,7 +74,7 @@ typedef struct
 	GF_Fraction64 duration;
 	Double start_range;
 	Bool in_seek;
-	u32 timescale;
+	u32 timescale, sample_rate;
 
 	ADTSHeader hdr;
 	u32 dts_inc;
@@ -216,7 +216,10 @@ GF_Err adts_dmx_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is_remo
 		ctx->opid = gf_filter_pid_new(filter);
 		gf_filter_pid_copy_properties(ctx->opid, ctx->ipid);
 		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_UNFRAMED, NULL);
-		//we don't update copy props on output for now - if we decide we need it, we will need to also force resengin the decoder config
+		p = gf_filter_pid_get_property(ctx->ipid, GF_PROP_PID_STREAM_TYPE);
+		if (!p || (p->value.uint==GF_STREAM_FILE)) {
+			gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_STREAM_TYPE, &PROP_UINT(GF_STREAM_AUDIO));
+		}
 	}
 	if (ctx->timescale) ctx->copy_props = GF_TRUE;
 
@@ -300,7 +303,7 @@ static void adts_dmx_check_dur(GF_Filter *filter, GF_ADTSDmxCtx *ctx)
 			}
 		}
 	}
-	
+
 	p = gf_filter_pid_get_property(ctx->ipid, GF_PROP_PID_FILE_CACHED);
 	if (p && p->value.boolean) ctx->file_loaded = GF_TRUE;
 }
@@ -450,6 +453,7 @@ static void adts_dmx_check_pid(GF_Filter *filter, GF_ADTSDmxCtx *ctx)
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_DECODER_CONFIG, & PROP_DATA_NO_COPY(dsi_b, dsi_s) );
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_PROFILE_LEVEL, & PROP_UINT (ctx->acfg.audioPL) );
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_SAMPLE_RATE, & PROP_UINT(sr));
+	ctx->sample_rate = sr;
 
 	timescale = sr;
 	if (ctx->ovsbr) timescale = 2*sr;
@@ -557,7 +561,10 @@ GF_Err adts_dmx_process(GF_Filter *filter)
 	u8 *data, *output;
 	u8 *start;
 	u32 pck_size, remain, prev_pck_size;
-	u64 cts = GF_FILTER_NO_TS;
+	u64 cts;
+
+restart:
+	cts = GF_FILTER_NO_TS;
 
 	//always reparse duration
 	if (!ctx->duration.num)
@@ -824,6 +831,12 @@ GF_Err adts_dmx_process(GF_Filter *filter)
 		}
 
 		if (!ctx->in_seek) {
+
+			if (sync_pos + offset + size > remain) {
+				GF_LOG(GF_LOG_WARNING, GF_LOG_MEDIA, ("[ADTSDmx] truncated frame\n"));
+				break;
+			}
+
 			dst_pck = gf_filter_pck_new_alloc(ctx->opid, size, &output);
 			if (!dst_pck) return GF_OUT_OF_MEM;
 			if (ctx->src_pck) gf_filter_pck_merge_properties(ctx->src_pck, dst_pck);
@@ -832,7 +845,10 @@ GF_Err adts_dmx_process(GF_Filter *filter)
 
 			gf_filter_pck_set_dts(dst_pck, ctx->cts);
 			gf_filter_pck_set_cts(dst_pck, ctx->cts);
-			gf_filter_pck_set_duration(dst_pck, ctx->dts_inc);
+			if (ctx->timescale && (ctx->timescale!=ctx->sample_rate))
+				gf_filter_pck_set_duration(dst_pck, (u32) gf_timestamp_rescale(ctx->dts_inc, ctx->sample_rate, ctx->timescale) );
+			else
+				gf_filter_pck_set_duration(dst_pck, ctx->dts_inc);
 			gf_filter_pck_set_framing(dst_pck, GF_TRUE, GF_TRUE);
 			gf_filter_pck_set_sap(dst_pck, GF_FILTER_SAP_1);
 
@@ -874,7 +890,8 @@ drop_byte:
 
 	if (!pck) {
 		ctx->adts_buffer_size = 0;
-		return adts_dmx_process(filter);
+		//avoid recursive call
+		goto restart;
 	} else {
 		if (remain) {
 			memmove(ctx->adts_buffer, start, remain);
@@ -1027,13 +1044,13 @@ GF_FilterRegister ADTSDmxRegister = {
 };
 
 
-const GF_FilterRegister *adts_dmx_register(GF_FilterSession *session)
+const GF_FilterRegister *rfadts_register(GF_FilterSession *session)
 {
 	return &ADTSDmxRegister;
 }
 
 #else
-const GF_FilterRegister *adts_dmx_register(GF_FilterSession *session)
+const GF_FilterRegister *rfadts_register(GF_FilterSession *session)
 {
 	return NULL;
 }

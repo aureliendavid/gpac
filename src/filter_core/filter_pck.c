@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2017-2022
+ *			Copyright (c) Telecom ParisTech 2017-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / filters sub-project
@@ -80,7 +80,7 @@ typedef struct
 	GF_FilterPacket *closest;
 } GF_PckQueueEnum;
 
-static Bool pck_queue_enum(void *udta, void *item)
+static void pck_queue_enum(void *udta, void *item)
 {
 	GF_PckQueueEnum *enum_state = (GF_PckQueueEnum *) udta;
 	GF_FilterPacket *cur = (GF_FilterPacket *) item;
@@ -97,7 +97,6 @@ static Bool pck_queue_enum(void *udta, void *item)
 	}
 	//otherwise find largest one below our target size
 	else if (enum_state->closest->alloc_size < cur->alloc_size) enum_state->closest = cur;
-	return GF_FALSE;
 }
 
 static GF_FilterPacket *gf_filter_pck_new_alloc_internal(GF_FilterPid *pid, u32 data_size, u8 **data)
@@ -112,7 +111,16 @@ static GF_FilterPacket *gf_filter_pck_new_alloc_internal(GF_FilterPid *pid, u32 
 	}
 
 	count = gf_fq_count(pid->filter->pcks_alloc_reservoir);
+
 	if (count) {
+		//don't let reservoir grow too large (may happen if burst of packets are stored/consumed in the upper chain)
+		while (count>30) {
+			GF_FilterPacket *head_pck = gf_fq_pop(pid->filter->pcks_alloc_reservoir);
+			gf_free(head_pck->data);
+			gf_free(head_pck);
+			count--;
+		}
+
 		GF_PckQueueEnum pck_enum_state;
 		memset(&pck_enum_state, 0, sizeof(GF_PckQueueEnum));
 		pck_enum_state.data_size = data_size;
@@ -461,7 +469,7 @@ GF_FilterPacket *gf_filter_pck_new_shared(GF_FilterPid *pid, const u8 *data, u32
 }
 
 GF_EXPORT
-GF_FilterPacket *gf_filter_pck_new_ref(GF_FilterPid *pid, u32 data_offset, u32 data_size, GF_FilterPacket *reference)
+GF_FilterPacket *gf_filter_pck_new_ref_destructor(GF_FilterPid *pid, u32 data_offset, u32 data_size, GF_FilterPacket *reference, gf_fsess_packet_destructor destruct)
 {
 	GF_FilterPacket *pck;
 	if (!reference) return NULL;
@@ -478,7 +486,7 @@ GF_FilterPacket *gf_filter_pck_new_ref(GF_FilterPid *pid, u32 data_offset, u32 d
 			return NULL;
 	}
 
-	pck = gf_filter_pck_new_shared(pid, reference->data, data_size, NULL);
+	pck = gf_filter_pck_new_shared(pid, reference->data, data_size, destruct);
 	if (!pck) return NULL;
 	pck->reference = reference;
 	//apply offset
@@ -497,6 +505,12 @@ GF_FilterPacket *gf_filter_pck_new_ref(GF_FilterPid *pid, u32 data_offset, u32 d
 	safe_int_inc(&reference->pid->nb_shared_packets_out);
 	safe_int_inc(&reference->pid->filter->nb_shared_packets_out);
 	return pck;
+}
+
+GF_EXPORT
+GF_FilterPacket *gf_filter_pck_new_ref(GF_FilterPid *pid, u32 data_offset, u32 data_size, GF_FilterPacket *reference)
+{
+	return gf_filter_pck_new_ref_destructor(pid, data_offset, data_size, reference, NULL);
 }
 
 GF_EXPORT
@@ -1754,7 +1768,7 @@ u64 gf_filter_pck_get_byte_offset(GF_FilterPacket *pck)
 GF_EXPORT
 GF_Err gf_filter_pck_set_crypt_flags(GF_FilterPacket *pck, u8 crypt_flag)
 {
-	PCK_SETTER_CHECK("byteOffset")
+	PCK_SETTER_CHECK("cryptFlag")
 	pck->info.flags &= ~GF_PCK_CRYPT_MASK;
 	pck->info.flags |= crypt_flag << GF_PCK_CRYPT_POS;
 	return GF_OK;
@@ -1874,3 +1888,17 @@ Bool gf_filter_pck_is_blocking_ref(GF_FilterPacket *pck)
 	return GF_FALSE;
 }
 
+GF_EXPORT
+void gf_filter_pck_check_realloc(GF_FilterPacket *pck, u8 *data, u32 size)
+{
+	if (PCK_IS_INPUT(pck)) return;
+	if (((u8*)pck->data != data)
+		//in case realloc returned the same adress !!
+		|| (size > pck->data_length)
+	) {
+		pck->alloc_size = pck->data_length = size;
+		pck->data = data;
+	} else {
+		pck->data_length = size;
+	}
+}

@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / ISO Media File Format sub-project
@@ -1081,6 +1081,7 @@ GF_Err gf_isom_new_xml_metadata_description(GF_ISOFile *movie, u32 trackNumber,
 	case GF_ISOM_MEDIA_MPEG_SUBT:
 	case GF_ISOM_MEDIA_META:
 	case GF_ISOM_MEDIA_TEXT:
+	case GF_ISOM_MEDIA_SUBT:
 		break;
 	default:
 		return GF_BAD_PARAM;
@@ -1217,6 +1218,7 @@ GF_Err gf_isom_new_xml_subtitle_description(GF_ISOFile  *movie, u32 trackNumber,
 	case GF_ISOM_MEDIA_MPEG_SUBT:
 	case GF_ISOM_MEDIA_META:
 	case GF_ISOM_MEDIA_TEXT:
+	case GF_ISOM_MEDIA_SUBT:
 		break;
 	default:
 		return GF_BAD_PARAM;
@@ -1426,6 +1428,8 @@ GF_WebVTTSampleEntryBox *gf_webvtt_isom_get_description(GF_ISOFile *movie, u32 t
 
 	switch (trak->Media->handler->handlerType) {
 	case GF_ISOM_MEDIA_TEXT:
+	case GF_ISOM_MEDIA_SUBT:
+	case GF_ISOM_MEDIA_MPEG_SUBT:
 		break;
 	default:
 		return NULL;
@@ -1548,6 +1552,7 @@ GF_Err gf_isom_new_webvtt_description(GF_ISOFile *movie, u32 trackNumber, const 
 }
 
 #endif /*GPAC_DISABLE_VTT*/
+#endif //GPAC_DISABLE_ISOM_WRITE
 
 GF_BitRateBox *gf_isom_sample_entry_get_bitrate(GF_SampleEntryBox *ent, Bool create)
 {
@@ -1560,6 +1565,8 @@ GF_BitRateBox *gf_isom_sample_entry_get_bitrate(GF_SampleEntryBox *ent, Bool cre
 	a = (GF_BitRateBox *) gf_isom_box_new_parent(&ent->child_boxes, GF_ISOM_BOX_TYPE_BTRT);
 	return a;
 }
+
+#ifndef GPAC_DISABLE_ISOM_WRITE
 
 GF_EXPORT
 GF_Err gf_isom_update_bitrate(GF_ISOFile *movie, u32 trackNumber, u32 sampleDescriptionIndex, u32 average_bitrate, u32 max_bitrate, u32 decode_buffer_size)
@@ -1796,14 +1803,68 @@ GF_Err gf_isom_get_pcm_config(GF_ISOFile *movie, u32 trackNumber, u32 descriptio
 
 	aent = (GF_AudioSampleEntryBox *)gf_list_get(trak->Media->information->sampleTable->SampleDescription->child_boxes, descriptionIndex-1);
 	if (!aent) return GF_BAD_PARAM;
-	if ((aent->type != GF_ISOM_BOX_TYPE_IPCM) && (aent->type != GF_ISOM_BOX_TYPE_FPCM))
-		return GF_BAD_PARAM;
+	if ((aent->type != GF_ISOM_BOX_TYPE_IPCM) && (aent->type != GF_ISOM_BOX_TYPE_FPCM)) {
+		Bool is_le = GF_FALSE;
+		GF_Box *b = gf_isom_box_find_child(aent->child_boxes, GF_QT_BOX_TYPE_WAVE);
+		//if no wave, assume big endian
+		if (b) {
+			GF_ChromaInfoBox *enda = (GF_ChromaInfoBox *)gf_isom_box_find_child(b->child_boxes, GF_QT_BOX_TYPE_ENDA);
+			is_le = (enda && enda->chroma) ? GF_TRUE : GF_FALSE;
+		}
+		u32 bits=0;
+		switch (aent->type) {
+		case GF_QT_SUBTYPE_FL32: bits = 32; break;
+		case GF_QT_SUBTYPE_FL64: bits = 64; break;
+		case GF_QT_SUBTYPE_TWOS: bits = 16; is_le = GF_FALSE; break;
+		case GF_QT_SUBTYPE_SOWT: bits = 16; is_le = GF_TRUE; break;
+		case GF_QT_SUBTYPE_IN24: bits = 24; break;
+		case GF_QT_SUBTYPE_IN32: bits = 32; break;
+		default:
+			return GF_BAD_PARAM;
+		}
+		if (pcm_size) *pcm_size = bits;
+		if (flags) *flags = is_le ? 1 : 0;
+		return GF_OK;
+	}
 
 	pcmC = (GF_PCMConfigBox *) gf_isom_box_find_child(aent->child_boxes, GF_ISOM_BOX_TYPE_PCMC);
 	if (!pcmC) return GF_NON_COMPLIANT_BITSTREAM;
 
 	if (flags) *flags = pcmC->format_flags;
 	if (pcm_size) *pcm_size = pcmC->PCM_sample_size;
+	return GF_OK;
+}
+
+GF_EXPORT
+GF_Err gf_isom_get_lpcm_config(GF_ISOFile *movie, u32 trackNumber, u32 descriptionIndex, Double *sample_rate, u32 *nb_channels, u32 *flags, u32 *pcm_size)
+{
+	GF_AudioSampleEntryBox *aent;
+	GF_TrackBox *trak;
+	GF_BitStream *bs;
+	trak = gf_isom_get_track_from_file(movie, trackNumber);
+	if (!trak || !descriptionIndex) return GF_BAD_PARAM;
+
+	aent = (GF_AudioSampleEntryBox *)gf_list_get(trak->Media->information->sampleTable->SampleDescription->child_boxes, descriptionIndex-1);
+	if (!aent) return GF_BAD_PARAM;
+	if (aent->type != GF_QT_SUBTYPE_LPCM)
+		return GF_BAD_PARAM;
+	if (aent->version != 2)
+		return GF_BAD_PARAM;
+
+	bs = gf_bs_new(aent->extensions, 36, GF_BITSTREAM_READ);
+	/*offset*/gf_bs_read_u32(bs);
+	Double sr = gf_bs_read_double(bs);
+	if (sample_rate) *sample_rate = sr;
+	u32 nb_ch = gf_bs_read_u32(bs);
+	if (nb_channels) *nb_channels = nb_ch;
+	/*res*/gf_bs_read_u32(bs);
+	u32 constBitsPerChannel = gf_bs_read_u32(bs);
+	if (pcm_size) *pcm_size=constBitsPerChannel;
+	u32 PCM_flags = gf_bs_read_u32(bs);
+	if (flags) *flags = PCM_flags;
+	/*constBytesPerAudioPacket*/gf_bs_read_u32(bs);
+	/*constLPCMFramesPerAudioPacket*/gf_bs_read_u32(bs);
+	gf_bs_del(bs);
 	return GF_OK;
 }
 

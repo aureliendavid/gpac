@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / common tools sub-project
@@ -180,6 +180,7 @@ const char *gf_url_get_path(const char *url);
 @{
 */
 
+#ifndef GPAC_DISABLE_NETWORK
 
 /*!
 \brief gets ipv6 support
@@ -199,6 +200,39 @@ Checks if an address is an IPV6 or IPV4 one.
  */
 Bool gf_net_is_ipv6(const char *address);
 
+/*! Flags for interface enumeration result*/
+enum {
+	/*! set if interface is active*/
+	GF_NETIF_ACTIVE = 1,
+	/*! set if interface has no multicast support*/
+	GF_NETIF_NO_MCAST = 1<<1,
+	/*! set if interface is receive only*/
+	GF_NETIF_RECV_ONLY = 1<<2,
+	/*! set if interface is loopback*/
+	GF_NETIF_LOOPBACK = 1<<3,
+	/*! set if IP adress is IPv6*/
+	GF_NETIF_IPV6 = 1<<4,
+};
+/*!  network interface enumeration callback
+\param cbk user data passed to \ref gf_net_enum_interfaces
+\param name interface name
+\param IP interface IP adress string, may be NULL
+\param flags flags for interface and adress
+\return true to cancel enumeration
+*/
+typedef Bool (*gf_net_ifce_enum)(void *cbk, const char *name, const char *IP, u32 flags);
+
+/*!
+\brief enumerate network interfaces
+
+Enumerates available network interfaces with IP. The callback function is called for each defined IP address of the interface
+\param enum_cbk user data passed to callback function, may be NULL
+\param do_enum  callback function
+\return true if enumeration succeeded, false if not supported
+ */
+Bool gf_net_enum_interfaces(gf_net_ifce_enum do_enum, void *enum_cbk);
+
+#endif
 
 /*!
 host to network conversion of integer
@@ -303,14 +337,6 @@ Gets diff in milliseconds between two NTP times  time and current time
  */
 s32 gf_net_ntp_diff_ms(u64 ntp_a, u64 ntp_b);
 
-/*! @} */
-
-/*!
-\addtogroup sock_grp
-\brief Sockets (TCP, UDP unicast, multicast)
-@{
-*/
-
 /*!
 \brief error code description
 
@@ -320,6 +346,15 @@ Returns text description of given errno code
  */
 const char *gf_errno_str(int errnoval);
 
+/*! @} */
+
+#ifndef GPAC_DISABLE_NETWORK
+
+/*!
+\addtogroup sock_grp
+\brief Sockets (TCP, UDP unicast, multicast)
+@{
+*/
 
 /*!
 Socket options
@@ -696,6 +731,7 @@ Checks if given socket is selected and can be read. This shall be called after g
 Bool gf_sk_group_sock_is_set(GF_SockGroup *sg, GF_Socket *sk, GF_SockSelectMode mode);
 
 /*! @} */
+#endif //GPAC_DISABLE_NETWORK
 
 
 #ifdef __cplusplus

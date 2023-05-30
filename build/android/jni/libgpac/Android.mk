@@ -163,6 +163,7 @@ LOCAL_SRC_FILES := \
 	../../../../src/filters/dec_theora.c \
 	../../../../src/filters/dec_ttml.c \
 	../../../../src/filters/dec_ttxt.c \
+	../../../../src/filters/dec_uncv.c \
 	../../../../src/filters/dec_vorbis.c \
 	../../../../src/filters/dec_vtb.c \
 	../../../../src/filters/dec_webvtt.c \
@@ -171,6 +172,7 @@ LOCAL_SRC_FILES := \
 	../../../../src/filters/dec_mediacodec_jni.c \
 	../../../../src/filters/dmx_avi.c \
 	../../../../src/filters/dmx_dash.c \
+	../../../../src/filters/dmx_ghi.c \
 	../../../../src/filters/dmx_gsf.c \
 	../../../../src/filters/dmx_m2ts.c \
 	../../../../src/filters/dmx_mpegps.c \
@@ -182,6 +184,7 @@ LOCAL_SRC_FILES := \
 	../../../../src/filters/enc_jpg.c \
 	../../../../src/filters/enc_png.c \
 	../../../../src/filters/encrypt_cenc_isma.c \
+	../../../../src/filters/evg_rescale.c \
 	../../../../src/filters/ff_common.c \
 	../../../../src/filters/ff_avf.c \
 	../../../../src/filters/ff_bsf.c \

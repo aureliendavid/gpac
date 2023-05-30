@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / ISOBMFF reader filter
@@ -27,6 +27,7 @@
 #include <gpac/iso639.h>
 #include <gpac/base_coding.h>
 #include <gpac/media_tools.h>
+#include <gpac/internal/isomedia_dev.h>
 
 #ifndef GPAC_DISABLE_ISOM
 
@@ -37,18 +38,62 @@ static void isor_get_chapters(GF_ISOFile *file, GF_FilterPid *opid)
 	GF_PropUIntList times;
 	GF_PropStringList names;
 	count = gf_isom_get_chapter_count(file, 0);
-	if (!count) return;
+	if (count) {
+		times.vals = gf_malloc(sizeof(u32)*count);
+		names.vals = gf_malloc(sizeof(char *)*count);
+		times.nb_items = names.nb_items = count;
+
+		for (i=0; i<count; i++) {
+			const char *name;
+			u64 start;
+			gf_isom_get_chapter(file, 0, i+1, &start, &name);
+			times.vals[i] = (u32) start;
+			names.vals[i] = gf_strdup(name);
+		}
+		p.type = GF_PROP_UINT_LIST;
+		p.value.uint_list = times;
+		gf_filter_pid_set_property(opid, GF_PROP_PID_CHAP_TIMES, &p);
+		gf_free(times.vals);
+
+		p.type = GF_PROP_STRING_LIST;
+		p.value.string_list = names;
+		gf_filter_pid_set_property(opid, GF_PROP_PID_CHAP_NAMES, &p);
+		//no free for string lists
+		return;
+	}
+
+	u32 chap_tk=0;
+	count = gf_isom_get_track_count(file);
+	for (i=0; i<count; i++) {
+		u32 nb_ref = gf_isom_get_reference_count(file, i+1, GF_ISOM_REF_CHAP);
+		if (nb_ref) {
+			gf_isom_get_reference(file, i+1, GF_ISOM_REF_CHAP, 1, &chap_tk);
+			break;
+		}
+	}
+	if (chap_tk) {
+		count = gf_isom_get_sample_count(file, chap_tk);
+		if (!count) chap_tk=0;
+	}
+	if (!chap_tk) return;
 
 	times.vals = gf_malloc(sizeof(u32)*count);
 	names.vals = gf_malloc(sizeof(char *)*count);
 	times.nb_items = names.nb_items = count;
 
 	for (i=0; i<count; i++) {
-		const char *name;
-		u64 start;
-		gf_isom_get_chapter(file, 0, i+1, &start, &name);
-		times.vals[i] = (u32) start;
-		names.vals[i] = gf_strdup(name);
+		u32 di;
+		GF_ISOSample *s = gf_isom_get_sample(file, chap_tk, i+1, &di);
+		if (!s) continue;
+		GF_BitStream *bs = gf_bs_new(s->data, s->dataLength, GF_BITSTREAM_READ);
+		GF_TextSample *txt = gf_isom_parse_text_sample(bs);
+		if (txt) {
+			times.vals[i] = (u32) s->DTS;
+			names.vals[i] = gf_strdup(txt->text);
+			gf_isom_delete_text_sample(txt);
+		}
+		gf_bs_del(bs);
+		gf_isom_sample_del(&s);
 	}
 	p.type = GF_PROP_UINT_LIST;
 	p.value.uint_list = times;
@@ -58,7 +103,7 @@ static void isor_get_chapters(GF_ISOFile *file, GF_FilterPid *opid)
 	p.type = GF_PROP_STRING_LIST;
 	p.value.string_list = names;
 	gf_filter_pid_set_property(opid, GF_PROP_PID_CHAP_NAMES, &p);
-	//no free for string lists
+
 }
 
 static void isor_export_ref(ISOMReader *read, ISOMChannel *ch, u32 rtype, char *rname)
@@ -116,7 +161,13 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 	} else {
 		m_subtype = gf_isom_get_media_subtype(read->mov, track, stsd_idx);
 	}
-	
+
+	if (m_subtype==GF_ISOM_SUBTYPE_MPEG4) {
+		u32 stsd_type = gf_isom_get_mpeg4_subtype(read->mov, track, stsd_idx);
+		if (stsd_type==GF_ISOM_SUBTYPE_RESV)
+			gf_isom_get_original_format_type(read->mov, track, stsd_idx, &m_subtype);
+	}
+
 	audio_fmt = 0;
 	pix_fmt = 0;
 	ocr_es_id = 0;
@@ -157,8 +208,10 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 #endif
 
 	} else {
-		u32 i, pcm_flags, pcm_size;
+		u32 i, pcm_flags, pcm_size, pcm_ch;
+		Double pcm_sr;
 		Bool load_default = GF_FALSE;
+		Bool is_float = GF_FALSE;
 
 		if (an_esd)
 			gf_odf_desc_del((GF_Descriptor *)an_esd);
@@ -189,7 +242,9 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 			break;
 		case GF_ISOM_SUBTYPE_WVTT:
 			codec_id = GF_CODECID_WEBVTT;
+#ifndef GPAC_DISABLE_VTT
 			stxtcfg = gf_isom_get_webvtt_config(read->mov, track, stsd_idx);
+#endif
 			break;
 		case GF_ISOM_SUBTYPE_MJP2:
 			codec_id = GF_CODECID_J2K;
@@ -228,14 +283,22 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 			gf_isom_opus_config_get(read->mov, track, stsd_idx, &dsi, &dsi_size);
 			break;
 
-		case GF_QT_SUBTYPE_TWOS:
-		case GF_QT_SUBTYPE_SOWT:
 		case GF_QT_SUBTYPE_FL32:
 		case GF_QT_SUBTYPE_FL64:
+			is_float = GF_TRUE;
+		case GF_QT_SUBTYPE_TWOS:
+		case GF_QT_SUBTYPE_SOWT:
 		case GF_QT_SUBTYPE_IN24:
 		case GF_QT_SUBTYPE_IN32:
-			codec_id = GF_CODECID_RAW;
-			audio_fmt = gf_audio_fmt_from_isobmf(m_subtype);
+			if (gf_isom_get_pcm_config(read->mov, track, stsd_idx, &pcm_flags, &pcm_size) == GF_OK) {
+				codec_id = GF_CODECID_RAW;
+				if (pcm_size==16) audio_fmt = (pcm_flags&1) ? GF_AUDIO_FMT_S16 : GF_AUDIO_FMT_S16_BE;
+				else if (pcm_size==24) audio_fmt = (pcm_flags&1) ? GF_AUDIO_FMT_S24 : GF_AUDIO_FMT_S24_BE;
+				else if (!is_float && (pcm_size==32)) audio_fmt = (pcm_flags&1) ? GF_AUDIO_FMT_S32 : GF_AUDIO_FMT_S32_BE;
+				else if (is_float && (pcm_size==32)) audio_fmt = (pcm_flags&1) ? GF_AUDIO_FMT_FLT : GF_AUDIO_FMT_FLT_BE;
+				else if (is_float && (pcm_size==64)) audio_fmt = (pcm_flags&1) ? GF_AUDIO_FMT_DBL : GF_AUDIO_FMT_DBL_BE;
+				else codec_id = 0;
+			}
 			break;
 		case GF_ISOM_MEDIA_TIMECODE:
 			codec_id = GF_CODECID_TMCD;
@@ -253,15 +316,48 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 		case GF_ISOM_SUBTYPE_IPCM:
 			if (gf_isom_get_pcm_config(read->mov, track, stsd_idx, &pcm_flags, &pcm_size) == GF_OK) {
 				codec_id = GF_CODECID_RAW;
-				if (pcm_size==16) audio_fmt = GF_AUDIO_FMT_S16;
-				else if (pcm_size==24) audio_fmt = GF_AUDIO_FMT_S24;
-				else if (pcm_size==32) audio_fmt = GF_AUDIO_FMT_S32;
+				if (pcm_size==16) audio_fmt = (pcm_flags & 1) ? GF_AUDIO_FMT_S16 : GF_AUDIO_FMT_S16_BE;
+				else if (pcm_size==24) audio_fmt = (pcm_flags & 1) ? GF_AUDIO_FMT_S24 : GF_AUDIO_FMT_S24_BE;
+				else if (pcm_size==32) audio_fmt = (pcm_flags & 1) ? GF_AUDIO_FMT_S32 : GF_AUDIO_FMT_S32_BE;
 			}
 			break;
 		case GF_ISOM_SUBTYPE_FPCM:
 			if (gf_isom_get_pcm_config(read->mov, track, stsd_idx, &pcm_flags, &pcm_size) == GF_OK) {
 				codec_id = GF_CODECID_RAW;
-				audio_fmt = (pcm_size==64) ? GF_AUDIO_FMT_DBL : GF_AUDIO_FMT_FLT;
+				if (pcm_size==64) audio_fmt = (pcm_flags & 1) ? GF_AUDIO_FMT_DBL : GF_AUDIO_FMT_DBL_BE;
+				else if (pcm_size==32) audio_fmt = (pcm_flags & 1) ? GF_AUDIO_FMT_FLT : GF_AUDIO_FMT_FLT_BE;
+				else codec_id = 0;
+			}
+			break;
+		case GF_QT_SUBTYPE_LPCM:
+			if (gf_isom_get_lpcm_config(read->mov, track, stsd_idx, &pcm_sr, &pcm_ch, &pcm_flags, &pcm_size) == GF_OK) {
+				audio_fmt = 0;
+				Bool is_be = (pcm_flags & (1<<1)) ? GF_TRUE : GF_FALSE;
+				if (pcm_flags >> 4) {}
+				//we don't support non-packed audio
+				else if (!(pcm_flags & (1<<3))) {}
+				else if (pcm_sr != (u32) gf_ceil(pcm_sr)) {}
+				else {
+					sr = (u32) gf_ceil(pcm_sr);
+					nb_ch = pcm_ch;
+					//float formats
+					if (pcm_flags & 1) {
+						if (pcm_size==64) audio_fmt = is_be ? GF_AUDIO_FMT_DBL_BE : GF_AUDIO_FMT_DBL;
+						else if (pcm_size==32) audio_fmt = is_be ? GF_AUDIO_FMT_FLT_BE : GF_AUDIO_FMT_FLT;
+					}
+					//signed int formats
+					else if (pcm_flags & 4) {
+						if (pcm_size==16) audio_fmt = is_be ? GF_AUDIO_FMT_S16_BE : GF_AUDIO_FMT_S16;
+						else if (pcm_size==24) audio_fmt = is_be ? GF_AUDIO_FMT_S24_BE : GF_AUDIO_FMT_S24;
+						else if (pcm_size==32) audio_fmt = is_be ? GF_AUDIO_FMT_S32_BE : GF_AUDIO_FMT_S32;
+					} else {
+						if (pcm_size==8) audio_fmt = GF_AUDIO_FMT_U8;
+					}
+					if (audio_fmt) {
+						codec_id = GF_CODECID_RAW;
+						nb_bps = pcm_size;
+					}
+				}
 			}
 			break;
 
@@ -360,8 +456,10 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 
  				if (pix_fmt) {
 					codec_id = GF_CODECID_RAW;
-					if (pix_fmt==GF_PIXEL_UNCV)
+					if (pix_fmt==GF_PIXEL_UNCV) {
 						load_default = GF_TRUE;
+						codec_id = GF_CODECID_RAW_UNCV;
+					}
 				} else {
 					load_default = GF_TRUE;
 				}
@@ -519,7 +617,7 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 		if (use_iod)
 			gf_filter_pid_set_property(pid, GF_PROP_PID_ESID, &PROP_UINT(esid));
 
-		if (gf_isom_is_track_in_root_od(read->mov, track)) {
+		if (gf_isom_is_track_in_root_od(read->mov, track) && !read->lightp) {
 			switch (streamtype) {
 			case GF_STREAM_SCENE:
 			case GF_STREAM_OD:
@@ -569,39 +667,46 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 		ch->streamType = streamtype;
 //		ch->clock_id = ocr_es_id;
 
-		if (has_scalable_layers)
-			gf_filter_pid_set_property(pid, GF_PROP_PID_SCALABLE, &PROP_BOOL(GF_TRUE));
+		if (!read->lightp) {
+			if (has_scalable_layers)
+				gf_filter_pid_set_property(pid, GF_PROP_PID_SCALABLE, &PROP_BOOL(GF_TRUE));
 
-		if (gf_isom_get_reference_count(read->mov, track, GF_ISOM_REF_SABT)>0) {
-			gf_filter_pid_set_property(pid, GF_PROP_PID_TILE_BASE, &PROP_BOOL(GF_TRUE));
-		}
-		else if (gf_isom_get_reference_count(read->mov, track, GF_ISOM_REF_SUBPIC)>0) {
-			gf_filter_pid_set_property(pid, GF_PROP_PID_TILE_BASE, &PROP_BOOL(GF_TRUE));
-		}
+			if (gf_isom_get_reference_count(read->mov, track, GF_ISOM_REF_SABT)>0) {
+				gf_filter_pid_set_property(pid, GF_PROP_PID_TILE_BASE, &PROP_BOOL(GF_TRUE));
+			}
+			else if (gf_isom_get_reference_count(read->mov, track, GF_ISOM_REF_SUBPIC)>0) {
+				gf_filter_pid_set_property(pid, GF_PROP_PID_TILE_BASE, &PROP_BOOL(GF_TRUE));
+			}
 
-		if (srd_w && srd_h) {
-			gf_filter_pid_set_property(pid, GF_PROP_PID_CROP_POS, &PROP_VEC2I_INT(srd_x, srd_y) );
-			if (base_tile_track) {
-				gf_isom_get_visual_info(read->mov, base_tile_track, stsd_idx, &w, &h);
-				if (w && h) {
-					gf_filter_pid_set_property(pid, GF_PROP_PID_ORIG_SIZE, &PROP_VEC2I_INT(w, h) );
+			if (srd_w && srd_h) {
+				gf_filter_pid_set_property(pid, GF_PROP_PID_CROP_POS, &PROP_VEC2I_INT(srd_x, srd_y) );
+				if (base_tile_track) {
+					gf_isom_get_visual_info(read->mov, base_tile_track, stsd_idx, &w, &h);
+					if (w && h) {
+						gf_filter_pid_set_property(pid, GF_PROP_PID_ORIG_SIZE, &PROP_VEC2I_INT(w, h) );
+					}
 				}
 			}
+
+
+			if (codec_id !=GF_CODECID_LHVC)
+				isor_export_ref(read, ch, GF_ISOM_REF_SCAL, "isom:scal");
+			isor_export_ref(read, ch, GF_ISOM_REF_SABT, "isom:sabt");
+			isor_export_ref(read, ch, GF_ISOM_REF_TBAS, "isom:tbas");
+			isor_export_ref(read, ch, GF_ISOM_REF_SUBPIC, "isom:subp");
 		}
 
-
-		if (codec_id !=GF_CODECID_LHVC)
-			isor_export_ref(read, ch, GF_ISOM_REF_SCAL, "isom:scal");
-		isor_export_ref(read, ch, GF_ISOM_REF_SABT, "isom:sabt");
-		isor_export_ref(read, ch, GF_ISOM_REF_TBAS, "isom:tbas");
-		isor_export_ref(read, ch, GF_ISOM_REF_SUBPIC, "isom:subp");
-
-		ch->duration = gf_isom_get_track_duration(read->mov, ch->track);
+		if (read->lightp) {
+			ch->duration = gf_isom_get_track_duration_orig(read->mov, ch->track);
+		} else {
+			ch->duration = gf_isom_get_track_duration(read->mov, ch->track);
+		}
 		if (!ch->duration) {
 			ch->duration = gf_isom_get_duration(read->mov);
 		}
 		sample_count = gf_isom_get_sample_count(read->mov, ch->track);
 
+#ifndef GPAC_DISABLE_ISOM_FRAGMENTS
 		if (read->frag_type && !read->input_loaded) {
 			u32 ts;
 			u64 dur;
@@ -613,14 +718,14 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 				sample_count = 0;
 			}
 		}
+#endif
 
-		if (!read->mem_load_mode) {
+		if (!read->mem_load_mode || ch->duration) {
 			//if no edit list (whether complex or simple TS offset) and no sidx, use media duration
 			if (!ch->has_edit_list && !use_sidx_dur && !ch->ts_offset) {
 				//no specific edit list type but edit present, use the duration in the edit
 				if (gf_isom_get_edits_count(read->mov, ch->track)) {
-					u64 dur = gf_isom_get_track_duration(read->mov, ch->track);
-					gf_filter_pid_set_property(pid, GF_PROP_PID_DURATION, &PROP_FRAC64_INT(dur, read->timescale));
+					gf_filter_pid_set_property(pid, GF_PROP_PID_DURATION, &PROP_FRAC64_INT(ch->duration, read->timescale));
 				} else {
 					u64 dur = gf_isom_get_media_duration(read->mov, ch->track);
 					gf_filter_pid_set_property(pid, GF_PROP_PID_DURATION, &PROP_FRAC64_INT(dur, ch->timescale));
@@ -670,13 +775,17 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 			gf_filter_pid_set_property(pid, GF_PROP_PID_HAS_SYNC, &PROP_BOOL(GF_FALSE) );
 		}
 
+		if (read->lightp) goto props_done;
 
 		w = gf_isom_get_constant_sample_size(read->mov, track);
 		if (w)
 			gf_filter_pid_set_property(ch->pid, GF_PROP_PID_FRAME_SIZE, &PROP_UINT(w));
 
+		//mem mode, cannot read backwards
 		if (read->mem_load_mode) {
-			gf_filter_pid_set_property(pid, GF_PROP_PID_PLAYBACK_MODE, &PROP_UINT(GF_PLAYBACK_MODE_NONE) );
+			const GF_PropertyValue *p = gf_filter_pid_get_property(read->pid, GF_PROP_PID_PLAYBACK_MODE);
+			if (!p)
+				gf_filter_pid_set_property(pid, GF_PROP_PID_PLAYBACK_MODE, &PROP_UINT(GF_PLAYBACK_MODE_FASTFORWARD) );
 		} else {
 			gf_filter_pid_set_property(pid, GF_PROP_PID_PLAYBACK_MODE, &PROP_UINT(GF_PLAYBACK_MODE_REWIND) );
 		}
@@ -925,13 +1034,30 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 					}
 				}
 			}
+
+			//delcare track groups
+			u32 idx=0;
+			while (1) {
+				char szTK[100];
+				u32 track_group_type, track_group_id;
+				if (!gf_isom_enum_track_group(read->mov, ch->track, &idx, &track_group_type, &track_group_id)) break;
+				sprintf(szTK, "tkgp_%s", gf_4cc_to_str(track_group_type));
+				gf_filter_pid_set_property_dyn(ch->pid, szTK, &PROP_SINT(track_group_id));
+			}
 		}
 
+props_done:
+
 		if (read->sigfrag) {
+#ifndef GPAC_DISABLE_ISOM_FRAGMENTS
 			u64 start, end;
 			if (gf_isom_get_root_sidx_offsets(read->mov, &start, &end)) {
 				if (end)
 					gf_filter_pid_set_property(ch->pid, GF_PROP_PCK_SIDX_RANGE, &PROP_FRAC64_INT(start , end));
+			}
+#endif
+			if (!read->frag_type) {
+				gf_filter_pid_set_property_str(ch->pid, "nofrag", &PROP_BOOL(GF_TRUE));
 			}
 		}
 	}
@@ -1151,8 +1277,10 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 			}
 		}
 	}
-	sr = nb_ch = nb_bps = 0;
-	gf_isom_get_audio_info(read->mov,track, stsd_idx, &sr, &nb_ch, &nb_bps);
+	if (m_subtype!=GF_QT_SUBTYPE_LPCM) {
+		sr = nb_ch = nb_bps = 0;
+		gf_isom_get_audio_info(read->mov,track, stsd_idx, &sr, &nb_ch, &nb_bps);
+	}
 	if (streamtype==GF_STREAM_AUDIO) {
 		if (!sr) sr = gf_isom_get_media_timescale(read->mov, track);
 	}
@@ -1246,6 +1374,20 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 	e = gf_isom_get_stsd_template(read->mov, ch->track, stsd_idx, &tk_template, &tk_template_size);
 	if (e == GF_OK) {
 		gf_filter_pid_set_property(ch->pid, GF_PROP_PID_ISOM_STSD_TEMPLATE, &PROP_DATA_NO_COPY(tk_template, tk_template_size) );
+
+		if (!gf_sys_old_arch_compat()) {
+			//if more than one sample desc, export all of them
+			if (gf_isom_get_sample_description_count(read->mov, ch->track)>1) {
+				tk_template=NULL;
+				tk_template_size=0;
+				e = gf_isom_get_stsd_template(read->mov, ch->track, 0, &tk_template, &tk_template_size);
+				if (e == GF_OK) {
+					gf_filter_pid_set_property(ch->pid, GF_PROP_PID_ISOM_STSD_ALL_TEMPLATES, &PROP_DATA_NO_COPY(tk_template, tk_template_size) );
+
+					gf_filter_pid_set_property(ch->pid, GF_PROP_PID_ISOM_STSD_TEMPLATE_IDX, &PROP_UINT(stsd_idx) );
+				}
+			}
+		}
 	} else {
 		GF_LOG(GF_LOG_WARNING, GF_LOG_CONTAINER, ("[IsoMedia] Failed to serialize stsd box: %s\n", gf_error_to_string(e) ));
 	}
@@ -1282,6 +1424,7 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 	else if (codec_id==GF_CODECID_MHAS) {
 		if (!dsi) {
 			ch->check_mhas_pl = 1;
+#ifndef GPAC_DISABLE_AV_PARSERS
 			GF_ISOSample *samp = gf_isom_get_sample(ch->owner->mov, ch->track, 1, NULL);
 			if (samp) {
 				u64 ch_layout=0;
@@ -1294,6 +1437,7 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 				}
 				gf_isom_sample_del(&samp);
 			}
+#endif
 		}
 	}
 
@@ -1438,7 +1582,7 @@ GF_Err isor_declare_objects(ISOMReader *read)
 			} else if (!strcmp(read->tkid, "video")) {
 				if (mtype!=GF_ISOM_MEDIA_VISUAL) continue;
 			} else if (!strcmp(read->tkid, "text")) {
-				if ((mtype!=GF_ISOM_MEDIA_TEXT) && (mtype!=GF_ISOM_MEDIA_SUBT)) continue;
+				if ((mtype!=GF_ISOM_MEDIA_TEXT) && (mtype!=GF_ISOM_MEDIA_SUBT) && (mtype!=GF_ISOM_MEDIA_MPEG_SUBT)) continue;
 			} else if (strlen(read->tkid)==4) {
 				u32 t = GF_4CC(read->tkid[0], read->tkid[1], read->tkid[2], read->tkid[3]);
 				if (mtype!=t) continue;
@@ -1466,6 +1610,7 @@ GF_Err isor_declare_objects(ISOMReader *read)
 		case GF_ISOM_MEDIA_MPEG_SUBT:
 		case GF_ISOM_MEDIA_CLOSED_CAPTION:
 			streamtype = GF_STREAM_TEXT;
+			mtype = GF_ISOM_MEDIA_TEXT;
 			break;
 		case GF_ISOM_MEDIA_FLASH:
 		case GF_ISOM_MEDIA_DIMS:
@@ -1708,8 +1853,10 @@ retry:
 	gf_filter_pid_set_property_str(pid, "meta:name", item_name ? &PROP_STRING(item_name) : NULL );
 	gf_filter_pid_set_property_str(pid, "meta:encoding", item_encoding ? &PROP_STRING(item_encoding) : NULL );
 
-	if ((item_type == GF_4CC('u','n','c','v')) || (item_type == GF_4CC('u','n','c','i'))) {
+	if ((item_type == GF_ISOM_SUBTYPE_UNCV) || (item_type == GF_ISOM_ITEM_TYPE_UNCI)) {
 		gf_filter_pid_set_property(pid, GF_PROP_PID_PIXFMT, &PROP_UINT(GF_PIXEL_UNCV) );
+		gf_filter_pid_set_property(pid, GF_PROP_PID_CODECID, &PROP_UINT(GF_CODECID_RAW_UNCV) );
+		gf_filter_pid_set_property(pid, GF_PROP_PID_ISOM_SUBTYPE,  &PROP_4CC(GF_ISOM_ITEM_TYPE_UNCI) );
 	}
 
 

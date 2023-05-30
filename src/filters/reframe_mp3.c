@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / MP3 reframer filter
@@ -110,6 +110,10 @@ GF_Err mp3_dmx_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is_remov
 		ctx->opid = gf_filter_pid_new(filter);
 		gf_filter_pid_copy_properties(ctx->opid, ctx->ipid);
 		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_UNFRAMED, NULL);
+		p = gf_filter_pid_get_property(ctx->ipid, GF_PROP_PID_STREAM_TYPE);
+		if (!p || (p->value.uint==GF_STREAM_FILE)) {
+			gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_STREAM_TYPE, &PROP_UINT(GF_STREAM_AUDIO));
+		}
 	}
 	if (ctx->timescale) ctx->copy_props = GF_TRUE;
 	return GF_OK;
@@ -371,7 +375,10 @@ static void mp3_dmx_check_pid(GF_Filter *filter, GF_MP3DmxCtx *ctx)
 	ctx->copy_props = GF_FALSE;
 	//copy properties at init or reconfig
 	gf_filter_pid_copy_properties(ctx->opid, ctx->ipid);
-	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_STREAM_TYPE, & PROP_UINT( GF_STREAM_AUDIO));
+	const GF_PropertyValue *p = gf_filter_pid_get_property(ctx->ipid, GF_PROP_PID_STREAM_TYPE);
+	if (!p || (p->value.uint==GF_STREAM_FILE)) {
+		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_STREAM_TYPE, &PROP_UINT(GF_STREAM_AUDIO));
+	}
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_UNFRAMED, NULL );
 	if (ctx->is_file && ctx->index) {
 		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_PLAYBACK_MODE, & PROP_UINT(GF_PLAYBACK_MODE_FASTFORWARD) );
@@ -497,11 +504,15 @@ GF_Err mp3_dmx_process(GF_Filter *filter)
 {
 	GF_MP3DmxCtx *ctx = gf_filter_get_udta(filter);
 	GF_FilterPacket *pck, *dst_pck;
-	Bool is_eos=GF_FALSE;
+	Bool is_eos;
 	u8 *data, *output;
 	u8 *start;
 	u32 pck_size, remain, prev_pck_size;
-	u64 cts = GF_FILTER_NO_TS;
+	u64 cts;
+
+restart:
+	cts = GF_FILTER_NO_TS;
+	is_eos = GF_FALSE;
 
 	//always reparse duration
 	if (!ctx->duration.num)
@@ -668,12 +679,19 @@ GF_Err mp3_dmx_process(GF_Filter *filter)
 		}
 
 		if (!ctx->in_seek) {
+			if (bytes_skipped + size > remain) {
+				GF_LOG(GF_LOG_WARNING, GF_LOG_MEDIA, ("[MP3Dmx] truncated frame of size %u (remains %d)\n", size, remain-bytes_skipped));
+				break;
+			}
 			dst_pck = gf_filter_pck_new_alloc(ctx->opid, size, &output);
 			if (!dst_pck) break;
 			memcpy(output, sync, size);
 
 			gf_filter_pck_set_cts(dst_pck, ctx->cts);
-			gf_filter_pck_set_duration(dst_pck, nb_samp);
+			if (ctx->timescale && (ctx->timescale!=ctx->sr))
+				gf_filter_pck_set_duration(dst_pck, (u32) gf_timestamp_rescale(nb_samp, ctx->sr, ctx->timescale) );
+			else
+				gf_filter_pck_set_duration(dst_pck, nb_samp);
 			gf_filter_pck_set_sap(dst_pck, GF_FILTER_SAP_1);
 			gf_filter_pck_set_framing(dst_pck, GF_TRUE, GF_TRUE);
 
@@ -720,7 +738,8 @@ drop_byte:
 
 	if (!pck) {
 		ctx->mp3_buffer_size = 0;
-		return mp3_dmx_process(filter);
+		//avoid recursive call
+		goto restart;
 	} else {
 		if (remain) {
 			memmove(ctx->mp3_buffer, start, remain);
@@ -896,15 +915,14 @@ GF_FilterRegister MP3DmxRegister = {
 };
 
 
-const GF_FilterRegister *mp3_dmx_register(GF_FilterSession *session)
+const GF_FilterRegister *rfmp3_register(GF_FilterSession *session)
 {
 	return &MP3DmxRegister;
 }
 
 #else
-const GF_FilterRegister *mp3_dmx_register(GF_FilterSession *session)
+const GF_FilterRegister *rfmp3_register(GF_FilterSession *session)
 {
 	return NULL;
 }
 #endif // GPAC_DISABLE_AV_PARSERS
-

@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom Paris 2019-2022
+ *			Copyright (c) Telecom Paris 2019-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / ffmpeg muxer filter
@@ -138,6 +138,7 @@ static GF_Err ffmx_init_mux(GF_Filter *filter, GF_FFMuxCtx *ctx)
 		GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[FFMux] Fail to open %s - error %s\n", ctx->dst, av_err2str(res) ));
 		ctx->status = FFMX_STATE_ERROR;
 		if (options) av_dict_free(&options);
+		gf_filter_abort(filter);
 		return GF_NOT_SUPPORTED;
 	}
 
@@ -175,6 +176,9 @@ static GF_Err ffmx_init_mux(GF_Filter *filter, GF_FFMuxCtx *ctx)
 		}
 	}
 
+	const GF_PropertyValue *chap_t=NULL;
+	const GF_PropertyValue *chap_n=NULL;
+	u64 max_dur=0;
 	for (i=0; i<nb_pids; i++) {
 		GF_FilterPid *ipid = gf_filter_get_ipid(filter, i);
 		GF_FFMuxStream *st = gf_filter_pid_get_udta(ipid);
@@ -191,6 +195,40 @@ static GF_Err ffmx_init_mux(GF_Filter *filter, GF_FFMuxCtx *ctx)
 		if (!ctx->keepts) {
 			st->ts_shift = st->ts_shift - gf_timestamp_rescale(min_ts, min_timescale, st->in_scale.den);
 		}
+
+		chap_t = gf_filter_pid_get_property(ipid, GF_PROP_PID_CHAP_TIMES);
+		chap_n = gf_filter_pid_get_property(ipid, GF_PROP_PID_CHAP_NAMES);
+		if (chap_t && chap_n && (chap_t->value.uint_list.nb_items == chap_n->value.string_list.nb_items)) {
+		} else {
+			chap_t = chap_n = NULL;
+		}
+		p = gf_filter_pid_get_property(ipid, GF_PROP_PID_DURATION);
+		if (p) {
+			u64 d = gf_timestamp_rescale(p->value.lfrac.num, p->value.lfrac.den, 1000);
+			if (max_dur<d) max_dur = d;
+		}
+	}
+
+	if (chap_t) {
+		ctx->muxer->nb_chapters = chap_t->value.uint_list.nb_items;
+		ctx->muxer->chapters = av_malloc(sizeof(AVChapter*)* ctx->muxer->nb_chapters);
+		for (i=0; i<ctx->muxer->nb_chapters; i++) {
+			AVChapter *ch = av_malloc(sizeof(AVChapter));
+			memset(ch, 0, sizeof(AVChapter));
+			ctx->muxer->chapters[i] = ch;
+			ch->start = chap_t->value.uint_list.vals[i];
+			if (i+1<ctx->muxer->nb_chapters)
+				ch->end = chap_t->value.uint_list.vals[i+1];
+			else if (max_dur)
+				ch->end = max_dur;
+			else
+				ch->end = ch->start;
+			if (ch->end < ch->start) ch->end = ch->start;
+			ch->id = i+1;
+			ch->time_base.num = 1;
+			ch->time_base.den = 1000;
+			av_dict_set(&ch->metadata, "title", chap_n->value.string_list.vals[i], 0);
+		}
 	}
 
 	res = avformat_write_header(ctx->muxer, &options);
@@ -198,6 +236,7 @@ static GF_Err ffmx_init_mux(GF_Filter *filter, GF_FFMuxCtx *ctx)
 		GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[FFMux] Fail to write header for %s - error %s\n", ctx->dst, av_err2str(res) ));
 		ctx->status = FFMX_STATE_ERROR;
 		if (options) av_dict_free(&options);
+		gf_filter_abort(filter);
 		return GF_SERVICE_ERROR;
 	}
 
@@ -381,8 +420,10 @@ static GF_Err ffmx_start_seg(GF_Filter *filter, GF_FFMuxCtx *ctx, const char *se
 			AVStream *st;
 			AVCodecParameters *ipar, *opar;
 
-			if (!(st = avformat_new_stream(segmux, NULL)))
+			if (!(st = avformat_new_stream(segmux, NULL))) {
+				avformat_free_context(segmux);
 				return GF_OUT_OF_MEM;
+			}
 			ipar = ctx->muxer->streams[i]->codecpar;
 			opar = st->codecpar;
 			avcodec_parameters_copy(opar, ipar);
@@ -503,7 +544,11 @@ static GF_Err ffmx_close_seg(GF_Filter *filter, GF_FFMuxCtx *ctx, Bool send_evt_
 		evt.seg_size.is_init = 0;
 	}
 	evt.seg_size.media_range_start = ctx->offset_at_seg_start;
+#if LIBAVFORMAT_VERSION_MAJOR < 60
 	evt.seg_size.media_range_end = ctx->muxer->pb ? (ctx->muxer->pb->written-1) : 0;
+#else
+	evt.seg_size.media_range_end = ctx->muxer->pb ? (ctx->muxer->pb->bytes_written-1) : 0;
+#endif
 	ctx->offset_at_seg_start = evt.seg_size.media_range_end;
 
 	gf_filter_pid_send_event(pid, &evt);
@@ -807,10 +852,6 @@ static GF_Err ffmx_process(GF_Filter *filter)
 			} else {
 				res = av_write_frame(ctx->muxer, pkt);
 			}
-			if (res<0) {
-				GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[FFMux] Fail to write packet %sto %s - error %s\n", st->reconfig_stream ? "with reconfig side data " : "", AVFMT_URL(ctx->muxer), av_err2str(res) ));
-				e = GF_IO_ERR;
-			}
 
 			if (pkt->side_data) av_packet_free_side_data(pkt);
 			st->reconfig_stream = 0;
@@ -818,6 +859,13 @@ static GF_Err ffmx_process(GF_Filter *filter)
 			gf_filter_pid_drop_packet(ipid);
 			ctx->nb_pck_in_seg++;
 			FF_RELEASE_PCK(pkt)
+
+			if (res<0) {
+				GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[FFMux] Fail to write packet %sto %s: error %s - aborting\n", st->reconfig_stream ? "with reconfig side data " : "", AVFMT_URL(ctx->muxer), av_err2str(res) ));
+				e = GF_IO_ERR;
+				ctx->status = FFMX_STATE_ERROR;
+				gf_filter_abort(filter);
+			}
 		}
 	}
 
@@ -996,13 +1044,29 @@ static GF_Err ffmx_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is_r
 			case GF_AUDIO_FMT_S24P:
 				ff_codec_id = AV_CODEC_ID_PCM_S24LE;
 				break;
+			case GF_AUDIO_FMT_S24_BE:
+				ff_codec_id = AV_CODEC_ID_PCM_S24BE;
+				break;
 			case GF_AUDIO_FMT_S32:
 			case GF_AUDIO_FMT_S32P:
 				ff_codec_id = AV_CODEC_ID_PCM_S32LE;
 				break;
+			case GF_AUDIO_FMT_S32_BE:
+				ff_codec_id = AV_CODEC_ID_PCM_S32BE;
+				break;
 			case GF_AUDIO_FMT_FLT:
 			case GF_AUDIO_FMT_FLTP:
 				ff_codec_id = AV_CODEC_ID_PCM_F32LE;
+				break;
+			case GF_AUDIO_FMT_FLT_BE:
+				ff_codec_id = AV_CODEC_ID_PCM_F32BE;
+				break;
+			case GF_AUDIO_FMT_DBL:
+			case GF_AUDIO_FMT_DBLP:
+				ff_codec_id = AV_CODEC_ID_PCM_F64LE;
+				break;
+			case GF_AUDIO_FMT_DBL_BE:
+				ff_codec_id = AV_CODEC_ID_PCM_F64BE;
 				break;
 			default:
 				GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[FFMux] Unmapped raw audio format %s to FFMPEG, patch welcome\n", gf_audio_fmt_name(p->value.uint) ));
@@ -1013,13 +1077,21 @@ static GF_Err ffmx_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is_r
 		ff_codec_id = ffmpeg_codecid_from_gpac(codec_id, &ff_codec_tag);
 	}
 
+
+	res = 1;
+#if LIBAVFORMAT_VERSION_MAJOR < 60
 	if (ctx->muxer->oformat && ctx->muxer->oformat->query_codec) {
 		res = ctx->muxer->oformat->query_codec(ff_codec_id, 1);
-		if (!res) {
-			GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[FFMux] Codec %s not supported in container %s\n", gf_codecid_name(codec_id), ctx->muxer->oformat->name));
-			return GF_NOT_SUPPORTED;
-		}
 	}
+#else
+	res = avformat_query_codec(ctx->muxer->oformat, ff_codec_id, FF_COMPLIANCE_NORMAL);
+#endif
+
+	if (!res) {
+		GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[FFMux] Codec %s not supported in container %s\n", gf_codecid_name(codec_id), ctx->muxer->oformat->name));
+		return GF_NOT_SUPPORTED;
+	}
+
 	const AVCodec *c = avcodec_find_decoder(ff_codec_id);
 	if (!c) return GF_NOT_SUPPORTED;
 
@@ -1318,7 +1390,7 @@ static void ffmx_finalize(GF_Filter *filter)
 			}
 		}
 		ctx->status = FFMX_STATE_TRAILER_DONE;
-	} 
+	}
 	if (!ctx->gfio && ctx->muxer && ctx->muxer->pb) {
 		ctx->muxer->io_close(ctx->muxer, ctx->muxer->pb);
 	}
@@ -1357,7 +1429,6 @@ static GF_FilterProbeScore ffmx_probe_url(const char *url, const char *mime)
 	if (!url)
 		return GF_FPROBE_NOT_SUPPORTED;
 
-
 	const AVOutputFormat *ofmt = av_guess_format(NULL, url, mime);
 	if (!ofmt && mime) ofmt = av_guess_format(NULL, NULL, mime);
 	if (!ofmt && url) ofmt = av_guess_format(NULL, url, NULL);
@@ -1366,7 +1437,7 @@ static GF_FilterProbeScore ffmx_probe_url(const char *url, const char *mime)
 
 	proto = strstr(url, "://");
 	if (!proto)
-		return GF_FPROBE_NOT_SUPPORTED;
+		return GF_FPROBE_MAYBE_NOT_SUPPORTED;
 
 	proto = avio_find_protocol_name(url);
 	if (proto)
@@ -1411,6 +1482,8 @@ GF_FilterRegister FFMuxRegister = {
 		"Unlike other multiplexing filters in GPAC, this filter is a sink filter and does not produce any PID to be redirected in the graph.\n"
 		"The filter can however use template names for its output, using the first input PID to resolve the final name.\n"
 		"The filter watches the property `FileNumber` on incoming packets to create new files.\n"
+		"\n"
+		"All PID properties prefixed with `meta:` will be added as metadata.\n"
 	)
 	.private_size = sizeof(GF_FFMuxCtx),
 	SETCAPS(FFMuxCaps),
@@ -1462,4 +1535,3 @@ const GF_FilterRegister *ffmx_register(GF_FilterSession *session)
 	return NULL;
 }
 #endif
-

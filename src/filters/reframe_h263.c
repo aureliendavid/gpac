@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / H263 reframer filter
@@ -611,6 +611,7 @@ GF_Err h263dmx_process(GF_Filter *filter)
 				memcpy(ctx->hdr_store, start+remain-3, 3);
 				remain -= 3;
 				ctx->bytes_in_header = 3;
+				current=0; //skip test below
 			}
 			size = remain;
 			full_frame = GF_FALSE;
@@ -768,7 +769,7 @@ GF_FilterRegister H263DmxRegister = {
 };
 
 
-const GF_FilterRegister *h263dmx_register(GF_FilterSession *session)
+const GF_FilterRegister *rfh263_register(GF_FilterSession *session)
 {
 	return &H263DmxRegister;
 }

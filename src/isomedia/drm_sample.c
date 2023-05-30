@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *          Authors: Cyril Concolato / Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2005-2022
+ *			Copyright (c) Telecom ParisTech 2005-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / ISO Media File Format sub-project
@@ -660,6 +660,7 @@ GF_Err gf_isom_get_original_format_type(GF_ISOFile *the_file, u32 trackNumber, u
 		Media_GetSampleDesc(trak->Media, i+1, &sea, NULL);
 		if (!sea) return GF_BAD_PARAM;
 		sinf = (GF_ProtectionSchemeInfoBox*) gf_isom_box_find_child(sea->child_boxes, GF_ISOM_BOX_TYPE_SINF);
+		if (!sinf) sinf = (GF_ProtectionSchemeInfoBox*) gf_isom_box_find_child(sea->child_boxes, GF_ISOM_BOX_TYPE_RINF);
 		if (!sinf) continue;
 
 		if (outOriginalFormat && sinf->original_format) {
@@ -890,10 +891,14 @@ GF_Err gf_cenc_set_pssh(GF_ISOFile *file, bin128 systemID, u32 version, u32 KID_
 		if (!file->meta->child_boxes) file->meta->child_boxes = gf_list_new();
 		child_boxes = &file->meta->child_boxes;
 	} else if (file->FragmentsFlags & GF_ISOM_FRAG_WRITE_READY) {
+#ifndef GPAC_DISABLE_ISOM_FRAGMENTS
 		if (!file->moof) return GF_BAD_PARAM;
 		if (!file->moof->PSSHs) file->moof->PSSHs = gf_list_new();
 		child_boxes = &file->moof->child_boxes;
 		moof_pssh = file->moof->PSSHs;
+#else
+		return GF_NOT_SUPPORTED;
+#endif
 	} else {
 		if (!file->moov) return GF_BAD_PARAM;
 		if (!file->moov->child_boxes) file->moov->child_boxes = gf_list_new();
@@ -1403,7 +1408,9 @@ Bool gf_isom_cenc_has_saiz_saio_full(GF_SampleTableBox *stbl, void *_traf, u32 s
 			if (stbl) {
 				entry = gf_list_get(stbl->SampleDescription->child_boxes, 0);
 			} else {
+#ifndef GPAC_DISABLE_ISOM_FRAGMENTS
 				entry = gf_list_get(traf->trex->track->Media->information->sampleTable->SampleDescription->child_boxes, 0);
+#endif
 			}
 
 			if (entry)
@@ -1441,7 +1448,9 @@ Bool gf_isom_cenc_has_saiz_saio_full(GF_SampleTableBox *stbl, void *_traf, u32 s
 			if (stbl) {
 				entry = gf_list_get(stbl->SampleDescription->child_boxes, 0);
 			} else {
+#ifndef GPAC_DISABLE_ISOM_FRAGMENTS
 				entry = gf_list_get(traf->trex->track->Media->information->sampleTable->SampleDescription->child_boxes, 0);
+#endif
 			}
 			if (entry)
 				sinf = (GF_ProtectionSchemeInfoBox *) gf_isom_box_find_child(entry->child_boxes, GF_ISOM_BOX_TYPE_SINF);

@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2018-2022
+ *			Copyright (c) Telecom ParisTech 2018-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / pipe input filter
@@ -37,7 +37,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#ifdef GPAC_CONFIG_LINUX
+#if defined(GPAC_CONFIG_LINUX) || defined(GPAC_CONFIG_EMSCRIPTEN)
 #include <sys/types.h>
 #include <sys/stat.h>
 #endif
@@ -570,7 +570,7 @@ GF_FilterRegister PipeInRegister = {
 };
 
 
-const GF_FilterRegister *pipein_register(GF_FilterSession *session)
+const GF_FilterRegister *pin_register(GF_FilterSession *session)
 {
 	if (gf_opts_get_bool("temp", "get_proto_schemes")) {
 		gf_opts_set_key("temp_in_proto", PipeInRegister.name, "pipe");

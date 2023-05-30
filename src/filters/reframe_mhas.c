@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2020-2022
+ *			Copyright (c) Telecom ParisTech 2020-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / MHAS reframer filter
@@ -198,12 +198,11 @@ static void mhas_dmx_check_dur(GF_Filter *filter, GF_MHASDmxCtx *ctx)
 			if (!mhas_last_cfg) mhas_sap = 0;
 		//config
 		} else if (mhas_type==1) {
-			u32 sr = 0;
 			/*u32 pl = */gf_bs_read_u8(bs);
 			u32 idx = gf_bs_read_int(bs, 5);
 			if (idx==0x1f)
 				duration.den = gf_bs_read_int(bs, 24);
-			else if (sr < nb_usac_sr) {
+			else if (idx < nb_usac_sr) {
 				duration.den = USACSampleRates[idx];
 			}
 			idx = gf_bs_read_int(bs, 3);
@@ -621,7 +620,7 @@ GF_Err mhas_dmx_process(GF_Filter *filter)
 			u32 idx = gf_bs_read_int(ctx->bs, 5);
 			if (idx==0x1f)
 				sr = gf_bs_read_int(ctx->bs, 24);
-			else if (sr < nb_usac_sr) {
+			else if (idx < nb_usac_sr) {
 				sr = USACSampleRates[idx];
 			}
 			ctx->nb_unknown_pck = 0;
@@ -714,8 +713,7 @@ GF_Err mhas_dmx_process(GF_Filter *filter)
 			}
 
 			if (ctx->timescale) {
-				pck_dur *= ctx->timescale;
-				pck_dur /= ctx->sample_rate;
+				pck_dur = gf_timestamp_rescale(pck_dur, ctx->sample_rate, ctx->timescale);
 			}
 
 			dst = gf_filter_pck_new_alloc(ctx->opid, au_size, &output);
@@ -915,14 +913,14 @@ GF_FilterRegister MHASDmxRegister = {
 };
 
 
-const GF_FilterRegister *mhas_dmx_register(GF_FilterSession *session)
+const GF_FilterRegister *rfmhas_register(GF_FilterSession *session)
 {
 	return &MHASDmxRegister;
 }
 
 #else
 
-const GF_FilterRegister *mhas_dmx_register(GF_FilterSession *session)
+const GF_FilterRegister *rfmhas_register(GF_FilterSession *session)
 {
 	return NULL;
 }

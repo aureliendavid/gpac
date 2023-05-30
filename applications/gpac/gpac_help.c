@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2017-2022
+ *			Copyright (c) Telecom ParisTech 2017-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / gpac application
@@ -667,6 +667,7 @@ static GF_GPACArg gpac_args[] =
 
 	GF_DEF_ARG("stats", NULL, "print stats after execution", NULL, NULL, GF_ARG_BOOL, 0),
 	GF_DEF_ARG("graph", NULL, "print graph after execution", NULL, NULL, GF_ARG_BOOL, 0),
+	GF_DEF_ARG("qe", NULL, "enable quick exit (no mem cleanup)", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT),
 	GF_DEF_ARG("k", NULL, "enable keyboard interaction from command line", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT),
 	GF_DEF_ARG("r", NULL, "enable reporting\n"
 			"- r: runtime reporting\n"
@@ -684,9 +685,21 @@ static GF_GPACArg gpac_args[] =
 	GF_DEF_ARG("i", "src", "specify an input file - see [filters help (-h doc)](filters_general)", NULL, NULL, GF_ARG_STRING, 0),
 	GF_DEF_ARG("o", "dst", "specify an output file - see [filters help (-h doc)](filters_general)", NULL, NULL, GF_ARG_STRING, 0),
 	GF_DEF_ARG("ib", NULL, "specify an input file to wrap as GF_FileIO object (testing of GF_FileIO)", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT),
+	GF_DEF_ARG("ibx", NULL, "specify an input file to wrap as GF_FileIO object without caching (testing of GF_FileIO)", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT),
 	GF_DEF_ARG("ob", NULL, "specify an output file to wrap as GF_FileIO object (testing of GF_FileIO)", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT),
 	GF_DEF_ARG("cl", NULL, "force complete mode when no link directive are set - see [filters help (-h doc)](filters_general)", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT),
+
+#ifdef GPAC_CONFIG_EMSCRIPTEN
+	GF_DEF_ARG("step[=FPS[:STEPS]", NULL, "configure step mode in non-blocking session (enabled by default if no worker). Step mode is driven by requestAnimationFrame\n"
+		"- if `FPS` is 0, let the browser decide (default if video output is used)\n"
+		"- if `FPS` is negative, disable step mode\n"
+		"- if `FPS` is positive, forces the time interval to 1/FPS (default FPS=100)\n"
+		"- if STEPS is set, runs at most STEPS times before returning to the main thread (default is 100)"
+	, NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT),
+#else
 	GF_DEF_ARG("step", NULL, "test step mode in non-blocking session", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT),
+#endif
+
 	GF_DEF_ARG("h", "help,-ha,-hx,-hh", "print help. Use `-help` or `-h` for basic options, `-ha` for advanced options, `-hx` for expert options and `-hh` for all.  \nNote: The `@` character can be used in place of the `*` character. String parameter can be:\n"
 			"- empty: print command line options help\n"
 			"- doc: print the general filter info\n"
@@ -694,6 +707,7 @@ static GF_GPACArg gpac_args[] =
 			"- log: print the log system help\n"
 			"- core: print the supported libgpac core options. Use -ha/-hx/-hh for advanced/expert options\n"
 			"- cfg: print the GPAC configuration help\n"
+			"- net: print network interfaces\n"
 			"- prompt: print the GPAC prompt help when running in interactive mode (see [-k](GPAC) )\n"
 			"- modules: print available modules\n"
 			"- creds: print credential help\n"
@@ -716,7 +730,10 @@ static GF_GPACArg gpac_args[] =
 			"- OPT: look in filter names and options for `OPT` and suggest possible matches if none found. Use `-hx` to look for keyword in all option descriptions\n"
 		, NULL, NULL, GF_ARG_STRING, 0),
 
- 	GF_DEF_ARG("p", NULL, "use indicated profile for the global GPAC config. If not found, config file is created. If a file path is indicated, this will load profile from that file. Otherwise, this will create a directory of the specified name and store new config there. Reserved name `0` means a new profile, not stored to disk. Appending `:reload` to the profile name will force recreating a new configuration file", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_ADVANCED),
+	GF_DEF_ARG("p", NULL, "use indicated profile for the global GPAC config. If not found, config file is created. If a file path is indicated, this will load profile from that file. Otherwise, this will create a directory of the specified name and store new config there. The following reserved names create a temporary profile (not stored on disk):\n"
+		"- 0: full profile\n"
+		"- n: null profile disabling shared modules/filters and system paths in config (may break GUI and other filters)\n"
+		"Appending `:reload` to the profile name will force recreating a new configuration file", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_ADVANCED),
  	GF_DEF_ARG("alias", NULL, "assign a new alias or remove an alias. Can be specified several times. See [alias usage (-h alias)](#using-aliases)", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_ADVANCED),
  	GF_DEF_ARG("aliasdoc", NULL, "assign documentation for a given alias (optional). Can be specified several times", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_ADVANCED),
 
@@ -1087,7 +1104,7 @@ redo_pass:
 	if (is_help) {
 		if (!pass_exact) {
 			const char *doc_helps[] = {
-				"log", "core", "modules", "doc", "alias", "props", "colors", "layouts", "cfg", "prompt", "codecs", "formats", "exts", "protocols", "links", "bin", "filters", "filters:*", "filters:@", "mp4c", NULL
+				"log", "core", "modules", "doc", "alias", "props", "colors", "layouts", "cfg", "prompt", "codecs", "formats", "exts", "protocols", "links", "bin", "filters", "filters:*", "filters:@", "mp4c", "net", NULL
 			};
 			first = GF_FALSE;
 			i=0;
@@ -1192,7 +1209,7 @@ redo_pass:
 			const GF_BuiltInProperty *prop_info;
 			while ((prop_info = gf_props_get_description(i))) {
 				i++;
-				if (!prop_info->name || !prop_info->description) continue;
+				if (!prop_info->name) continue;
 				
 				if (gf_sys_word_match(fname, prop_info->name)) {
 					if (!first) {
@@ -1203,7 +1220,11 @@ redo_pass:
 						}
 						GF_LOG(GF_LOG_WARNING, GF_LOG_APP, ("\nClosest property name: \n"));
 					}
+#ifndef GPAC_DISABLE_DOC
 					GF_LOG(GF_LOG_INFO, GF_LOG_APP, ("%s: %s\n", prop_info->name, prop_info->description));
+#else
+					GF_LOG(GF_LOG_INFO, GF_LOG_APP, ("%s\n", prop_info->name));
+#endif
 				}
 			}
 
@@ -1328,7 +1349,7 @@ void gpac_check_session_args()
 		if (gf_fs_enum_unmapped_options(session, &idx, &argname, &argtype, &meta_name, &meta_opt)==GF_FALSE)
 			break;
 
-		if (meta_name) {
+		if (meta_name && (argtype!=1)) {
 			if (meta_opt) {
 				GF_LOG(GF_LOG_ERROR, GF_LOG_APP, ("Filter %s:%s value \"%s\" set but not used\n", meta_name, meta_opt, argname));
 			} else {
@@ -2097,7 +2118,10 @@ Bool print_filters(int argc, char **argv, GF_SysArgMode argmode)
 
 void dump_all_props(char *pname)
 {
-	u32 i=0, pname_len = pname ? (u32) strlen(pname) : 0;
+	u32 i=0;
+#ifndef GPAC_DISABLE_DOC
+	u32 pname_len = pname ? (u32) strlen(pname) : 0;
+#endif
 	const GF_BuiltInProperty *prop_info;
 
 	if (gen_doc==1) {
@@ -2155,21 +2179,32 @@ void dump_all_props(char *pname)
 
 			gf_sys_format_help(helpout, help_flags | GF_PRINTARG_NL_TO_BR, "%s | %s | %s | %s | %s  \n", prop_info->name,  gf_props_get_type_name(prop_info->data_type),
 				szFlags,
+#ifndef GPAC_DISABLE_DOC
 			 	prop_info->description,
+#else
+				"not available in build",
+#endif
 			 	gf_4cc_to_str(prop_info->type)
 			);
 		} else if (gen_doc==2) {
 			gf_sys_format_help(helpout, help_flags, ".TP\n.B %s (%s,%s,%s%s)\n%s\n", prop_info->name, gf_4cc_to_str(prop_info->type), gf_props_get_type_name(prop_info->data_type),
 			 	(prop_info->flags & GF_PROP_FLAG_GSF_REM) ? "D" : " ",
 			 	(prop_info->flags & GF_PROP_FLAG_PCK) ? "P" : " ",
-				prop_info->description);
+#ifndef GPAC_DISABLE_DOC
+				prop_info->description
+#else
+				"not available in build"
+#endif
+			);
 		} else {
 			u32 len;
 			const char *ptype;
 
 			if (pname) {
 				if (gf_sys_word_match(prop_info->name, pname)) {}
+#ifndef GPAC_DISABLE_DOC
 				else if (gf_strnistr(prop_info->description, pname, pname_len)) {}
+#endif
 				else continue;
 			}
 			szFlags[0]=0;
@@ -2190,8 +2225,13 @@ void dump_all_props(char *pname)
 				len++;
 			}
 
-			gf_sys_format_help(helpout, help_flags, "%s", prop_info->description);
-
+			gf_sys_format_help(helpout, help_flags, "%s",
+#ifndef GPAC_DISABLE_DOC
+				prop_info->description
+#else
+				"not available in build"
+#endif
+			);
 			if (prop_info->data_type==GF_PROP_PIXFMT) {
 				gf_sys_format_help(helpout, help_flags, "\n\tNames: %s\n\tFile extensions: %s", gf_pixel_fmt_all_names(), gf_pixel_fmt_all_shortnames() );
 			} else if (prop_info->data_type==GF_PROP_PCMFMT) {
@@ -3016,6 +3056,7 @@ void write_filters_options()
 		Language file creation / update functions
 *********************************************************/
 
+#ifndef GPAC_DISABLE_DOC
 static Bool lang_updated = GF_FALSE;
 static void gpac_lang_set_key(GF_Config *cfg, const char *sec_name,  const char *key_name, const char *key_val)
 {
@@ -3046,9 +3087,11 @@ static void gpac_lang_set_key(GF_Config *cfg, const char *sec_name,  const char 
 		lang_updated = GF_TRUE;
 	}
 }
+#endif
 
 int gpac_make_lang(char *filename)
 {
+#ifndef GPAC_DISABLE_DOC
 	GF_Config *cfg;
 	u32 i;
 	gf_sys_init(GF_MemTrackerNone, NULL);
@@ -3134,6 +3177,10 @@ int gpac_make_lang(char *filename)
 	gf_fs_del(session);
 	gf_sys_close();
 	return 0;
+#else
+	gf_sys_format_help(helpout, help_flags, "Documentation disabled in build, cannot create language file\n");
+	return 1;
+#endif
 }
 
 

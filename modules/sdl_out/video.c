@@ -2,7 +2,7 @@
 *			GPAC - Multimedia Framework C SDK
 *
 *			Authors: Jean Le Feuvre - Romain Bouqueau
-*			Copyright (c) Telecom ParisTech 2000-2022
+*			Copyright (c) Telecom ParisTech 2000-2023
 *					All rights reserved
 *
 *  This file is part of GPAC / SDL audio and video module
@@ -428,10 +428,10 @@ static void SDLVid_DestroyObjects(SDLVidCtx *ctx)
 #endif
 #endif
 
-#if SDL_VERSION_ATLEAST(2,0,0) && !defined(GPAC_CONFIG_IOS)
 #include <gpac/media_tools.h>
 void SDLVid_SetIcon(SDLVidCtx *ctx)
 {
+#if SDL_VERSION_ATLEAST(2,0,0) && !defined(GPAC_CONFIG_IOS) && !defined(GPAC_DISABLE_AV_PARSERS)
 	u8 *buffer, *dec_buf;
 	u32 size, w, h, pf, Bpp, dst_size=0;
 	const char cfg[GF_MAX_PATH];
@@ -457,8 +457,8 @@ void SDLVid_SetIcon(SDLVidCtx *ctx)
 	}
 	gf_free(buffer);
 	gf_free(dec_buf);
-}
 #endif
+}
 
 
 GF_Err SDLVid_ResizeWindow(GF_VideoOutput *dr, u32 width, u32 height)
@@ -520,6 +520,9 @@ GF_Err SDLVid_ResizeWindow(GF_VideoOutput *dr, u32 width, u32 height)
 		/* Set the correct attributes for MASK and MAJOR version */
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+#ifdef GPAC_CONFIG_EMSCRIPTEN
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#endif
 #endif
 
 		if (!ctx->screen) {
@@ -531,9 +534,7 @@ GF_Err SDLVid_ResizeWindow(GF_VideoOutput *dr, u32 width, u32 height)
 			GF_LOG(GF_LOG_INFO, GF_LOG_MMIO, ("[SDL] Window created\n"));
 			dr->window_id = SDL_GetWindowID(ctx->screen);
 
-#if !defined(GPAC_CONFIG_IOS)
 			SDLVid_SetIcon(ctx);
-#endif
 
 			/*creating a window, at least on OSX, changes the locale and screws up float parsing !!
 			force setting the local back and pray that it will be changed before any other atof/strtod is called
@@ -650,9 +651,7 @@ GF_Err SDLVid_ResizeWindow(GF_VideoOutput *dr, u32 width, u32 height)
 			}
 			dr->window_id = SDL_GetWindowID(ctx->screen);
 
-#if SDL_VERSION_ATLEAST(2,0,0) && !defined(GPAC_CONFIG_IOS)
 			SDLVid_SetIcon(ctx);
-#endif
 
 			/*see above note*/
 #ifndef _WIN32_WCE
@@ -1575,6 +1574,12 @@ static GF_Err SDLVid_Flush(GF_VideoOutput *dr, GF_Window *dest)
 			CGLSetParameter(gl_ctx, kCGLCPSwapInterval, &sync);
 		}
 #endif
+
+#ifdef GPAC_CONFIG_EMSCRIPTEN
+		void gpac_on_video_swap();
+		gpac_on_video_swap();
+#endif
+
 		SDL_GL_SwapWindow(ctx->screen);
 		return GF_OK;
 	}

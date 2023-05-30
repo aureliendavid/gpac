@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2005-2022
+ *			Copyright (c) Telecom ParisTech 2005-2023
  *
  *  This file is part of GPAC / MPEG2-TS sub-project
  *
@@ -696,6 +696,9 @@ static void gf_m2ts_gather_section(GF_M2TS_Demuxer *ts, GF_M2TS_SectionFilter *s
 			return;
 		}
 
+		if (!hdr->pid)
+			ts->last_pat_start_num = ts->pck_number-1;
+
 		/*end of previous section*/
 		if (!sec->length && sec->received) {
 			/* the length of the section could not be determined from the previous TS packet because we had only 1 or 2 bytes */
@@ -823,6 +826,11 @@ static void gf_m2ts_process_sdt(GF_M2TS_Demuxer *ts, GF_M2TS_SECTION_ES *ses, GF
 		descs_size = ((data[pos+3]&0xf)<<8) | data[pos+4];
 		pos += 5;
 
+		if (pos+descs_size > data_size) {
+			GF_LOG(GF_LOG_WARNING, GF_LOG_CONTAINER, ("[MPEG-2 TS] Invalid descriptors size read from data (%u)\n", descs_size));
+			return;
+		}
+
 		d_pos = 0;
 		while (d_pos < descs_size) {
 			u8 d_tag = data[pos+d_pos];
@@ -939,6 +947,11 @@ static void gf_m2ts_process_tdt_tot(GF_M2TS_Demuxer *ts, GF_M2TS_SECTION_ES *tdt
 	if (!time_table) {
 		GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[MPEG-2 TS] Fail to alloc DVB time table\n"));
 		return;
+	}
+
+	if (data_size < 5) {
+		GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[MPEG-2 TS] Section data size too small to read date (len: %u)\n", data_size));
+		goto error_exit;
 	}
 
 	/*UTC_time - see annex C of DVB-SI ETSI EN 300468*/
@@ -2129,7 +2142,7 @@ void gf_m2ts_flush_pes(GF_M2TS_Demuxer *ts, GF_M2TS_PES *pes, u32 force_flush_ty
 
 		} else {
 			if (!has_data) goto exit;
-			
+
 			/*3-byte start-code + 1 byte streamid*/
 			len = 4;
 			memset(&pesh, 0, sizeof(pesh));
@@ -2256,11 +2269,15 @@ static void gf_m2ts_process_pes(GF_M2TS_Demuxer *ts, GF_M2TS_PES *pes, GF_M2TS_H
 
 	if (hdr->payload_start) {
 		flush_pes = 1;
+		pes->before_last_pat_pn = pes->last_pat_packet_number;
+		pes->before_last_pes_start_pn = pes->pes_start_packet_number;
+
 		pes->pes_start_packet_number = ts->pck_number;
 		pes->before_last_pcr_value = pes->program->before_last_pcr_value;
 		pes->before_last_pcr_value_pck_number = pes->program->before_last_pcr_value_pck_number;
 		pes->last_pcr_value = pes->program->last_pcr_value;
 		pes->last_pcr_value_pck_number = pes->program->last_pcr_value_pck_number;
+		pes->last_pat_packet_number = ts->last_pat_start_num;
 	} else if (pes->pes_len && (pes->pck_data_len + data_size == pes->pes_len + 6)) {
 		/* 6 = startcode+stream_id+length*/
 		/*reassemble pes*/

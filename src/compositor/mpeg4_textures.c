@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2020
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / Scene Compositor sub-project
@@ -29,11 +29,7 @@
 #include <gpac/nodes_mpeg4.h>
 #include <gpac/nodes_x3d.h>
 
-#ifndef GPAC_DISABLE_VRML
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+#if !defined(GPAC_DISABLE_VRML) && !defined(GPAC_DISABLE_COMPOSITOR)
 
 /*for cache texture decode and hash*/
 #include <gpac/avparse.h>
@@ -629,7 +625,9 @@ void gf_sc_mo_destroyed(GF_Node *n)
 		((Background2DStack *)st)->txh.stream = NULL;
 		break;
 	case TAG_MPEG4_Background:
+#ifndef GPAC_DISABLE_X3D
 	case TAG_X3D_Background:
+#endif
 #ifndef GPAC_DISABLE_3D
 		((BackgroundStack *)st)->txh_back.stream = NULL;
 		((BackgroundStack *)st)->txh_front.stream = NULL;
@@ -640,11 +638,15 @@ void gf_sc_mo_destroyed(GF_Node *n)
 #endif
 		break;
 	case TAG_MPEG4_ImageTexture:
+#ifndef GPAC_DISABLE_X3D
 	case TAG_X3D_ImageTexture:
+#endif
 		((GF_TextureHandler *)st)->stream = NULL;
 		break;
 	case TAG_MPEG4_MovieTexture:
+#ifndef GPAC_DISABLE_X3D
 	case TAG_X3D_MovieTexture:
+#endif
 		((MovieTextureStack *)st)->txh.stream = NULL;
 		break;
 	case TAG_MPEG4_MediaSensor:
@@ -657,7 +659,9 @@ void gf_sc_mo_destroyed(GF_Node *n)
 		((AudioSourceStack *)st)->input.stream = NULL;
 		break;
 	case TAG_MPEG4_AudioClip:
+#ifndef GPAC_DISABLE_X3D
 	case TAG_X3D_AudioClip:
+#endif
 		((AudioClipStack *)st)->input.stream = NULL;
 		break;
 #ifndef GPAC_DISABLE_SVG
@@ -674,7 +678,4 @@ void gf_sc_mo_destroyed(GF_Node *n)
 	}
 }
 
-#ifdef __cplusplus
-}
-#endif
-#endif /*GPAC_DISABLE_VRML*/
+#endif //!defined(GPAC_DISABLE_VRML) && !defined(GPAC_DISABLE_COMPOSITOR)

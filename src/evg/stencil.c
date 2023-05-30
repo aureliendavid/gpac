@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / software 2D rasterizer module
@@ -24,6 +24,8 @@
  */
 
 #include "rast_soft.h"
+
+#ifndef GPAC_DISABLE_EVG
 
 static GF_EVGStencil *evg_solid_brush();
 static GF_EVGStencil *evg_texture_brush();
@@ -2616,6 +2618,18 @@ GF_Err gf_evg_stencil_set_texture(GF_EVGStencil *stencil, u8 *pixels, u32 width,
 }
 
 GF_EXPORT
+Bool gf_evg_texture_format_ok(GF_PixelFormat pixelFormat)
+{
+	EVG_Texture _tx;
+	memset(&_tx, 0, sizeof(EVG_Texture));
+	_tx.type = GF_STENCIL_TEXTURE;
+	GF_Err e = gf_evg_stencil_set_texture_internal((GF_EVGStencil *) &_tx, 2, 2, pixelFormat, (const u8 *) &_tx, 0, NULL, NULL, 0, NULL, 0);
+	if (e==GF_OK) return GF_TRUE;
+	return GF_FALSE;
+}
+
+
+GF_EXPORT
 GF_Err gf_evg_stencil_set_palette(GF_EVGStencil *stencil, const u8 *palette, u32 pix_fmt, u32 nb_cols)
 {
 	EVG_Texture *_this = (EVG_Texture *) stencil;
@@ -3520,7 +3534,6 @@ static void mix_dyna_run_b_wide(EVGRasterCtx *rctx, u32 count)
 
 GF_Err gf_evg_setup_multi_texture(GF_EVGSurface *surf, GF_EVGMultiTextureMode operand, GF_EVGStencil *sten2, GF_EVGStencil *sten3, Float *params)
 {
-	u32 i;
 	Float param1 = params ? params[0] : 0;
 	surf->sten2 = surf->sten3 = NULL;
 	surf->odd_fill = 0;
@@ -3642,6 +3655,8 @@ GF_Err gf_evg_setup_multi_texture(GF_EVGSurface *surf, GF_EVGMultiTextureMode op
 		if (!surf->raster_ctx.stencil_pix_run3) return GF_OUT_OF_MEM;
 	}
 
+#ifndef GPAC_DISABLE_THREADS
+	u32 i;
 	for (i=0; i<surf->nb_threads; i++) {
 		EVGRasterCtx *rctx = &surf->th_raster_ctx[i];
 		if (surf->sten2 && !rctx->stencil_pix_run2) {
@@ -3653,5 +3668,8 @@ GF_Err gf_evg_setup_multi_texture(GF_EVGSurface *surf, GF_EVGMultiTextureMode op
 			if (!rctx->stencil_pix_run3) return GF_OUT_OF_MEM;
 		}
 	}
+#endif
 	return GF_OK;
 }
+
+#endif //GPAC_DISABLE_EVG

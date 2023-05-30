@@ -596,8 +596,6 @@ static void gf_inspect_dump_nalu_internal(FILE *dump, u8 *ptr, u32 ptr_size, Boo
 	if (dump_crc) inspect_printf(dump, "crc=\"%u\" ", gf_crc_32(ptr, ptr_size) );
 
 	if (hevc) {
-#ifndef GPAC_DISABLE_HEVC
-
 		if (ptr_size<=1) {
 			inspect_printf(dump, "error=\"invalid nal size 1\"/>\n");
 			return;
@@ -880,10 +878,6 @@ static void gf_inspect_dump_nalu_internal(FILE *dump, u8 *ptr, u32 ptr_size, Boo
 		} else {
 			inspect_printf(dump, "/>\n");
 		}
-
-#else
-		inspect_printf(dump, "/>\n");
-#endif //GPAC_DISABLE_HEVC
 		return;
 	}
 
@@ -1242,11 +1236,26 @@ static void gf_inspect_dump_nalu_internal(FILE *dump, u8 *ptr, u32 ptr_size, Boo
 	}
 }
 
+static u32 inspect_get_analyze_mode()
+{
+	u32 i, nb_args = gf_sys_get_argc();
+	for (i=1;i<nb_args;i++) {
+		const char *arg = gf_sys_get_arg(i);
+		if (!strncmp(arg, "--analyze=", 10)) {
+			if (!strcmp(arg+10, "on")) return INSPECT_ANALYZE_ON;
+			else if (!strcmp(arg+10, "bs")) return INSPECT_ANALYZE_BS;
+			else if (!strcmp(arg+10, "full")) return INSPECT_ANALYZE_BS_BITS;
+			return INSPECT_ANALYZE_OFF;
+		}
+	}
+	return INSPECT_ANALYZE_OFF;
+}
+
 GF_EXPORT
 void gf_inspect_dump_nalu(FILE *dump, u8 *ptr, u32 ptr_size, Bool is_svc, HEVCState *hevc, AVCState *avc, VVCState *vvc, u32 nalh_size, Bool dump_crc, Bool is_encrypted)
 {
 	if (!dump) return;
-	gf_inspect_dump_nalu_internal(dump, ptr, ptr_size, is_svc, hevc, avc, vvc, nalh_size, dump_crc, is_encrypted, 0, NULL);
+	gf_inspect_dump_nalu_internal(dump, ptr, ptr_size, is_svc, hevc, avc, vvc, nalh_size, dump_crc, is_encrypted, inspect_get_analyze_mode(), NULL);
 }
 
 static void av1_dump_tile(FILE *dump, u32 idx, AV1Tile *tile)
@@ -1394,7 +1403,7 @@ GF_EXPORT
 void gf_inspect_dump_obu(FILE *dump, AV1State *av1, u8 *obu_ptr, u64 obu_ptr_length, ObuType obu_type, u64 obu_size, u32 hdr_size, Bool dump_crc)
 {
 	if (!dump) return;
-	gf_inspect_dump_obu_internal(dump, av1, obu_ptr, obu_ptr_length, obu_type, obu_size, hdr_size, dump_crc, NULL, 0);
+	gf_inspect_dump_obu_internal(dump, av1, obu_ptr, obu_ptr_length, obu_type, obu_size, hdr_size, dump_crc, NULL, inspect_get_analyze_mode());
 }
 
 static void gf_inspect_dump_prores_internal(FILE *dump, u8 *ptr, u64 frame_size, Bool dump_crc, PidCtx *pctx)
@@ -1985,6 +1994,7 @@ static void inspect_dump_property(GF_InspectCtx *ctx, FILE *dump, u32 p4cc, cons
 	case GF_PROP_PCK_UTC_TIME:
 	case GF_PROP_PCK_MEDIA_TIME:
 	case GF_PROP_PID_CENC_HAS_ROLL:
+	case GF_PROP_PID_DSI_SUPERSET:
 		if (gf_sys_is_test_mode())
 			return;
 		break;
@@ -2102,6 +2112,8 @@ static void inspect_dump_property(GF_InspectCtx *ctx, FILE *dump, u32 p4cc, cons
 
 		case GF_PROP_PID_ISOM_TREX_TEMPLATE:
 		case GF_PROP_PID_ISOM_STSD_TEMPLATE:
+		case GF_PROP_PID_ISOM_STSD_TEMPLATE_IDX:
+		case GF_PROP_PID_ISOM_STSD_ALL_TEMPLATES:
 			//TODO once all OK: remove this test and regenerate all hashes
 			if (gf_sys_is_test_mode())
 				return;
@@ -3214,12 +3226,16 @@ static void format_duration(s64 dur, u64 timescale, FILE *dump, Bool skip_name)
 
 static void inspect_dump_pid_as_info(GF_InspectCtx *ctx, FILE *dump, GF_FilterPid *pid, u32 pid_idx, Bool is_connect, Bool is_remove, u64 pck_for_config, Bool is_info, PidCtx *pctx)
 {
+	char szCodec[RFC6381_CODEC_NAME_SIZE_MAX];
 	const GF_PropertyValue *p, *dsi, *dsi_enh;
 	Bool is_raw=GF_FALSE;
 	Bool is_protected=GF_FALSE;
 	u32 codec_id=0;
 
 	if (!ctx->dump_log && !dump) return;
+
+	szCodec[0] = 0;
+	gf_filter_pid_get_rfc_6381_codec_string(pid, szCodec, GF_FALSE, GF_FALSE, NULL, NULL);
 
 	inspect_printf(dump, "PID");
 	p = gf_filter_pid_get_property(pid, GF_PROP_PID_ID);
@@ -3347,6 +3363,8 @@ static void inspect_dump_pid_as_info(GF_InspectCtx *ctx, FILE *dump, GF_FilterPi
 	}
 
 	inspect_printf(dump, " codec");
+	if (szCodec[0] && strcmp(szCodec, "unkn"))
+		inspect_printf(dump, " %s", szCodec);
 
 #ifndef GPAC_DISABLE_AV_PARSERS
 	if ((codec_id==GF_CODECID_HEVC) || (codec_id==GF_CODECID_LHVC) || (codec_id==GF_CODECID_HEVC_TILES)) {
@@ -4629,7 +4647,7 @@ const GF_FilterRegister InspectRegister = {
 	"Otherwise, all properties are dumped.\n"
 	"Note: specifying [-xml](), [-analyze](), [-fmt]() or using `-for-test` will force [-full]() to true.\n"
 	"\n"
-	"# Custom property duming\n"
+	"# Custom property dumping\n"
 	"The packet inspector can be configured to dump specific properties of packets using [-fmt]().\n"
 	"When the option is not present, all properties are dumped. Otherwise, only properties identified by `$TOKEN$` "
 	"are printed. You may use '$', '@' or '%' for `TOKEN` separator. `TOKEN` can be:\n"
@@ -4691,7 +4709,7 @@ const GF_FilterRegister InspectRegister = {
 	"The [-speed]() option is only used to configure the filter chain but is ignored by the filter when consuming packets.\n"
 	"If real-time consumption is required, a reframer filter must be setup before the inspect filter.\n"
 	"EX gpac -i SRC reframer:rt=on inspect:buffer=10000:rbuffer=1000:mbuffer=30000:speed=2\n"
-	"This will play the session at 2x speed, using 30s of maximum buffering, consumming packets after 10s of media are ready and rebuffering if less than 1s of media.\n"
+	"This will play the session at 2x speed, using 30s of maximum buffering, consuming packets after 10s of media are ready and rebuffering if less than 1s of media.\n"
 	"\n"
 	)
 	.private_size = sizeof(GF_InspectCtx),

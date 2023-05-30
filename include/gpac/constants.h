@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / exported constants
@@ -351,6 +351,15 @@ GF_PixelFormat gf_pixel_fmt_from_qt_type(u32 qt_code);
 */
 u32 gf_pixel_fmt_to_qt_type(GF_PixelFormat pixfmt);
 
+/*! gets uncC configuation (ISO 23001-17)  of pixel format. The configuration is made of the boxes uncC and cmpd in full mode, and uncC only in restricetd mode
+\param pixfmt the desired pixel format
+\param profile_mode if 1, sets profile if known. If 2 and profile is known, use reduced version
+\param dsi set to the generated configuration, must be freed by user
+\param dsi_size set to the generated configuration size
+\return GF_TRU if success, GF_FALSE otherwise
+*/
+Bool gf_pixel_fmt_get_uncc(GF_PixelFormat pixfmt, u32 profile_mode, u8 **dsi, u32 *dsi_size);
+
 /*!
 \brief Codec IDs
 
@@ -575,6 +584,8 @@ typedef enum
 	GF_CODECID_FLASH = GF_4CC( 'f', 'l', 's', 'h' ),
 	/*! codecid for RAW media streams. No decoder config associated (config through PID properties)*/
 	GF_CODECID_RAW = GF_4CC('R','A','W','M'),
+	/*! codecid for RAW media streams using UNCV  decoder config*/
+	GF_CODECID_RAW_UNCV = GF_4CC('U','N','C','V'),
 
 	GF_CODECID_AV1 = GF_4CC('A','V','1',' '),
 
@@ -835,12 +846,20 @@ typedef enum
 	GF_AUDIO_FMT_S16_BE,
 	/*! sample = signed integer, interleaved channels*/
 	GF_AUDIO_FMT_S32,
+	/*! sample = signed integer big-endian, interleaved channels*/
+	GF_AUDIO_FMT_S32_BE,
 	/*! sample = 1 float, interleaved channels*/
 	GF_AUDIO_FMT_FLT,
+	/*! sample = 1 float bytes in big endian, interleaved channels*/
+	GF_AUDIO_FMT_FLT_BE,
 	/*! sample = 1 double, interleaved channels*/
 	GF_AUDIO_FMT_DBL,
+	/*! sample = 1 double bytes in big-endian order, interleaved channels*/
+	GF_AUDIO_FMT_DBL_BE,
 	/*! sample = signed integer, interleaved channels*/
 	GF_AUDIO_FMT_S24,
+	/*! sample = signed integer gig-endian, interleaved channels*/
+	GF_AUDIO_FMT_S24_BE,
 	/*! not a format, indicates the value of last packed format*/
 	GF_AUDIO_FMT_LAST_PACKED,
 	/*! sample = unsigned byte, planar channels*/
@@ -887,7 +906,7 @@ const char *gf_audio_fmt_all_names();
 */
 const char *gf_audio_fmt_all_shortnames();
 
-/*! returns number of bots per sample for the given format
+/*! returns number of bits per sample for the given format
 \param afmt desired audio format
 \return bit depth of format
 */

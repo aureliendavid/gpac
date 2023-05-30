@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / Media Tools sub-project
@@ -450,6 +450,7 @@ static void cryptinfo_node_start(void *sax_cbck, const char *node_name, const ch
                     GF_LOG(GF_LOG_ERROR, GF_LOG_PARSER, ("[CENC] Missing URI in HLS info %s\n", att->value));
                     return;
 				}
+				if (tkc->keys[tkc->nb_keys].hls_info) gf_free(tkc->keys[tkc->nb_keys].hls_info);
 				tkc->keys[tkc->nb_keys].hls_info = gf_strdup(att->value);
 			}
 			else if (!stricmp(att->name, "IV_size")) {
@@ -470,6 +471,19 @@ static void cryptinfo_node_start(void *sax_cbck, const char *node_name, const ch
 					const_IV_size = (u8) strlen(sKey) / 2;
 					kas_civ = GF_TRUE;
 				}
+			}
+			else if (!stricmp(att->name, "rep")) {
+				if (tkc->keys[tkc->nb_keys].repID) gf_free(tkc->keys[tkc->nb_keys].repID);
+				tkc->keys[tkc->nb_keys].repID = gf_strdup(att->value);
+			}
+			else if (!stricmp(att->name, "period")) {
+				if (tkc->keys[tkc->nb_keys].periodID) gf_free(tkc->keys[tkc->nb_keys].periodID);
+				tkc->keys[tkc->nb_keys].periodID = gf_strdup(att->value);
+			}
+			else if (!stricmp(att->name, "as")) {
+				tkc->keys[tkc->nb_keys].ASID = atoi(att->value);
+			} else {
+				GF_LOG(GF_LOG_WARNING, GF_LOG_PARSER, ("[CENC] unrecognized attribute %s for `key`, ignoring\n", att->name));
 			}
 		}
 		tkc->keys[tkc->nb_keys].IV_size = IV_size;
@@ -514,6 +528,10 @@ void gf_crypt_info_del(GF_CryptInfo *info)
 		for (i=0; i<tci->nb_keys; i++) {
 			if (tci->keys[i].hls_info)
 				gf_free(tci->keys[i].hls_info);
+			if (tci->keys[i].repID)
+				gf_free(tci->keys[i].repID);
+			if (tci->keys[i].periodID)
+				gf_free(tci->keys[i].periodID);
 		}
 		if (tci->keys) gf_free(tci->keys);
 		if (tci->metadata) gf_free(tci->metadata);
@@ -557,6 +575,8 @@ GF_CryptInfo *gf_crypt_info_load(const char *file, GF_Err *out_err)
 	gf_xml_sax_del(sax);
 	return info;
 }
+
+#ifndef GPAC_DISABLE_ISOM
 
 extern char gf_prog_lf;
 
@@ -828,5 +848,8 @@ GF_Err gf_crypt_file(GF_ISOFile *mp4, const char *drm_file, const char *dst_file
 	return gf_crypt_file_ex(mp4, drm_file, dst_file, interleave_time, NULL, fs_dump_flags);
 
 }
-#endif /* !defined(GPAC_DISABLE_ISOM_WRITE)*/
+#endif //GPAC_DISABLE_ISOM
+
+
+#endif /* !defined(GPAC_DISABLE_CRYPTO)*/
 

@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / common tools sub-project
@@ -363,6 +363,17 @@ static Bool get_default_install_path(char *file_path, u32 path_type)
 
 	/*on OSX, Linux & co, user home is where we store the cfg file*/
 	if (path_type==GF_PATH_CFG) {
+
+#ifdef GPAC_CONFIG_EMSCRIPTEN
+		if (gf_dir_exists("/idbfs")) {
+			if (!gf_dir_exists("/idbfs/.gpac")) {
+				gf_mkdir("/idbfs/.gpac");
+			}
+			strcpy(file_path, "/idbfs/.gpac");
+			return 1;
+		}
+#endif
+
 		char *user_home = getenv("HOME");
 #ifdef GPAC_CONFIG_IOS
 		char buf[PATH_MAX];
@@ -437,6 +448,8 @@ static Bool get_default_install_path(char *file_path, u32 path_type)
 			}
 			return 1;
 		}
+#elif defined(GPAC_CONFIG_EMSCRIPTEN)
+		return 0;
 #endif
 		GF_LOG(GF_LOG_ERROR, GF_LOG_CORE, ("Unknown arch, cannot find executable path\n"));
 		return 0;
@@ -456,15 +469,24 @@ static Bool get_default_install_path(char *file_path, u32 path_type)
 		}
 		return 0;
 #endif
-		GF_LOG(GF_LOG_ERROR, GF_LOG_CORE, ("Unknown arch, cannot find library path\n"));
+
+		//for emscripten we use a static load for now
+#if !defined(GPAC_CONFIG_EMSCRIPTEN)
+		GF_LOG(GF_LOG_DEBUG, GF_LOG_CORE, ("Unknown arch, cannot find library path\n"));
+#endif
 		return 0;
 	}
 
+#if defined(GPAC_CONFIG_EMSCRIPTEN)
+	strcpy(app_path, "/usr/");
+#else
 	/*locate the app*/
 	if (!get_default_install_path(app_path, GF_PATH_APP)) {
 		GF_LOG(GF_LOG_ERROR, GF_LOG_CORE, ("Couldn't find GPAC binaries install directory\n"));
 		return 0;
 	}
+#endif
+
 	/*installed or symlink on system, user user home directory*/
 	if (!strnicmp(app_path, "/usr/", 5) || !strnicmp(app_path, "/opt/", 5)) {
 		if (path_type==GF_PATH_SHARE) {
@@ -568,7 +590,9 @@ retry_lib:
 			if (check_file_exists(TEST_MODULE, app_path, file_path)) return 1;
 		}
 		/*modules not found, failure*/
-		GF_LOG(GF_LOG_ERROR, GF_LOG_CORE, ("Couldn't find any modules in HOME path (app path %s)\n", app_path));
+#ifndef GPAC_STATIC_MODULES
+		GF_LOG(GF_LOG_WARNING, GF_LOG_CORE, ("Couldn't find any modules in HOME path (app path %s)\n", app_path));
+#endif
 		return 0;
 	}
 
@@ -664,12 +688,16 @@ static GF_Config *create_default_config(char *file_path, const char *profile)
 	GF_Config *cfg;
 	char szPath[GF_MAX_PATH];
 
-	if (! get_default_install_path(file_path, GF_PATH_CFG)) {
+	if (file_path && ! get_default_install_path(file_path, GF_PATH_CFG)) {
 		profile = "0";
 	}
 	/*Create temp config file*/
-	if (profile && !strcmp(profile, "0")) {
+	if (profile && (!strcmp(profile, "0") || !stricmp(profile, "n"))) {
 		cfg = gf_cfg_new(NULL, NULL);
+		if (!stricmp(profile, "n")) {
+			gf_cfg_discard_changes(cfg);
+			return cfg;
+		}
 	} else {
 		FILE *f;
 
@@ -701,16 +729,21 @@ static GF_Config *create_default_config(char *file_path, const char *profile)
 	gf_cfg_set_key(cfg, "core", "devclass", "ios");
 #elif defined(GPAC_CONFIG_ANDROID)
 	gf_cfg_set_key(cfg, "core", "devclass", "android");
+#elif defined(GPAC_CONFIG_EMSCRIPTEN)
+	gf_cfg_set_key(cfg, "core", "devclass", "wasm");
 #else
 	gf_cfg_set_key(cfg, "core", "devclass", "desktop");
 #endif
 
 
 	if (!moddir_found) {
+#if !defined(GPAC_CONFIG_EMSCRIPTEN)
 		GF_LOG(GF_LOG_WARNING, GF_LOG_CORE, ("[Core] default modules directory not found\n"));
+#endif
 	} else {
 		gf_cfg_set_key(cfg, "core", "module-dir", szPath);
 	}
+
 
 #if defined(GPAC_CONFIG_IOS)
 	gf_ios_refresh_cache_directory(cfg, file_path);
@@ -936,10 +969,14 @@ static Bool delete_tmp_files(void *cbck, char *item_name, char *item_path, GF_Fi
 
 static void check_default_cred_file(GF_Config *cfg, char szPath[GF_MAX_PATH])
 {
+#ifndef GPAC_CONFIG_EMSCRIPTEN
 	char key[16];
 	u64 v1, v2;
 	const char *opt = gf_cfg_get_key(cfg, "core", "cred");
 	if (opt) return;
+	//when running as service, the config file path may be unknown
+	if (!szPath[0] || !gf_dir_exists(szPath))
+		return;
 	strcat(szPath, "/creds.key");
 	if (gf_file_exists(szPath)) return;
 
@@ -965,6 +1002,7 @@ static void check_default_cred_file(GF_Config *cfg, char szPath[GF_MAX_PATH])
 	fwrite(key, 16, 1, crd);
 	fclose(crd);
 	gf_cfg_set_key(cfg, "core", "cred", szPath);
+#endif //GPAC_CONFIF_EMSCRIPTEN
 }
 
 /*!
@@ -983,6 +1021,7 @@ static GF_Config *gf_cfg_init(const char *profile)
 	GF_Config *cfg=NULL;
 	u32 prof_len=0;
 	Bool force_new_cfg=GF_FALSE;
+	Bool fast_profile=GF_FALSE;
 	char szPath[GF_MAX_PATH];
 	char *prof_opt = NULL;
 
@@ -993,6 +1032,11 @@ static GF_Config *gf_cfg_init(const char *profile)
 			prof_len -= (u32) strlen(prof_opt);
 			if (strstr(prof_opt, "reload")) force_new_cfg = GF_TRUE;
 			prof_opt[0] = 0;
+		}
+		if (!stricmp(profile, "n")) {
+			fast_profile = GF_TRUE;
+			cfg = create_default_config(NULL, "n");
+			goto skip_cfg;
 		}
 	}
 	if (profile && !prof_len)
@@ -1022,6 +1066,11 @@ static GF_Config *gf_cfg_init(const char *profile)
 		}
 		profile="0";
 		cfg = create_default_config(szPath, profile);
+		goto skip_cfg;
+	}
+
+	if (profile && !strcmp(profile, "0")) {
+		cfg = create_default_config(NULL, "0");
 		goto skip_cfg;
 	}
 
@@ -1091,6 +1140,8 @@ skip_cfg:
 	GF_LOG(GF_LOG_DEBUG, GF_LOG_CORE, ("[core] Using global config file in %s directory\n", szPath));
 #endif
 
+	if (fast_profile) goto exit;
+
 	check_modules_dir(cfg);
 	check_default_cred_file(cfg, szPath);
 
@@ -1147,8 +1198,8 @@ void gf_init_global_config(const char *profile)
 			GF_LOG(GF_LOG_ERROR, GF_LOG_CORE, ("Fatal error: failed to initialize GPAC global configuration\n"));
 			exit(1);
 		}
-
-		gf_modules_new(gpac_global_config);
+		if (!profile || stricmp(profile, "n"))
+			gf_modules_new(gpac_global_config);
 	}
 }
 
@@ -1164,6 +1215,7 @@ void gf_uninit_global_config(Bool discard_config)
 
 GF_Err gf_cfg_set_key_internal(GF_Config *iniFile, const char *secName, const char *keyName, const char *keyValue, Bool is_restrict);
 
+#ifdef GPAC_ENABLE_RESTRICT
 void gf_cfg_load_restrict()
 {
 	char szPath[GF_MAX_PATH];
@@ -1190,6 +1242,7 @@ void gf_cfg_load_restrict()
 		}
 	}
 }
+#endif
 
 GF_EXPORT
 const char *gf_opts_get_key(const char *secName, const char *keyName)
@@ -1269,7 +1322,7 @@ GF_Err gf_opts_save()
 #include <gpac/main.h>
 
 GF_GPACArg GPAC_Args[] = {
- GF_DEF_ARG("tmp", NULL, "specify directory for temporary file creation instead of OS-default temportary file management", NULL, NULL, GF_ARG_STRING, 0),
+ GF_DEF_ARG("tmp", NULL, "specify directory for temporary file creation instead of OS-default temporary file management", NULL, NULL, GF_ARG_STRING, 0),
  GF_DEF_ARG("noprog", NULL, "disable progress messages", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_LOG),
  GF_DEF_ARG("quiet", NULL, "disable all messages, including errors", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_LOG),
  GF_DEF_ARG("log-file", "lf", "set output log file", NULL, NULL, GF_ARG_STRING, GF_ARG_SUBSYS_LOG),
@@ -1325,7 +1378,7 @@ GF_GPACArg GPAC_Args[] = {
  GF_DEF_ARG("mod-dirs", NULL, "set additional module directories as a semi-colon `;` separated list", NULL, NULL, GF_ARG_STRINGS, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
  GF_DEF_ARG("js-dirs", NULL, "set javascript directories", NULL, NULL, GF_ARG_STRINGS, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
  GF_DEF_ARG("no-js-mods", NULL, "disable javascript module loading", NULL, NULL, GF_ARG_STRINGS, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
- GF_DEF_ARG("ifce", NULL, "set default multicast interface through interface IP address (default is 127.0.0.1)", NULL, NULL, GF_ARG_STRING, GF_ARG_SUBSYS_CORE),
+ GF_DEF_ARG("ifce", NULL, "set default multicast interface (default is ANY), either an IP address or a device name as listed by `gpac -h net`. Prefix '+' will force using IPv6 for dual interface", NULL, NULL, GF_ARG_STRING, GF_ARG_SUBSYS_CORE),
  GF_DEF_ARG("lang", NULL, "set preferred language", NULL, NULL, GF_ARG_STRING, GF_ARG_SUBSYS_CORE),
  GF_DEF_ARG("cfg", "opt", "get or set configuration file value. The string parameter can be formatted as:\n"
 	        "- `section:key=val`: set the key to a new value\n"
@@ -1357,6 +1410,8 @@ GF_GPACArg GPAC_Args[] = {
  GF_DEF_ARG("no-poll", NULL, "disable poll and use select for socket groups", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
 #endif
  GF_DEF_ARG("no-tls-rcfg", NULL, "disble automatic TCP to TLS reconfiguration", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
+ GF_DEF_ARG("no-fd", NULL, "use buffered IO instead of file descriptor for read/write - this can speed up operations on small files", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
+ GF_DEF_ARG("no-mx", NULL, "disable all mutexes, threads and semaphores (do not use if unsure about threading used)", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
 
  GF_DEF_ARG("cache", NULL, "cache directory location", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_HTTP),
  GF_DEF_ARG("proxy-on", NULL, "enable HTTP proxy", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_HTTP),
@@ -1386,7 +1441,8 @@ GF_GPACArg GPAC_Args[] = {
 #endif
 
  GF_DEF_ARG("dbg-edges", NULL, "log edges status in filter graph before dijkstra resolution (for debug). Edges are logged as edge_source(status, weight, src_cap_idx, dst_cap_idx)", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_FILTERS),
-GF_DEF_ARG("full-link", NULL, "throw error if any PID in the filter graph cannot be linked", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_FILTERS),
+ GF_DEF_ARG("full-link", NULL, "throw error if any PID in the filter graph cannot be linked", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_FILTERS),
+ GF_DEF_ARG("no-dynf", NULL, "disable dynamically loaded filters", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_FILTERS),
 
  GF_DEF_ARG("no-block", NULL, "disable blocking mode of filters\n"
 			"- no: enable blocking mode\n"
@@ -1516,22 +1572,19 @@ u32 gf_opts_get_int(const char *secName, const char *keyName)
 	if (!opt && !strcmp(secName, "core")) {
 		opt = (char *) gpac_opt_default(keyName);
 	}
-	if (!opt) return 0;
-	char *sep = strchr(opt, 'k');
-	if (sep) times=1000;
-	else {
-		sep = strchr(opt, 'K');
-		if (sep) times=1000;
-		else {
-			sep = strchr(opt, 'm');
-			if (sep) times=1000000;
-			else {
-				sep = strchr(opt, 'M');
-				if (sep) times=1000000;
-			}
-		}
+	if (!opt || !opt[0]) return 0;
+	val = (u32) strlen(opt);
+	char c = opt[val-1];
+	switch (c) {
+	case 'k':
+	case 'K':
+		times=1000;
+		break;
+	case 'm':
+	case 'M':
+		times=1000000;
+		break;
 	}
-	sscanf(opt, "%d", &val);
 	val = atoi(opt);
 	return val*times;
 }

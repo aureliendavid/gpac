@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / VideoToolBox decoder filter
@@ -829,7 +829,8 @@ static GF_Err vtbdec_init_decoder(GF_Filter *filter, GF_VTBDecCtx *ctx)
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_WIDTH, &PROP_UINT(ctx->width) );
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_HEIGHT, &PROP_UINT(ctx->height) );
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_STRIDE, &PROP_UINT(ctx->stride) );
-	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_PAR, &PROP_FRAC(ctx->pixel_ar) );
+	if (!gf_filter_pid_get_property(pid, GF_PROP_PID_SAR))
+		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_SAR, &PROP_FRAC(ctx->pixel_ar) );
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_PIXFMT, &PROP_UINT(ctx->pix_fmt) );
 	ctx->profile_supported = GF_FALSE;
 	ctx->can_reconfig = !gf_opts_get_bool("core", "no-reassign");
@@ -854,7 +855,6 @@ static void vtbdec_register_param_sets(GF_VTBDecCtx *ctx, char *data, u32 size, 
 	else gf_bs_reassign_buffer(ctx->ps_bs, data, size);
 
 	if (hevc_nal_type) {
-#if !defined(GPAC_DISABLE_HEVC)
 		if (hevc_nal_type==GF_HEVC_NALU_SEQ_PARAM) {
 			dest = ctx->SPSs;
 			ps_id = gf_hevc_read_sps_bs(ctx->ps_bs, &ctx->hevc);
@@ -870,8 +870,6 @@ static void vtbdec_register_param_sets(GF_VTBDecCtx *ctx, char *data, u32 size, 
 			ps_id = gf_hevc_read_vps_bs(ctx->ps_bs, &ctx->hevc);
 			if (ps_id<0) return;
 		}
-#endif //GPAC_DISABLE_HEVC
-
 	} else {
 		dest = is_sps ? ctx->SPSs : ctx->PPSs;
 
@@ -1032,7 +1030,7 @@ static GF_Err vtbdec_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is
 		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_WIDTH, &PROP_UINT(ctx->width) );
 		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_HEIGHT, &PROP_UINT(ctx->height) );
 		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_STRIDE, &PROP_UINT(ctx->stride) );
-		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_PAR, &PROP_FRAC(ctx->pixel_ar) );
+		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_SAR, &PROP_FRAC(ctx->pixel_ar) );
 		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_PIXFMT, &PROP_UINT(ctx->pix_fmt) );
 
 		if (ctx->full_range)
@@ -1340,9 +1338,6 @@ static GF_Err vtbdec_parse_nal_units(GF_Filter *filter, GF_VTBDecCtx *ctx, char 
 				}
 			}
 		} else if (ctx->is_hevc) {
-#if defined(GPAC_DISABLE_HEVC)
-			return GF_NOT_SUPPORTED;
-#else
 			u8 temporal_id, ayer_id;
 
 			if (!ctx->nal_bs) ctx->nal_bs = gf_bs_new(ptr, nal_size, GF_BITSTREAM_READ);
@@ -1377,8 +1372,6 @@ static GF_Err vtbdec_parse_nal_units(GF_Filter *filter, GF_VTBDecCtx *ctx, char 
 					}
 				}
 			}
-#endif
-
 		}
 		
 		//if sps and pps are ready, init decoder

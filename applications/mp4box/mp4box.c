@@ -196,11 +196,13 @@ char outfile[GF_MAX_PATH];
 
 #ifndef GPAC_DISABLE_SCENE_ENCODER
 GF_SMEncodeOptions smenc_opts;
+#endif
+#ifndef GPAC_DISABLE_SWF_IMPORT
 u32 swf_flags;
 #endif
 GF_Fraction import_fps;
 
-#ifdef GPAC_CONFIG_ANDROID
+#if defined(GPAC_CONFIG_ANDROID) || defined(GPAC_CONFIG_EMSCRIPTEN)
 u32 mp4b_help_flags;
 FILE *mp4b_helpout;
 
@@ -222,6 +224,7 @@ Bool hls_clock, do_mpd_rip, merge_vtt_cues, get_nb_tracks, no_inplace, merge_las
 Bool insert_utc, chunk_mode, HintCopy, hint_no_offset, do_bin_xml, frag_real_time, force_co64, live_scene, use_mfra, dump_iod, samplegroups_in_traf;
 Bool mvex_after_traks, daisy_chain_sidx, use_ssix, single_segment, single_file, segment_timeline, has_add_image;
 Bool strict_cues, use_url_template, seg_at_rap, frag_at_rap, memory_frags, keep_utc, has_next_arg, no_cache, no_loop;
+Bool conv_type_from_ext;
 
 u32 stat_level, hint_flags, import_flags, nb_add, nb_cat, crypt, agg_samples, nb_sdp_ex, max_ptime, split_size, nb_meta_act;
 u32 nb_track_act, rtp_rate, major_brand, nb_alt_brand_add, nb_alt_brand_rem, old_interleave, minor_version, conv_type, nb_tsel_acts;
@@ -283,6 +286,7 @@ static void init_global_vars()
 	use_mfra = dump_iod = samplegroups_in_traf = mvex_after_traks = daisy_chain_sidx = use_ssix = single_segment = single_file = GF_FALSE;
 	segment_timeline = has_add_image = strict_cues = use_url_template = seg_at_rap = frag_at_rap = memory_frags = keep_utc = GF_FALSE;
 	has_next_arg = no_cache = no_loop = GF_FALSE;
+	conv_type_from_ext = GF_FALSE;
 
 	/*align cat is the new default behavior for -cat*/
 	align_cat=GF_TRUE;
@@ -322,6 +326,8 @@ static void init_global_vars()
 
 #ifndef GPAC_DISABLE_SCENE_ENCODER
 	memset(&smenc_opts, 0, sizeof(GF_SMEncodeOptions));
+#endif
+#ifndef GPAC_DISABLE_SWF_IMPORT
 	swf_flags = GF_SM_SWF_SPLIT_TIMELINE;
 #endif
 	import_fps.num = 0;
@@ -571,7 +577,7 @@ MP4BoxArg m4b_gen_args[] =
 	MP4BOX_ARG_S("patch", "[tkID=]FILE", "apply box patch described in FILE, for given trackID if set", GF_ARG_HINT_ADVANCED, parse_boxpatch, 0, ARG_IS_FUN),
 	MP4BOX_ARG("bo", "freeze the order of boxes in input file", GF_ARG_BOOL, GF_ARG_HINT_ADVANCED, &freeze_box_order, 0, 0),
 	MP4BOX_ARG("init-seg", "use the given file as an init segment for dumping or for encryption", GF_ARG_STRING, GF_ARG_HINT_ADVANCED, &use_init_seg, 0, 0),
-	MP4BOX_ARG("zmov", "compress movie box according to ISOBMFF box compression", GF_ARG_BOOL, GF_ARG_HINT_ADVANCED, parse_compress, 0, ARG_IS_FUN),
+	MP4BOX_ARG("zmov", "compress movie box according to ISOBMFF box compression or QT if mov extension", GF_ARG_BOOL, GF_ARG_HINT_ADVANCED, parse_compress, 0, ARG_IS_FUN),
 	MP4BOX_ARG("xmov", "same as zmov and wraps ftyp in otyp", GF_ARG_BOOL, GF_ARG_HINT_ADVANCED, parse_compress, 1, ARG_IS_FUN),
  	MP4BOX_ARG_S("edits", "tkID=EDITS", "set edit list. The following syntax is used (no separators between entries):\n"
 			" - `r`: removes all edits\n"
@@ -810,10 +816,10 @@ void PrintDASHUsage()
 		"- :xlink=VALUE: set the xlink value for the period containing this element. Only the xlink declared on the first rep of a period will be used\n"
 		"- :asID=VALUE: set the AdaptationSet ID to VALUE (unsigned int)\n"
 		"- :role=VALUE: set the role of this representation (cf DASH spec). Media with different roles belong to different adaptation sets.\n"
-		"- :desc_p=VALUE: add a descriptor at the Period level. Value must be a properly formatted XML element.\n"
-		"- :desc_as=VALUE: add a descriptor at the AdaptationSet level. Value must be a properly formatted XML element. Two input files with different values will be in different AdaptationSet elements.\n"
-		"- :desc_as_c=VALUE: add a descriptor at the AdaptationSet level. Value must be a properly formatted XML element. Value is ignored while creating AdaptationSet elements.\n"
-		"- :desc_rep=VALUE: add a descriptor at the Representation level. Value must be a properly formatted XML element. Value is ignored while creating AdaptationSet elements.\n"
+		"- :desc_p=VALUE: add a descriptor at the Period level.\n"
+		"- :desc_as=VALUE: add a descriptor at the AdaptationSet level. Two input files with different values will be in different AdaptationSet elements.\n"
+		"- :desc_as_c=VALUE: add a descriptor at the AdaptationSet level. Value is ignored while creating AdaptationSet elements.\n"
+		"- :desc_rep=VALUE: add a descriptor at the Representation level. Value is ignored while creating AdaptationSet elements.\n"
 		"- :sscale: force movie timescale to match media timescale of the first track in the segment.\n"
 		"- :trackID=N: only use the track ID N from the source file\n"
 		"- @f1[:args][@fN:args][@@fK:args]: set a filter chain to insert between the source and the dasher. Each filter in the chain is formatted as a regular filter, see [filter doc `gpac -h doc`](filters_general). If several filters are set:\n"
@@ -826,6 +832,7 @@ void PrintDASHUsage()
 		"\n"
 		"Note: `@f` must be placed after all other options.\n"
 		"\n"
+		"Note: Descriptors value must be a properly formatted XML element(s), value is not checked. Syntax can use `file@FILENAME` to load content from file.\n"
 		"# Options\n"
 		);
 
@@ -1002,6 +1009,8 @@ static MP4BoxArg m4b_imp_fileopt_args [] = {
 		"  - a value of -1 will ignore source track ID\n"
 		"  - other value will try to set track ID to this value if no other track with same ID is present"
 		"", NULL, NULL, GF_ARG_INT, 0),
+	GF_DEF_ARG("tkgp", NULL, "`S` assign track group to track. Value is formatted as `TYPE,N` with TYPE the track group type (4CC) and N the track group ID. A negative ID removes from track group ID -N", NULL, NULL, GF_ARG_STRING, 0),
+	GF_DEF_ARG("tkidx", NULL, "`S` set track position in tracklist, 1 being first track in file", NULL, NULL, GF_ARG_STRING, 0),
 	GF_DEF_ARG("stats", "fstat", "`C` print filter session stats after import", NULL, NULL, GF_ARG_BOOL, 0),
 	GF_DEF_ARG("graph", "fgraph", "`C` print filter session graph after import", NULL, NULL, GF_ARG_BOOL, 0),
 	{"sopt:[OPTS]", NULL, "set `OPTS` as additional arguments to source filter. `OPTS` can be any usual filter argument, see [filter doc `gpac -h doc`](Filters)"},
@@ -1415,7 +1424,7 @@ void PrintMetaUsage()
 
 MP4BoxArg m4b_swf_args[] =
 {
-#ifndef GPAC_DISABLE_SCENE_ENCODER
+#ifndef GPAC_DISABLE_SWF_IMPORT
  	MP4BOX_ARG("global", "all SWF defines are placed in first scene replace rather than when needed", GF_ARG_BOOL, 0, &swf_flags, GF_SM_SWF_STATIC_DICT, ARG_BIT_MASK),
  	MP4BOX_ARG("no-ctrl", "use a single stream for movie control and dictionary (this will disable ActionScript)", GF_ARG_BOOL, 0, &swf_flags, GF_SM_SWF_SPLIT_TIMELINE, ARG_BIT_MASK_REM),
  	MP4BOX_ARG("no-text", "remove all SWF text", GF_ARG_BOOL, 0, &swf_flags, GF_SM_SWF_NO_TEXT, ARG_BIT_MASK),
@@ -1896,9 +1905,9 @@ u32 parse_sdp_ext(char *arg_val, u32 param)
 }
 
 
-#ifndef GPAC_DISABLE_ISOM_WRITE
 static u32 parse_meta_args(char *opts, MetaActionType act_type)
 {
+#ifndef GPAC_DISABLE_ISOM_WRITE
 	MetaAction *meta;
 
 	metas = gf_realloc(metas, sizeof(MetaAction) * (nb_meta_act + 1));
@@ -2196,14 +2205,14 @@ static u32 parse_meta_args(char *opts, MetaActionType act_type)
 		opts += strlen(szSlot);
 		next[0] = ':';
 	}
+#endif //GPAC_DISABLE_ISOM_WRITE
 	return 0;
 }
-#endif //GPAC_DISABLE_ISOM_WRITE
 
 
-#ifndef GPAC_DISABLE_ISOM_WRITE
 static Bool parse_tsel_args(char *opts, TSELActionType act)
 {
+#ifndef GPAC_DISABLE_ISOM_WRITE
 	TrackIdentifier refTrackID = {0, 0};
 	Bool has_switch_id;
 	u32 switch_id = 0;
@@ -2276,9 +2285,9 @@ static Bool parse_tsel_args(char *opts, TSELActionType act)
 		}
 		opts += strlen(szSlot);
 	}
+#endif // GPAC_DISABLE_ISOM_WRITE
 	return 0;
 }
-#endif // GPAC_DISABLE_ISOM_WRITE
 
 
 GF_DashSegmenterInput *set_dash_input(GF_DashSegmenterInput *dash_inputs, char *name, u32 *nb_dash_inputs)
@@ -3049,6 +3058,7 @@ u32 parse_compress(char *arg_val, u32 opt)
 {
 	compress_moov = opt ? 2 : 1;
 	open_edit = GF_TRUE;
+	do_save = GF_TRUE;
 	return 0;
 }
 
@@ -3274,7 +3284,7 @@ u32 parse_gendoc(char *name, u32 opt)
 		".br\nbuild: %s\n"
 		".br\nCopyright: %s\n.br\n"
 		".SH SEE ALSO\n"
-		".LP\ngpac(1)\n", gf_gpac_version(), gf_gpac_copyright());
+		".LP\ngpac(1)\n", GPAC_VERSION, gf_gpac_copyright());
 
 		gf_fclose(helpout);
 	}
@@ -4231,6 +4241,7 @@ static u32 do_raw_cat()
 
 static u32 do_write_udp()
 {
+#ifndef GPAC_DISABLE_NETWORK
 	GF_Err e;
 	u32 res = 0;
 	GF_Socket *sock = gf_sk_new(GF_SOCK_TYPE_UDP);
@@ -4254,6 +4265,9 @@ static u32 do_write_udp()
 	}
 	gf_sk_del(sock);
 	return res;
+#else
+	return 0;
+#endif // GPAC_DISABLE_NETWORK
 }
 
 #ifndef GPAC_DISABLE_MPD
@@ -4264,7 +4278,11 @@ static u32 convert_mpd()
 	GF_MPD *mpd;
 	char *mpd_base_url = NULL;
 	if (!strnicmp(inName, "http://", 7) || !strnicmp(inName, "https://", 8)) {
+#ifndef GPAC_DISABLE_NETWORK
 		e = gf_dm_wget(inName, "tmp_main.m3u8", 0, 0, &mpd_base_url);
+#else
+		e = GF_NOT_SUPPORTED;
+#endif
 		if (e != GF_OK) {
 			M4_LOG(GF_LOG_ERROR, ("Cannot retrieve M3U8 (%s): %s\n", inName, gf_error_to_string(e)));
 			if (mpd_base_url) gf_free(mpd_base_url);
@@ -4443,9 +4461,11 @@ static u32 do_add_cat(int argc, char **argv)
 		}
 	}
 
+#ifndef GPAC_DISABLE_ISOM_WRITE
 	if (file && keep_utc && open_edit) {
 		gf_isom_keep_utc_times(file, 1);
 	}
+#endif
 
 	if (do_flat && interleaving_time) {
 		char szSubArg[100];
@@ -4469,7 +4489,6 @@ static u32 do_add_cat(int argc, char **argv)
 	}
 
 	for (ipass=0; ipass<nb_pass; ipass++) {
-		u32 tk_idx = 0;
 		for (i=0; i<(u32) argc; i++) {
 			char *margs=NULL;
 			char *msid = NULL;
@@ -4480,7 +4499,7 @@ static u32 do_add_cat(int argc, char **argv)
 					char *loc_src = src;
 					char *sep = NULL;
 					while (1) {
-						char *opt_sep;
+						char *opt_sep, *frag_sep;
 						sep = strchr(loc_src, '+');
 						if (!sep) break;
 
@@ -4488,26 +4507,33 @@ static u32 do_add_cat(int argc, char **argv)
 						if (strstr(src, "://"))
 							break;
 
-						opt_sep = gf_url_colon_suffix(src, '=');
-						if (opt_sep)
-							opt_sep[0] = 0;
-						if (gf_file_exists(src)) {
-							if (opt_sep)
-								opt_sep[0] = ':';
+						opt_sep = gf_url_colon_suffix(sep+1, '=');
+						frag_sep = gf_url_colon_suffix(sep+1, '#');
+						if (frag_sep && opt_sep && (frag_sep<opt_sep)) {
+							opt_sep=NULL;
+						}
+						if (opt_sep) opt_sep[0] = 0;
+						if (frag_sep) frag_sep[0] = 0;
+						if (gf_file_exists(sep+1)) {
+							if (opt_sep) opt_sep[0] = ':';
+							if (frag_sep) frag_sep[0] = '#';
 							break;
 						}
-						if (opt_sep)
-							opt_sep[0] = ':';
+						if (opt_sep) opt_sep[0] = ':';
+						if (frag_sep) frag_sep[0] = '#';
 
 						sep[0] = '+';
 						loc_src = sep+1;
 					}
+					u32 tk_idx = gf_isom_get_track_count(file);
+					//if existing tracks in file, set default index to next track
+					if (tk_idx) tk_idx++;
+
 					if (fs && (ipass==0)) {
 						e = import_file(file, src, import_flags, import_fps, agg_samples, fs, &margs, &msid, tk_idx);
 					} else {
 						e = import_file(file, src, import_flags, import_fps, agg_samples, fs, NULL, NULL, tk_idx);
 					}
-					tk_idx++;
 
 					if (margs) {
 						gf_dynstrcat(&mux_args, margs, ":");
@@ -4878,6 +4904,7 @@ static GF_Err do_dash()
 
 static GF_Err do_export_tracks_non_isobmf()
 {
+#ifndef GPAC_DISABLE_MEDIA_EXPORT
 	u32 i;
 
 	GF_MediaExporter mdump;
@@ -4911,6 +4938,9 @@ static GF_Err do_export_tracks_non_isobmf()
 		if (e) return e;
 	}
 	return GF_OK;
+#else
+	return GF_NOT_SUPPORTED;
+#endif
 }
 
 
@@ -4981,6 +5011,7 @@ static u32 get_track_id(GF_ISOFile *file, TrackIdentifier *tkid)
 
 static GF_Err do_export_tracks()
 {
+#ifndef GPAC_DISABLE_MEDIA_EXPORT
 	GF_Err e;
 	u32 i;
 	char szFile[GF_MAX_PATH+24];
@@ -5026,6 +5057,9 @@ static GF_Err do_export_tracks()
 		}
 	}
 	return GF_OK;
+#else
+	return GF_NOT_SUPPORTED;
+#endif
 }
 
 static GF_Err do_meta_act()
@@ -5292,6 +5326,7 @@ static GF_Err do_meta_act()
 
 static GF_Err do_tsel_act()
 {
+#ifndef GPAC_DISABLE_ISOM_WRITE
 	u32 i;
 	GF_Err e;
 	for (i=0; i<nb_tsel_acts; i++) {
@@ -5338,10 +5373,14 @@ static GF_Err do_tsel_act()
 		}
 	}
 	return GF_OK;
+#else
+	return GF_NOT_SUPPORTED;
+#endif
 }
 
 static void do_ipod_conv()
 {
+#ifndef GPAC_DISABLE_ISOM_WRITE
 	u32 i, ipod_major_brand = 0;
 	M4_LOG(GF_LOG_INFO, ("Setting up iTunes/iPod file\n"));
 
@@ -5388,10 +5427,12 @@ static void do_ipod_conv()
 	gf_isom_set_brand_info(file, ipod_major_brand, 1);
 	gf_isom_modify_alternate_brand(file, GF_ISOM_BRAND_MP42, GF_TRUE);
 	do_save = GF_TRUE;
+#endif
 }
 
 static GF_Err do_track_act()
 {
+#ifndef GPAC_DISABLE_ISOM_WRITE
 	u32 j;
 	for (j=0; j<nb_track_act; j++) {
 		u32 i;
@@ -5569,7 +5610,11 @@ static GF_Err do_track_act()
 			do_save = GF_TRUE;
 			break;
 		case TRACK_ACTION_SET_EDITS:
+#ifndef GPAC_DISABLE_MEDIA_IMPORT
 			e = apply_edits(file, track, tka->string);
+#else
+			e = GF_NOT_SUPPORTED;
+#endif
 			do_save = GF_TRUE;
 			break;
 		case TRACK_ACTION_SET_TIME:
@@ -5599,20 +5644,28 @@ static GF_Err do_track_act()
 		if (e) return e;
 	}
 	return GF_OK;
+#else
+	return GF_NOT_SUPPORTED;
+#endif
 }
 
 
 
 static Bool do_qt_keys(char *name, char *val)
 {
+#ifndef GPAC_DISABLE_ISOM_WRITE
 	GF_Err e = gf_media_isom_apply_qt_key(file, name, val);
 	if (e) return GF_FALSE;
 	do_save = GF_TRUE;
 	return GF_TRUE;
+#else
+	return GF_FALSE;
+#endif
 }
 
 static GF_Err do_itunes_tag()
 {
+#ifndef GPAC_DISABLE_ISOM_WRITE
 	GF_Err e;
 	char *itunes_data = NULL;
 	char *tags = itunes_tags;
@@ -5743,6 +5796,9 @@ tag_done:
 	}
 	if (itunes_data) gf_free(itunes_data);
 	return GF_OK;
+#else
+	return GF_NOT_SUPPORTED;
+#endif
 }
 
 #if !defined(GPAC_DISABLE_ISOM_HINTING) && !defined(GPAC_DISABLE_SENG)
@@ -5783,6 +5839,7 @@ static void set_sdp_ext()
 
 static GF_Err do_remux_file()
 {
+#ifndef GPAC_DISABLE_MEDIA_EXPORT
 	GF_MediaExporter mdump;
 	memset(&mdump, 0, sizeof(GF_MediaExporter));
 	mdump.in_name = inName;
@@ -5790,6 +5847,9 @@ static GF_Err do_remux_file()
 	mdump.flags = GF_EXPORT_REMUX;
 	mdump.print_stats_graph = fs_dump_flags;
 	return gf_media_export(&mdump);
+#else
+	return GF_NOT_SUPPORTED;
+#endif
 }
 
 static u32 mp4box_cleanup(u32 ret_code) {
@@ -5910,7 +5970,6 @@ static u32 mp4box_cleanup(u32 ret_code) {
 		gf_memory_print();
 	}
 #endif
-
 	return ret_code;
 }
 
@@ -5975,7 +6034,7 @@ int mp4box_main(int argc, char **argv)
 	if (i) {
 		return mp4box_cleanup(i - 1);
 	}
-#if !defined(GPAC_DISABLE_STREAMING) && !defined(GPAC_DISABLE_SENG)
+#if !defined(GPAC_DISABLE_STREAMING) && !defined(GPAC_DISABLE_SENG) && !defined(GPAC_CONFIG_EMSCRIPTEN)
 	if (live_scene) {
 		int ret = live_session(argc, argv);
 		return mp4box_cleanup(ret);
@@ -6074,7 +6133,11 @@ int mp4box_main(int argc, char **argv)
 	}
 
 	if (do_wget != NULL) {
+#ifndef GPAC_DISABLE_NETWORK
 		e = gf_dm_wget(do_wget, inName, 0, 0, NULL);
+#else
+		e = GF_NOT_SUPPORTED;
+#endif
 		if (e != GF_OK) {
 			M4_LOG(GF_LOG_ERROR, ("Cannot retrieve %s: %s\n", do_wget, gf_error_to_string(e) ));
 			return mp4box_cleanup(1);
@@ -6158,10 +6221,10 @@ int mp4box_main(int argc, char **argv)
 			fileName[0] = ':';
 		} else {
 			file = package_file(pack_file, NULL, pack_wgt);
-			if (!file) {
-				M4_LOG(GF_LOG_ERROR, ("Failed to package file\n"));
-				return mp4box_cleanup(1);
-			}
+		}
+		if (!file) {
+			M4_LOG(GF_LOG_ERROR, ("Failed to package file\n"));
+			return mp4box_cleanup(1);
 		}
 		if (!outName) outName = inName;
 		do_save = GF_TRUE;
@@ -6207,7 +6270,11 @@ int mp4box_main(int argc, char **argv)
 			if (!crypt && use_init_seg) {
 				file = gf_isom_open(use_init_seg, GF_ISOM_OPEN_READ_DUMP, NULL);
 				if (file) {
+#ifndef GPAC_DISABLE_ISOM_FRAGMENTS
 					e = gf_isom_open_segment(file, inName, 0, 0, 0);
+#else
+					e = GF_NOT_SUPPORTED;
+#endif
 					if (e==GF_ISOM_INCOMPLETE_FILE) {
 						M4_LOG(GF_LOG_WARNING, ("Segment %s: %s\n", inName, gf_error_to_string(e) ));
 					} else if (e) {
@@ -6237,8 +6304,10 @@ int mp4box_main(int argc, char **argv)
 					return mp4box_cleanup(1);
 				}
 			}
+#ifndef GPAC_DISABLE_ISOM_WRITE
 			if (freeze_box_order)
 				gf_isom_freeze_order(file);
+#endif
 			break;
 		/*allowed for bt<->xmt*/
 		case 2:
@@ -6329,14 +6398,16 @@ int mp4box_main(int argc, char **argv)
 		}
 	}
 
+#ifndef GPAC_DISABLE_ISOM_WRITE
 	if (high_dynamc_range_filename) {
-		e = parse_high_dynamc_range_xml_desc(file, 0, high_dynamc_range_filename);
+		e = apply_high_dynamc_range_xml_desc(file, 0, high_dynamc_range_filename);
 		if (e) goto err_exit;
 	}
 
 	if (file && keep_utc) {
 		gf_isom_keep_utc_times(file, 1);
 	}
+#endif
 
 	if ( gf_strlcpy(outfile, outName ? outName : inName, sizeof(outfile)) >= sizeof(outfile) ) {
 		GF_LOG(GF_LOG_ERROR, GF_LOG_CORE, ("Filename too long (limit is %d)\n", GF_MAX_PATH));
@@ -6355,6 +6426,12 @@ int mp4box_main(int argc, char **argv)
 		else if (!stricmp(szExt, ".mov") || !stricmp(szExt, ".qt"))
 			conv_type = GF_ISOM_CONV_TYPE_MOV;
 
+		if (conv_type)
+			conv_type_from_ext = GF_TRUE;
+		//if not same ext, force conversion
+		char *szExtOrig = gf_file_ext_start(inName);
+		if (szExtOrig && strcmp(szExtOrig, szExt))
+			conv_type_from_ext = GF_FALSE;
 		//remove extension from outfile
 		*szExt = 0;
 	}
@@ -6467,6 +6544,7 @@ int mp4box_main(int argc, char **argv)
 
 #if !defined(GPAC_DISABLE_ISOM_WRITE) && !defined(GPAC_DISABLE_MEDIA_IMPORT)
 	if (split_duration || split_size || split_range_str) {
+		if (force_new && !outName) outName = inName;
 		e = split_isomedia_file(file, split_duration, split_size, inName, interleaving_time, split_start, adjust_split_end, outName, seg_at_rap, split_range_str, fs_dump_flags);
 		if (e) goto err_exit;
 
@@ -6569,6 +6647,12 @@ int mp4box_main(int argc, char **argv)
 				strcat(outfile, ".m21");
 			}
 		}
+
+		if (conv_type_from_ext) {
+			if (!no_inplace && gf_isom_is_inplace_rewrite(file))
+				conv_type = 0;
+		}
+
 #ifndef GPAC_DISABLE_MEDIA_IMPORT
 		if ((conv_type == GF_ISOM_CONV_TYPE_ISMA) || (conv_type == GF_ISOM_CONV_TYPE_ISMA_EX)) {
 			M4_LOG(GF_LOG_INFO, ("Converting to ISMA Audio-Video MP4 file\n"));
@@ -6841,7 +6925,7 @@ exit:
 	return 0;
 }
 
-#ifndef GPAC_CONFIG_ANDROID
+#if !defined(GPAC_CONFIG_ANDROID) && !defined(GPAC_CONFIG_EMSCRIPTEN)
 
 GF_MAIN_FUNC(mp4box_main)
 

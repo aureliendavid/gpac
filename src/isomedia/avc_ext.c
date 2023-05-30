@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / ISO Media File Format sub-project
@@ -182,7 +182,7 @@ static GF_Err process_extractor(GF_ISOFile *file, GF_MediaBox *mdia, u32 sampleN
 			if ((sample_offset<0) && (ref_sample_num > (u32) -sample_offset)) return GF_ISOM_INVALID_FILE;
 			ref_sample_num = (u32) ( (s32) ref_sample_num + sample_offset);
 
-			e = Media_GetSample(ref_trak->Media, ref_sample_num, &mdia->extracted_samp, &di, GF_FALSE, NULL);
+			e = Media_GetSample(ref_trak->Media, ref_sample_num, &mdia->extracted_samp, &di, GF_FALSE, NULL, GF_FALSE);
 			if (e) return e;
 			if (!mdia->extracted_samp->alloc_size)
 				mdia->extracted_samp->alloc_size = mdia->extracted_samp->dataLength;
@@ -268,26 +268,39 @@ static GF_Err process_extractor(GF_ISOFile *file, GF_MediaBox *mdia, u32 sampleN
 	return GF_OK;
 }
 
-#ifndef GPAC_DISABLE_HEVC
+static GF_ISOSAPType check_sap2(GF_MediaBox *mdia, u32 sampleNumber, GF_ISOSample *sample)
+{
+	GF_ISOSample next_s, *s;
+	memset(&next_s, 0, sizeof(GF_ISOSample));
+	s = &next_s;
+	if (Media_GetSample(mdia, sampleNumber+1, &s, NULL, GF_TRUE, NULL, GF_FALSE)==GF_OK) {
+		if (sample->DTS + sample->CTS_Offset > next_s.DTS + next_s.CTS_Offset) {
+			return SAP_TYPE_2;
+		}
+		//next not a LP, SAP1
+	}
+	//return sap1 if we fail to get next sample
+	return SAP_TYPE_1;
+}
+
 /* returns the SAP type as defined in the 14496-12 specification */
-static GF_ISOSAPType sap_type_from_nal_type(u8 nal_type) {
+static GF_ISOSAPType hevc_sap_type_from_nal_type(GF_MediaBox *mdia, u32 sampleNumber, GF_ISOSample *sample, u8 nal_type) {
 	switch (nal_type) {
 	case GF_HEVC_NALU_SLICE_CRA:
+	case GF_HEVC_NALU_SLICE_BLA_W_LP:
 		return SAP_TYPE_3;
 	case GF_HEVC_NALU_SLICE_IDR_N_LP:
 	case GF_HEVC_NALU_SLICE_BLA_N_LP:
 		return SAP_TYPE_1;
 	case GF_HEVC_NALU_SLICE_IDR_W_DLP:
 	case GF_HEVC_NALU_SLICE_BLA_W_DLP:
-	case GF_HEVC_NALU_SLICE_BLA_W_LP:
-		return SAP_TYPE_2;
+		return check_sap2(mdia, sampleNumber, sample);
 	default:
 		return RAP_NO;
 	}
 }
-#endif
 
-GF_ISOSAPType gf_isom_nalu_get_sample_sap(GF_MediaBox *mdia, GF_ISOSample *sample, GF_MPEGVisualSampleEntryBox *entry)
+GF_ISOSAPType gf_isom_nalu_get_sample_sap(GF_MediaBox *mdia, u32 sampleNumber, GF_ISOSample *sample, GF_MPEGVisualSampleEntryBox *entry)
 {
 	Bool is_hevc = GF_FALSE;
 	Bool is_vvc = GF_FALSE;
@@ -321,20 +334,19 @@ GF_ISOSAPType gf_isom_nalu_get_sample_sap(GF_MediaBox *mdia, GF_ISOSample *sampl
 		u32 size = gf_bs_read_int(mdia->nalu_parser, 8*nalu_size_field);
 
 		if (is_hevc) {
-#ifndef GPAC_DISABLE_HEVC
 			u16 nal_hdr = gf_bs_read_u16(mdia->nalu_parser);
 			nal_type = (nal_hdr&0x7E00) >> 9;
 
 			switch (nal_type) {
 			case GF_HEVC_NALU_SLICE_CRA:
+			case GF_HEVC_NALU_SLICE_BLA_W_LP:
 				return SAP_TYPE_3;
 			case GF_HEVC_NALU_SLICE_IDR_N_LP:
 			case GF_HEVC_NALU_SLICE_BLA_N_LP:
 				return SAP_TYPE_1;
 			case GF_HEVC_NALU_SLICE_IDR_W_DLP:
 			case GF_HEVC_NALU_SLICE_BLA_W_DLP:
-			case GF_HEVC_NALU_SLICE_BLA_W_LP:
-				return SAP_TYPE_2;
+				return check_sap2(mdia, sampleNumber, sample);
 			case GF_HEVC_NALU_ACCESS_UNIT:
 			case GF_HEVC_NALU_FILLER_DATA:
 			case GF_HEVC_NALU_SEI_PREFIX:
@@ -346,7 +358,6 @@ GF_ISOSAPType gf_isom_nalu_get_sample_sap(GF_MediaBox *mdia, GF_ISOSample *sampl
 				return RAP_NO;
 			}
 			gf_bs_skip_bytes(mdia->nalu_parser, size - 2);
-#endif
 		} else if (is_vvc) {
 			u16 nal_hdr = gf_bs_read_u16(mdia->nalu_parser);
 			nal_type = (nal_hdr >> 3) & 0x1F;
@@ -357,7 +368,7 @@ GF_ISOSAPType gf_isom_nalu_get_sample_sap(GF_MediaBox *mdia, GF_ISOSample *sampl
 			case GF_VVC_NALU_SLICE_IDR_N_LP:
 				return SAP_TYPE_1;
 			case GF_VVC_NALU_SLICE_IDR_W_RADL:
-				return SAP_TYPE_2;
+				return check_sap2(mdia, sampleNumber, sample);
 			case GF_VVC_NALU_SLICE_GDR:
 				return SAP_TYPE_3;
 			case GF_VVC_NALU_SLICE_TRAIL:
@@ -546,7 +557,7 @@ GF_Err gf_isom_nalu_sample_rewrite(GF_MediaBox *mdia, GF_ISOSample *sample, u32 
 
 	if (sample->IsRAP < SAP_TYPE_2) {
 		if (mdia->information->sampleTable->no_sync_found || (!sample->IsRAP && check_cra_bla) ) {
-			sample->IsRAP = gf_isom_nalu_get_sample_sap(mdia, sample, entry);
+			sample->IsRAP = gf_isom_nalu_get_sample_sap(mdia, sampleNumber, sample, entry);
 		}
 	}
 	if (!sample->IsRAP)
@@ -661,7 +672,6 @@ GF_Err gf_isom_nalu_sample_rewrite(GF_MediaBox *mdia, GF_ISOSample *sample, u32 
 		if (insert_nalu_delim) {
 			gf_bs_write_int(mdia->nalu_out_bs, 1, 32);
 			if (is_hevc) {
-#ifndef GPAC_DISABLE_HEVC
 				gf_bs_write_int(mdia->nalu_out_bs, 0, 1);
 				gf_bs_write_int(mdia->nalu_out_bs, GF_HEVC_NALU_ACCESS_UNIT, 6);
 				gf_bs_write_int(mdia->nalu_out_bs, insert_vdrd_code ? 1 : 0, 6); //we should pick the layerID of the following nalus ...
@@ -670,7 +680,6 @@ GF_Err gf_isom_nalu_sample_rewrite(GF_MediaBox *mdia, GF_ISOSample *sample, u32 
 				/*pic-type - by default we signal all slice types possible*/
 				gf_bs_write_int(mdia->nalu_out_bs, 2, 3);
 				gf_bs_write_int(mdia->nalu_out_bs, 0, 5);
-#endif
 			} else {
 				gf_bs_write_int(mdia->nalu_out_bs, (sample->data[0] & 0x60) | GF_AVC_NALU_ACCESS_UNIT, 8);
 				gf_bs_write_int(mdia->nalu_out_bs, 0xF0 , 8); /*7 "all supported NALUs" (=111) + rbsp trailing (10000)*/;
@@ -705,12 +714,10 @@ GF_Err gf_isom_nalu_sample_rewrite(GF_MediaBox *mdia, GF_ISOSample *sample, u32 
 					//temp fix - if we detect xPS in the beginning of the sample do NOT copy the ps bitstream
 					//this is not correct since we are not sure whether they are the same xPS or not, but it crashes openHEVC ...
 					switch (nal_type) {
-#ifndef GPAC_DISABLE_HEVC
 					case GF_HEVC_NALU_VID_PARAM:
 					case GF_HEVC_NALU_SEQ_PARAM:
 					case GF_HEVC_NALU_PIC_PARAM:
 						break;
-#endif
 					default:
 						gf_bs_transfer(mdia->nalu_out_bs, mdia->nalu_ps_bs, GF_TRUE);
 						break;
@@ -763,16 +770,12 @@ GF_Err gf_isom_nalu_sample_rewrite(GF_MediaBox *mdia, GF_ISOSample *sample, u32 
 		}
 
 		if (is_hevc) {
-#ifndef GPAC_DISABLE_HEVC
 			GF_BitStream *write_to_bs = mdia->nalu_out_bs;
-#endif
-
 			if (!ps_transfered) {
 				gf_bs_transfer(mdia->nalu_out_bs, mdia->nalu_ps_bs, GF_TRUE);
 				ps_transfered = GF_TRUE;
 			}
 
-#ifndef GPAC_DISABLE_HEVC
 			switch (nal_type) {
 			/*we already wrote AU delim, and we trash aggregators*/
 			case GF_HEVC_NALU_ACCESS_UNIT:
@@ -811,7 +814,7 @@ GF_Err gf_isom_nalu_sample_rewrite(GF_MediaBox *mdia, GF_ISOSample *sample, u32 
 			case GF_HEVC_NALU_SLICE_CRA:
 				//insert xPS before CRA/BLA
 				if (check_cra_bla && !sample->IsRAP) {
-					sample->IsRAP = sap_type_from_nal_type(nal_type);
+					sample->IsRAP = hevc_sap_type_from_nal_type(mdia, sampleNumber, sample, nal_type);
 					if (sei_suffix_bs) gf_bs_del(sei_suffix_bs);
 					mdia->in_nalu_rewrite = GF_FALSE;
 					return gf_isom_nalu_sample_rewrite(mdia, sample, sampleNumber, entry);
@@ -839,8 +842,6 @@ GF_Err gf_isom_nalu_sample_rewrite(GF_MediaBox *mdia, GF_ISOSample *sample, u32 
 				gf_bs_write_u16(write_to_bs, nal_hdr);
 				gf_bs_write_data(write_to_bs, mdia->tmp_nal_copy_buffer, nal_size-2);
 			}
-#endif
-
 			//done with HEVC
 			continue;
 		}
@@ -1314,42 +1315,6 @@ GF_Err AVC_HEVC_UpdateESD(GF_MPEGVisualSampleEntryBox *avc, GF_ESD *esd)
 	}
 	return GF_OK;
 }
-
-#if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_HEVC)
-void gf_hevc_parse_ps(GF_HEVCConfig* hevccfg, HEVCState* hevc, u32 nal_type)
-{
-	u32 i, j;
-	if (!hevccfg) return;
-
-	for (i = 0; i < gf_list_count(hevccfg->param_array); i++) {
-		GF_NALUFFParamArray* ar = gf_list_get(hevccfg->param_array, i);
-		if (ar->type != nal_type) continue;
-		for (j = 0; j < gf_list_count(ar->nalus); j++) {
-			u8 ntype, tid, lid;
-			GF_NALUFFParam* sl = gf_list_get(ar->nalus, j);
-			gf_hevc_parse_nalu(sl->data, sl->size, hevc, &ntype, &tid, &lid);
-		}
-	}
-}
-#endif
-
-#if !defined(GPAC_DISABLE_AV_PARSERS)
-void gf_vvc_parse_ps(GF_VVCConfig* vvccfg, VVCState* vvc, u32 nal_type)
-{
-	u32 i, j;
-	if (!vvccfg) return;
-
-	for (i = 0; i < gf_list_count(vvccfg->param_array); i++) {
-		GF_NALUFFParamArray* ar = gf_list_get(vvccfg->param_array, i);
-		if (ar->type != nal_type) continue;
-		for (j = 0; j < gf_list_count(ar->nalus); j++) {
-			u8 ntype, tid, lid;
-			GF_NALUFFParam* sl = gf_list_get(ar->nalus, j);
-			gf_vvc_parse_nalu(sl->data, sl->size, vvc, &ntype, &tid, &lid);
-		}
-	}
-}
-#endif
 
 
 static GF_Err gf_isom_check_mvc(GF_ISOFile *the_file, GF_TrackBox *trak, GF_MPEGVisualSampleEntryBox *entry)
@@ -2323,9 +2288,6 @@ GF_Err gf_isom_vvc_config_update(GF_ISOFile *the_file, u32 trackNumber, u32 Desc
 	return gf_isom_vvc_config_update_ex(the_file, trackNumber, DescriptionIndex, cfg, GF_ISOM_VVCC_UPDATE, GF_FALSE);
 }
 
-#endif /*GPAC_DISABLE_ISOM_WRITE*/
-
-GF_EXPORT
 GF_Box *gf_isom_clone_config_box(GF_Box *box)
 {
 	u8 *data=NULL;
@@ -2353,6 +2315,7 @@ GF_Box *gf_isom_clone_config_box(GF_Box *box)
 	}
 	return clone;
 }
+#endif /*GPAC_DISABLE_ISOM_WRITE*/
 
 GF_EXPORT
 GF_AVCConfig *gf_isom_avc_config_get(GF_ISOFile *the_file, u32 trackNumber, u32 DescriptionIndex)
@@ -2813,7 +2776,9 @@ GF_Err avcc_box_read(GF_Box *s, GF_BitStream *bs)
 
 	for (i=0; i<count; i++) {
 		ISOM_DECREASE_SIZE(ptr, 2)
-		GF_NALUFFParam *sl = (GF_NALUFFParam *) gf_malloc(sizeof(GF_NALUFFParam));
+		GF_NALUFFParam *sl;
+		GF_SAFEALLOC(sl, GF_NALUFFParam);
+		if (!sl) return GF_OUT_OF_MEM;
 		sl->size = gf_bs_read_u16(bs);
 		if (!sl->size || (gf_bs_available(bs) < sl->size) || (ptr->size < sl->size) ) {
 			gf_free(sl);
@@ -2829,7 +2794,9 @@ GF_Err avcc_box_read(GF_Box *s, GF_BitStream *bs)
 	count = gf_bs_read_u8(bs);
 	for (i=0; i<count; i++) {
 		ISOM_DECREASE_SIZE(ptr, 2)
-		GF_NALUFFParam *sl = (GF_NALUFFParam *)gf_malloc(sizeof(GF_NALUFFParam));
+		GF_NALUFFParam *sl;
+		GF_SAFEALLOC(sl, GF_NALUFFParam);
+		if (!sl) return GF_OUT_OF_MEM;
 		sl->size = gf_bs_read_u16(bs);
 		if (!sl->size || (gf_bs_available(bs) < sl->size) || (ptr->size<sl->size)) {
 			gf_free(sl);
@@ -2892,7 +2859,9 @@ GF_Err avcc_box_read(GF_Box *s, GF_BitStream *bs)
 		ptr->config->sequenceParameterSetExtensions = gf_list_new();
 		for (i=0; i<count; i++) {
 			ISOM_DECREASE_SIZE(ptr, 2)
-			GF_NALUFFParam *sl = (GF_NALUFFParam *)gf_malloc(sizeof(GF_NALUFFParam));
+			GF_NALUFFParam *sl;
+			GF_SAFEALLOC(sl, GF_NALUFFParam);
+			if (!sl) return GF_OUT_OF_MEM;
 			sl->size = gf_bs_read_u16(bs);
 			if ((gf_bs_available(bs) < sl->size) || (ptr->size<sl->size)) {
 				gf_free(sl);
@@ -3095,6 +3064,7 @@ GF_Err hvcc_box_size(GF_Box *s)
 	return GF_OK;
 }
 
+#endif
 
 
 void vvcc_box_del(GF_Box *s)
@@ -3267,6 +3237,7 @@ GF_Err av1c_box_read(GF_Box *s, GF_BitStream *bs)
 	return GF_OK;
 }
 
+#ifndef GPAC_DISABLE_ISOM_WRITE
 GF_Err av1c_box_write(GF_Box *s, GF_BitStream *bs) {
 	GF_Err e;
 	GF_AV1ConfigurationBox *ptr = (GF_AV1ConfigurationBox*)s;
@@ -3353,7 +3324,6 @@ GF_Err vpcc_box_write(GF_Box *s, GF_BitStream *bs)
 
 	return gf_odf_vp_cfg_write_bs(ptr->config, bs, ptr->version == 0);
 }
-#endif
 
 GF_Err vpcc_box_size(GF_Box *s)
 {
@@ -3377,6 +3347,8 @@ GF_Err vpcc_box_size(GF_Box *s)
 
 	return GF_OK;
 }
+
+#endif
 
 
 GF_Box *SmDm_box_new()

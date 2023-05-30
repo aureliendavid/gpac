@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / Scene Compositor sub-project
@@ -26,7 +26,7 @@
 
 #include "nodes_stacks.h"
 
-#ifndef GPAC_DISABLE_VRML
+#if !defined(GPAC_DISABLE_VRML) && !defined(GPAC_DISABLE_COMPOSITOR)
 
 
 static void audioclip_activate(AudioClipStack *st, M_AudioClip *ac)
@@ -541,9 +541,11 @@ static Bool audiobuffer_get_config(GF_AudioInterface *aifc, Bool for_reconf)
 			aifc->afmt = GF_AUDIO_FMT_S16;
 			break;
 		case GF_AUDIO_FMT_S24P:
+		case GF_AUDIO_FMT_S24_BE:
 			aifc->afmt = GF_AUDIO_FMT_S24;
 			break;
 		case GF_AUDIO_FMT_S32P:
+		case GF_AUDIO_FMT_S32_BE:
 			aifc->afmt = GF_AUDIO_FMT_S32;
 			break;
 		case GF_AUDIO_FMT_FLTP:
@@ -641,4 +643,5 @@ void compositor_audiobuffer_modified(GF_Node *node)
 		st->time_handle.needs_unregister = GF_FALSE;
 }
 
-#endif /*GPAC_DISABLE_VRML*/
+#endif //!defined(GPAC_DISABLE_VRML) && !defined(GPAC_DISABLE_COMPOSITOR)
+

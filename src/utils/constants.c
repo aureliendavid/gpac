@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2017-2022
+ *			Copyright (c) Telecom ParisTech 2017-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / filters sub-project
@@ -25,6 +25,7 @@
 
 #include <gpac/filters.h>
 #include <gpac/constants.h>
+#include <gpac/bitstream.h>
 
 typedef struct
 {
@@ -106,7 +107,7 @@ CodecIDReg CodecRegistry [] = {
 	{GF_CODECID_DTS_HD_HR, 0xAA, GF_STREAM_AUDIO, "DTS-HD High Resolution Audio", "dtsh", NULL, "audio/dts"},
 	{GF_CODECID_DTS_HD_MASTER, 0xAB, GF_STREAM_AUDIO, "DTS-HD Master Audio", "dstm", NULL, "audio/dts"},
 	{GF_CODECID_DTS_LBR, 0xAC, GF_STREAM_AUDIO, "DTS Express low bit rate Audio", "dtsl", NULL, "audio/dts"},
-	{GF_CODECID_OPUS, 0xAD, GF_STREAM_AUDIO, "Opus Audio", "opus", NULL, "audio/opus"},
+	{GF_CODECID_OPUS, 0xAD, GF_STREAM_AUDIO, "Opus Audio", "opus", "Opus", "audio/opus"},
 	{GF_CODECID_DVB_EIT, 0, GF_STREAM_PRIVATE_SCENE, "DVB Event Information", "eti", NULL, "application/x-dvb-eit"},
 	{GF_CODECID_SVG, 0, GF_STREAM_PRIVATE_SCENE, "SVG over RTP", "svgr", NULL, "application/x-svg-rtp"},
 	{GF_CODECID_SVG_GZ, 0, GF_STREAM_PRIVATE_SCENE, "SVG+gz over RTP", "svgzr", NULL, "application/x-svgz-rtp"},
@@ -141,6 +142,7 @@ CodecIDReg CodecRegistry [] = {
 	{GF_CODECID_IBM_ADPCM, 0, GF_STREAM_AUDIO, "IBM ADPCL", "iadpcl", NULL, "audio/pcm"},
 	{GF_CODECID_FLASH, 0, GF_STREAM_SCENE, "Adobe Flash", "swf", NULL, "audio/pcm"},
 	{GF_CODECID_RAW, 0, GF_STREAM_UNKNOWN, "Raw media", "raw", NULL, "*/*"},
+	{GF_CODECID_RAW_UNCV, 0, GF_STREAM_UNKNOWN, "Raw Video", "uncv", NULL, "*/*"},
 
 	{GF_CODECID_AV1, 0, GF_STREAM_VISUAL, "AOM AV1 Video", "av1|ivf|obu|av1b", NULL, "video/av1", .unframe=GF_TRUE},
 	{GF_CODECID_VP8, 0, GF_STREAM_VISUAL, "VP8 Video", "vp8|ivf", NULL, "video/vp8"},
@@ -179,6 +181,9 @@ GF_CodecID gf_codecid_parse(const char *cname)
 	u32 ilen = (u32) strlen(cname);
 	u32 i, count = sizeof(CodecRegistry) / sizeof(CodecIDReg);
 	for (i=0; i<count; i++) {
+		if (!strcmp(CodecRegistry[i].name, cname))
+			return CodecRegistry[i].codecid;
+
 		const char *n = CodecRegistry[i].sname;
 		while (n) {
 			char *sep = strchr(n, '|');
@@ -281,16 +286,13 @@ GF_CodecID gf_codec_id_from_isobmf(u32 isobmftype)
 	case GF_QT_SUBTYPE_AP4H:
 		return GF_CODECID_AP4H;
 	case GF_QT_SUBTYPE_TWOS:
-		return GF_CODECID_RAW;
 	case GF_QT_SUBTYPE_SOWT:
-		return GF_CODECID_RAW;
 	case GF_QT_SUBTYPE_FL32:
-		return GF_CODECID_RAW;
 	case GF_QT_SUBTYPE_FL64:
-		return GF_CODECID_RAW;
 	case GF_QT_SUBTYPE_IN24:
-		return GF_CODECID_RAW;
 	case GF_QT_SUBTYPE_IN32:
+	case GF_ISOM_SUBTYPE_IPCM:
+	case GF_ISOM_SUBTYPE_FPCM:
 		return GF_CODECID_RAW;
 	case GF_ISOM_SUBTYPE_MLPA:
 		return GF_CODECID_TRUEHD;
@@ -599,9 +601,13 @@ static const GF_AudioFmt GF_AudioFormats[] =
 	{GF_AUDIO_FMT_S16, "s16", "16 bit PCM Little Endian", "pcm"},
 	{GF_AUDIO_FMT_S16_BE, "s16b", "16 bit PCM Big Endian", "pcmb"},
 	{GF_AUDIO_FMT_S24, "s24", "24 bit PCM"},
+	{GF_AUDIO_FMT_S24_BE, "s24b", "24 bit Big-Endian PCM"},
 	{GF_AUDIO_FMT_S32, "s32", "32 bit PCM Little Endian"},
+	{GF_AUDIO_FMT_S32_BE, "s32b", "32 bit PCM Big Endian"},
 	{GF_AUDIO_FMT_FLT, "flt", "32-bit floating point PCM"},
+	{GF_AUDIO_FMT_FLT_BE, "fltb", "32-bit floating point PCM Big Endian"},
 	{GF_AUDIO_FMT_DBL, "dbl", "64-bit floating point PCM"},
+	{GF_AUDIO_FMT_DBL_BE, "dblb", "64-bit floating point PCM Big Endian"},
 	{GF_AUDIO_FMT_U8P, "u8p", "8 bit PCM planar", "pc8p"},
 	{GF_AUDIO_FMT_S16P, "s16p", "16 bit PCM Little Endian planar", "pcmp"},
 	{GF_AUDIO_FMT_S24P, "s24p", "24 bit PCM planar"},
@@ -734,23 +740,33 @@ u32 gf_audio_fmt_bit_depth(GF_AudioFormat audio_fmt)
 {
 	switch (audio_fmt) {
 	case GF_AUDIO_FMT_U8P:
-	case GF_AUDIO_FMT_U8: return 8;
+	case GF_AUDIO_FMT_U8:
+		return 8;
 
 	case GF_AUDIO_FMT_S16P:
 	case GF_AUDIO_FMT_S16_BE:
-	case GF_AUDIO_FMT_S16: return 16;
+	case GF_AUDIO_FMT_S16:
+		return 16;
 
 	case GF_AUDIO_FMT_S32P:
-	case GF_AUDIO_FMT_S32: return 32;
+	case GF_AUDIO_FMT_S32_BE:
+	case GF_AUDIO_FMT_S32:
+		return 32;
 
 	case GF_AUDIO_FMT_FLTP:
-	case GF_AUDIO_FMT_FLT: return 32;
+	case GF_AUDIO_FMT_FLT:
+	case GF_AUDIO_FMT_FLT_BE:
+		return 32;
 
 	case GF_AUDIO_FMT_DBLP:
-	case GF_AUDIO_FMT_DBL: return 64;
+	case GF_AUDIO_FMT_DBL:
+	case GF_AUDIO_FMT_DBL_BE:
+		return 64;
 
 	case GF_AUDIO_FMT_S24P:
-	case GF_AUDIO_FMT_S24:  return 24;
+	case GF_AUDIO_FMT_S24_BE:
+	case GF_AUDIO_FMT_S24:
+		return 24;
 
 	default:
 		break;
@@ -781,10 +797,10 @@ static struct pcmfmt_to_qt
 	u32 qt4cc;
 } AudiosToQT[] = {
 	{GF_AUDIO_FMT_S16, GF_QT_SUBTYPE_SOWT},
-	{GF_AUDIO_FMT_FLT, GF_QT_SUBTYPE_FL32},
-	{GF_AUDIO_FMT_DBL, GF_QT_SUBTYPE_FL64},
-	{GF_AUDIO_FMT_S24, GF_QT_SUBTYPE_IN24},
-	{GF_AUDIO_FMT_S32, GF_QT_SUBTYPE_IN32},
+	{GF_AUDIO_FMT_FLT_BE, GF_QT_SUBTYPE_FL32},
+	{GF_AUDIO_FMT_DBL_BE, GF_QT_SUBTYPE_FL64},
+	{GF_AUDIO_FMT_S24_BE, GF_QT_SUBTYPE_IN24},
+	{GF_AUDIO_FMT_S32_BE, GF_QT_SUBTYPE_IN32},
 	{GF_AUDIO_FMT_S16_BE, GF_QT_SUBTYPE_TWOS},
 };
 
@@ -2146,7 +2162,7 @@ const char *gf_cicp_color_matrix_all_names()
 GF_EXPORT
 u64 gf_timestamp_rescale(u64 value, u64 timescale, u64 new_timescale)
 {
-	if (!timescale || !new_timescale)
+	if (!timescale || !new_timescale || !value)
 		return 0;
 	//no timestamp
 	if (value==0xFFFFFFFFFFFFFFFFUL)
@@ -2255,4 +2271,410 @@ GF_EXPORT
 Bool gf_timestamp_equal(u64 value1, u64 timescale1, u64 value2, u64 timescale2)
 {
 	TIMESTAMP_COMPARE(==)
+}
+
+GF_EXPORT
+Bool gf_pixel_fmt_get_uncc(GF_PixelFormat pixfmt, u32 profile_mode, u8 **dsi, u32 *dsi_size)
+{
+	u32 nb_comps;
+	u32 comps_ID[10];
+	u32 bits[10], i;
+	memset(bits, 0, sizeof(u32)*10);
+	u32 sampling=0;
+	u32 ileave=1; //pixel interleave by default
+	Bool is_10_bps=GF_FALSE;
+	u32 block_size=0;
+	u32 block_le=0;
+	u32 block_pad_lsb=0;
+	u32 block_reversed=0;
+	u32 profile=0;
+	Bool restricted_allowed=GF_FALSE;
+
+	switch (pixfmt) {
+	case GF_PIXEL_GREYSCALE:
+		nb_comps=1;
+		comps_ID[0] = 0;
+		break;
+	case GF_PIXEL_ALPHAGREY:
+		nb_comps=2;
+		comps_ID[0] = 7;
+		comps_ID[1] = 0;
+		break;
+	case GF_PIXEL_GREYALPHA:
+		nb_comps=2;
+		comps_ID[0] = 0;
+		comps_ID[1] = 7;
+		break;
+	case GF_PIXEL_RGB_444:
+		nb_comps=3;
+		comps_ID[0] = 4;
+		comps_ID[1] = 5;
+		comps_ID[2] = 6;
+		bits[0] = bits[1] = bits[2] = 4;
+		break;
+	case GF_PIXEL_RGB_555:
+		nb_comps=3;
+		comps_ID[0] = 4;
+		comps_ID[1] = 5;
+		comps_ID[2] = 6;
+		bits[0] = bits[1] = bits[2] = 5;
+		break;
+	case GF_PIXEL_RGB_565:
+		nb_comps=3;
+		comps_ID[0] = 4;
+		comps_ID[1] = 5;
+		comps_ID[2] = 6;
+		bits[0] = bits[2] = 5;
+		bits[1] = 6;
+		break;
+	case GF_PIXEL_RGBX:
+		nb_comps=4;
+		comps_ID[0] = 4;
+		comps_ID[1] = 5;
+		comps_ID[2] = 6;
+		comps_ID[3] = 12;
+		break;
+	case GF_PIXEL_BGRX:
+		nb_comps=4;
+		comps_ID[0] = 6;
+		comps_ID[1] = 5;
+		comps_ID[2] = 4;
+		comps_ID[3] = 12;
+		break;
+	case GF_PIXEL_XRGB:
+		nb_comps=4;
+		comps_ID[0] = 12;
+		comps_ID[1] = 4;
+		comps_ID[2] = 5;
+		comps_ID[3] = 6;
+		break;
+	case GF_PIXEL_XBGR:
+		nb_comps=4;
+		comps_ID[0] = 12;
+		comps_ID[1] = 6;
+		comps_ID[2] = 5;
+		comps_ID[3] = 4;
+		break;
+	case GF_PIXEL_ARGB:
+		nb_comps=4;
+		comps_ID[0] = 7;
+		comps_ID[1] = 4;
+		comps_ID[2] = 5;
+		comps_ID[3] = 6;
+		break;
+	case GF_PIXEL_RGBA:
+		nb_comps=4;
+		comps_ID[0] = 4;
+		comps_ID[1] = 5;
+		comps_ID[2] = 6;
+		comps_ID[3] = 7;
+		profile = GF_4CC('r','g','b','a');
+		restricted_allowed=GF_TRUE;
+		break;
+	case GF_PIXEL_BGRA:
+		nb_comps=4;
+		comps_ID[0] = 6;
+		comps_ID[1] = 5;
+		comps_ID[2] = 4;
+		comps_ID[3] = 7;
+		break;
+	case GF_PIXEL_ABGR:
+		nb_comps=4;
+		comps_ID[0] = 7;
+		comps_ID[1] = 6;
+		comps_ID[2] = 5;
+		comps_ID[3] = 4;
+		profile = GF_4CC('a','b','g','r');
+		restricted_allowed=GF_TRUE;
+		break;
+	case GF_PIXEL_RGBD:
+		nb_comps=4;
+		comps_ID[0] = 4;
+		comps_ID[1] = 5;
+		comps_ID[2] = 6;
+		comps_ID[3] = 8;
+		break;
+	case GF_PIXEL_RGBDS:
+		nb_comps=5;
+		comps_ID[0] = 4;
+		comps_ID[1] = 5;
+		comps_ID[2] = 6;
+		comps_ID[3] = 8;
+		comps_ID[4] = 7;
+		bits[3] = 7;
+		bits[4] = 1;
+		break;
+	case GF_PIXEL_RGB:
+		nb_comps=3;
+		comps_ID[0] = 4;
+		comps_ID[1] = 5;
+		comps_ID[2] = 6;
+		profile = GF_4CC('r','g','b','3');
+		restricted_allowed=GF_TRUE;
+		break;
+	case GF_PIXEL_BGR:
+		nb_comps=3;
+		comps_ID[0] = 6;
+		comps_ID[1] = 5;
+		comps_ID[2] = 4;
+		break;
+	case GF_PIXEL_YUV_10:
+		is_10_bps=GF_TRUE;
+	case GF_PIXEL_YUV:
+		nb_comps=3;
+		comps_ID[0] = 1;
+		comps_ID[1] = 2;
+		comps_ID[2] = 3;
+		sampling=2;
+		ileave=0;
+		if (!is_10_bps)
+			profile = GF_4CC('i','4','2','0');
+		break;
+	case GF_PIXEL_YVU:
+		nb_comps=3;
+		comps_ID[0] = 1;
+		comps_ID[1] = 3;
+		comps_ID[2] = 2;
+		sampling=2;
+		ileave=0;
+		break;
+	case GF_PIXEL_YUVA:
+		nb_comps=4;
+		comps_ID[0] = 1;
+		comps_ID[1] = 2;
+		comps_ID[2] = 3;
+		comps_ID[3] = 7;
+		sampling=2;
+		ileave=0;
+		break;
+	case GF_PIXEL_YUVA444:
+		nb_comps=4;
+		comps_ID[0] = 1;
+		comps_ID[1] = 2;
+		comps_ID[2] = 3;
+		comps_ID[3] = 7;
+		ileave=0;
+		break;
+	case GF_PIXEL_YUVD:
+		nb_comps=4;
+		comps_ID[0] = 1;
+		comps_ID[1] = 2;
+		comps_ID[2] = 3;
+		comps_ID[3] = 8;
+		sampling=2;
+		ileave=0;
+		break;
+	case GF_PIXEL_YUV422_10:
+		is_10_bps=GF_TRUE;
+	case GF_PIXEL_YUV422:
+		nb_comps=3;
+		comps_ID[0] = 1;
+		comps_ID[1] = 2;
+		comps_ID[2] = 3;
+		sampling=1;
+		ileave=0;
+		break;
+	case GF_PIXEL_YUV444_10:
+		is_10_bps=GF_TRUE;
+	case GF_PIXEL_YUV444:
+		nb_comps=3;
+		comps_ID[0] = 1;
+		comps_ID[1] = 2;
+		comps_ID[2] = 3;
+		ileave=0;
+		if (!is_10_bps)
+			profile = GF_4CC('v','3','0','8');
+		break;
+	case GF_PIXEL_NV12_10:
+		is_10_bps=GF_TRUE;
+	case GF_PIXEL_NV12:
+		nb_comps=3;
+		comps_ID[0] = 1;
+		comps_ID[1] = 2;
+		comps_ID[2] = 3;
+		ileave=2;
+		sampling=2;
+		if (!is_10_bps)
+			profile = GF_4CC('n','v','1','2');
+		break;
+	case GF_PIXEL_NV21_10:
+		is_10_bps=GF_TRUE;
+	case GF_PIXEL_NV21:
+		nb_comps=3;
+		comps_ID[0] = 1;
+		comps_ID[1] = 3;
+		comps_ID[2] = 2;
+		ileave=2;
+		sampling=2;
+		if (!is_10_bps)
+			profile = GF_4CC('n','v','2','1');
+		break;
+	case GF_PIXEL_UYVY_10:
+		is_10_bps=GF_TRUE;
+	case GF_PIXEL_UYVY:
+		nb_comps=4;
+		comps_ID[0] = 2;
+		comps_ID[1] = 1;
+		comps_ID[2] = 3;
+		comps_ID[3] = 1;
+		ileave=5;
+		sampling=1;
+		profile = GF_4CC('2','v','u','y');
+		break;
+	case GF_PIXEL_VYUY_10:
+		is_10_bps=GF_TRUE;
+	case GF_PIXEL_VYUY:
+		nb_comps=4;
+		comps_ID[0] = 3;
+		comps_ID[1] = 1;
+		comps_ID[2] = 2;
+		comps_ID[3] = 1;
+		ileave=5;
+		sampling=1;
+		profile = GF_4CC('v','y','u','y');
+		break;
+	case GF_PIXEL_YUYV_10:
+		is_10_bps=GF_TRUE;
+	case GF_PIXEL_YUYV:
+		nb_comps=4;
+		comps_ID[0] = 1;
+		comps_ID[1] = 2;
+		comps_ID[2] = 1;
+		comps_ID[3] = 3;
+		ileave=5;
+		sampling=1;
+		profile = GF_4CC('y','u','v','2');
+		break;
+	case GF_PIXEL_YVYU_10:
+		is_10_bps=GF_TRUE;
+	case GF_PIXEL_YVYU:
+		nb_comps=4;
+		comps_ID[0] = 1;
+		comps_ID[1] = 3;
+		comps_ID[2] = 1;
+		comps_ID[3] = 2;
+		ileave=5;
+		sampling=1;
+		profile = GF_4CC('y','v','y','u');
+		break;
+
+	case GF_PIXEL_YUV444_PACK:
+		nb_comps=3;
+		comps_ID[0] = 1;
+		comps_ID[1] = 2;
+		comps_ID[2] = 3;
+		break;
+	case GF_PIXEL_VYU444_PACK:
+		nb_comps=3;
+		comps_ID[0] = 3;
+		comps_ID[1] = 1;
+		comps_ID[2] = 2;
+		profile = GF_4CC('v','3','0','8');
+		break;
+	case GF_PIXEL_YUVA444_PACK:
+		nb_comps=4;
+		comps_ID[0] = 1;
+		comps_ID[1] = 2;
+		comps_ID[2] = 3;
+		comps_ID[3] = 7;
+		break;
+	case GF_PIXEL_UYVA444_PACK:
+		nb_comps=4;
+		comps_ID[0] = 2;
+		comps_ID[1] = 1;
+		comps_ID[2] = 3;
+		comps_ID[3] = 7;
+		profile = GF_4CC('v','4','0','8');
+		break;
+	case GF_PIXEL_YUV444_10_PACK:
+		nb_comps=3;
+		comps_ID[0] = 2;
+		comps_ID[1] = 1;
+		comps_ID[2] = 3;
+		block_size=4;
+		block_le=1;
+		block_pad_lsb=1;
+		block_reversed=1;
+		bits[0] = bits[1] = bits[2] = 10;
+		profile = GF_4CC('v','4','1','0');
+		break;
+	case GF_PIXEL_V210:
+		nb_comps=4;
+		comps_ID[0] = 2;
+		comps_ID[1] = 1;
+		comps_ID[2] = 3;
+		comps_ID[3] = 1;
+		block_size=4;
+		block_le=1;
+		block_pad_lsb=0;
+		block_reversed=1;
+		bits[0] = bits[1] = bits[2] = 10;
+		sampling=1;
+		profile = GF_4CC('v','2','1','0');
+		break;
+	//no mapping possible in uncv
+	case GF_PIXEL_RGB_DEPTH:
+	case GF_PIXEL_GL_EXTERNAL:
+	case GF_PIXEL_UNCV:
+		return GF_FALSE;
+	default:
+		GF_LOG(GF_LOG_WARNING, GF_LOG_CORE, ("Pixel format %s not mapped to uncC, please contact GPAC devs\n", gf_pixel_fmt_name(pixfmt) ));
+		return GF_FALSE;
+	}
+	GF_BitStream *bs = gf_bs_new(NULL, 0, GF_BITSTREAM_WRITE);
+	if (!bs) return GF_FALSE;
+
+	if (!profile_mode) profile = 0;
+	if (!profile || (profile_mode<2))
+		restricted_allowed = GF_FALSE;
+
+	if (!restricted_allowed) {
+		//cmpd
+		gf_bs_write_u32(bs, 10+nb_comps*2);
+		gf_bs_write_u32(bs, GF_4CC('c','m','p','d'));
+		gf_bs_write_u16(bs, nb_comps);
+		for (i=0; i<nb_comps; i++)
+			gf_bs_write_u16(bs, comps_ID[i]);
+	}
+
+	//uncC
+	u32 end, pos = gf_bs_get_position(bs);
+	gf_bs_write_u32(bs, 0);
+	gf_bs_write_u32(bs, GF_4CC('u','n','c','C'));
+	gf_bs_write_u32(bs, restricted_allowed ? 1 : 0); //version and flags
+	gf_bs_write_u32(bs, profile); //profile
+	if (restricted_allowed) goto done;
+
+	gf_bs_write_u16(bs, nb_comps);
+	for (i=0; i<nb_comps; i++) {
+		gf_bs_write_u16(bs, i);
+		u32 nbbits = bits[i];
+		if (!nbbits) nbbits = is_10_bps ? 10 : 8;
+		gf_bs_write_u8(bs, nbbits-1);
+		gf_bs_write_u8(bs, 0);
+		gf_bs_write_u8(bs, is_10_bps ? 2 : 0);
+	}
+	gf_bs_write_u8(bs, sampling);
+	gf_bs_write_u8(bs, ileave);
+	gf_bs_write_u8(bs, block_size);
+	gf_bs_write_int(bs, is_10_bps ? 1 : 0, 1); //out 10 bits formats are LE
+	gf_bs_write_int(bs, block_pad_lsb, 1);
+	gf_bs_write_int(bs, block_le, 1);
+	gf_bs_write_int(bs, block_reversed, 1);
+	gf_bs_write_int(bs, 1, 1); //pad unknown
+	gf_bs_write_int(bs, 0, 3);
+	gf_bs_write_u8(bs, 0);
+	gf_bs_write_u32(bs, 0);
+	gf_bs_write_u32(bs, 0);
+	gf_bs_write_u32(bs, 0);
+	gf_bs_write_u32(bs, 0);
+
+done:
+	end = gf_bs_get_position(bs);
+	gf_bs_seek(bs, pos);
+	gf_bs_write_u32(bs, end-pos);
+	gf_bs_seek(bs, end);
+	gf_bs_get_content(bs, dsi, dsi_size);
+	gf_bs_del(bs);
+	return GF_TRUE;
 }

@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / ISO Media File Format sub-project
@@ -42,11 +42,10 @@ GF_TrackBox *GetTrackbyID(GF_MovieBox *moov, GF_ISOTrackID TrackID)
 
 GF_TrackBox *gf_isom_get_track(GF_MovieBox *moov, u32 trackNumber)
 {
-	GF_TrackBox *trak;
-	if (!moov || !trackNumber || (trackNumber > gf_list_count(moov->trackList))) return NULL;
-	trak = (GF_TrackBox*)gf_list_get(moov->trackList, trackNumber - 1);
-	return trak;
-
+	if (!moov) return NULL;
+	//no need to check for these, they will anyway result in NULL returned from gf_list_get
+//	if (!moov || !trackNumber || (trackNumber > gf_list_count(moov->trackList))) return NULL;
+	return (GF_TrackBox*)gf_list_get(moov->trackList, trackNumber - 1);
 }
 
 //get the number of a track given its ID
@@ -474,6 +473,7 @@ GF_Err MergeTrack(GF_TrackBox *trak, GF_TrackFragmentBox *traf, GF_MovieFragment
 	u32 sample_index;
 #endif
 	Bool is_first_merge = !trak->first_traf_merged;
+	Bool patch_no_dur;
 
 	GF_Err stbl_AppendTime(GF_SampleTableBox *stbl, u32 duration, u32 nb_pack);
 	GF_Err stbl_AppendSize(GF_SampleTableBox *stbl, u32 size, u32 nb_pack);
@@ -522,6 +522,8 @@ GF_Err MergeTrack(GF_TrackBox *trak, GF_TrackFragmentBox *traf, GF_MovieFragment
 	def_duration = (traf->tfhd->flags & GF_ISOM_TRAF_SAMPLE_DUR) ? traf->tfhd->def_sample_duration : traf->trex->def_sample_duration;
 	def_size = (traf->tfhd->flags & GF_ISOM_TRAF_SAMPLE_SIZE) ? traf->tfhd->def_sample_size : traf->trex->def_sample_size;
 	def_flags = (traf->tfhd->flags & GF_ISOM_TRAF_SAMPLE_FLAGS) ? traf->tfhd->def_sample_flags : traf->trex->def_sample_flags;
+
+	patch_no_dur = gf_isom_is_video_handler_type(trak->Media->handler->handlerType);
 
 	//locate base offset, by default use moof (dash-like)
 	base_offset = moof_offset;
@@ -586,6 +588,7 @@ GF_Err MergeTrack(GF_TrackBox *trak, GF_TrackFragmentBox *traf, GF_MovieFragment
 		if (is_first_merge) {
 			GF_MovieFragmentBox *moof_clone = NULL;
 			gf_isom_box_freeze_order((GF_Box *)moof_box);
+#ifndef GPAC_DISABLE_ISOM_WRITE
 			gf_isom_clone_box((GF_Box *)moof_box, (GF_Box **)&moof_clone);
 
 			if (moof_clone) {
@@ -628,6 +631,7 @@ GF_Err MergeTrack(GF_TrackBox *trak, GF_TrackFragmentBox *traf, GF_MovieFragment
 				gf_bs_get_content(bs, &moof_template, &moof_template_size);
 				gf_bs_del(bs);
 			}
+#endif
 		}
 		if (trak->moov->mov->seg_styp) {
 			is_seg_start = GF_TRUE;
@@ -716,6 +720,11 @@ GF_Err MergeTrack(GF_TrackBox *trak, GF_TrackFragmentBox *traf, GF_MovieFragment
 #ifdef GF_ENABLE_CTRN
 			sample_index++;
 #endif
+			//fix for broken truns with empty duration for frame
+			if (patch_no_dur && !duration && (trun->flags & GF_ISOM_TRUN_DURATION)) {
+				duration = trun->min_duration;
+			}
+
 			/*store the resolved value in case we have inheritance*/
 			ent->size = size;
 			ent->Duration = duration;
@@ -802,7 +811,7 @@ GF_Err MergeTrack(GF_TrackBox *trak, GF_TrackFragmentBox *traf, GF_MovieFragment
 
 			if (store_traf_map && first_samp_in_traf) {
 				first_samp_in_traf = GF_FALSE;
-				e = stbl_AppendTrafMap(trak->moov->mov, trak->Media->information->sampleTable, is_seg_start, seg_start, frag_start, moof_template, moof_template_size, sidx_start, sidx_end, ent->nb_pack);
+				e = stbl_AppendTrafMap(trak->moov->mov, trak->Media->information->sampleTable, is_seg_start, seg_start, frag_start, tfdt ? tfdt : trak->dts_at_next_frag_start, moof_template, moof_template_size, sidx_start, sidx_end, ent->nb_pack);
 				if (e) return e;
 				//do not deallocate, the memory is now owned by traf map
 				moof_template = NULL;
@@ -811,6 +820,7 @@ GF_Err MergeTrack(GF_TrackBox *trak, GF_TrackFragmentBox *traf, GF_MovieFragment
 			if (ent->nb_pack>1) {
 				j+= ent->nb_pack-1;
 				traf_duration += ent->nb_pack*duration;
+				last_dts += (ent->nb_pack-1)*duration;
 				continue;
 			}
 

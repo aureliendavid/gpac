@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / Embedded Vector Graphics engine
@@ -34,6 +34,7 @@ extern "C" {
 #include <gpac/path2d.h>
 #include <gpac/module.h>
 #include <gpac/color.h>
+
 
 /*!
 \file "gpac/evg.h"
@@ -135,6 +136,8 @@ typedef enum
 	/*! raster should use full antialiasing - this is the default for all new surfaces*/
 	GF_RASTER_HIGH_QUALITY
 } GF_RasterQuality;
+
+#ifndef GPAC_DISABLE_EVG
 
 
 /*! common constructor for all stencil types
@@ -266,6 +269,13 @@ GF_Err gf_evg_stencil_set_alpha(GF_EVGStencil *stencil, u8 alpha);
 \return the alpha value between 0 (full transparency) and 255 (full opacityy)
 */
 u8 gf_evg_stencil_get_alpha(GF_EVGStencil *stencil);
+
+/*! checks if pixel format is supported for a texture stencil
+\param pixelFormat the target pixel format
+\return GF_TRUE if supported, GF_FALSE otherwise
+*/
+Bool gf_evg_texture_format_ok(GF_PixelFormat pixelFormat);
+
 
 /*! sets pixel data for a texture stencil
 \param stencil the target stencil
@@ -444,9 +454,15 @@ GF_Err gf_evg_enable_threading(GF_EVGSurface *surf, s32 nb_threads);
 */
 GF_Err gf_evg_surface_attach_to_texture(GF_EVGSurface *surf, GF_EVGStencil *sten);
 
+/*! checks if pixel format is supported for a surface
+\param pixelFormat the target pixel format
+\return GF_TRUE if supported, GF_FALSE otherwise
+*/
+Bool gf_evg_surface_format_ok(GF_PixelFormat pixelFormat);
+
 /*! attaches a surface object to a memory buffer
 \param surf the surface object
-\param pixels: texture data
+\param pixels texture data
 \param width texture width in pixels
 \param height texture height in pixels
 \param pitch_x texture horizontal pitch (bytes to skip to get to next pixel). O means linear frame buffer (eg pitch_x==bytes per pixel)
@@ -1095,6 +1111,8 @@ GF_Err gf_evg_surface_set_mask_mode(GF_EVGSurface *surf, GF_EVGMaskMode mask_mod
 GF_EVGMaskMode gf_evg_surface_get_mask_mode(GF_EVGSurface *surf);
 
 /*! @} */
+
+#endif //GPAC_DISABLE_EVG
 
 #ifdef __cplusplus
 }

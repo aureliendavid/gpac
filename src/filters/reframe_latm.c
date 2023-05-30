@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / AAC ADTS reframer filter
@@ -61,7 +61,7 @@ typedef struct
 	
 	char *latm_buffer;
 	u32 latm_buffer_size, latm_buffer_alloc;
-	u32 dts_inc;
+	u32 dts_inc, sample_rate;
 
 	Bool is_playing;
 	Bool is_file, file_loaded;
@@ -364,7 +364,7 @@ static void latm_dmx_check_pid(GF_Filter *filter, GF_LATMDmxCtx *ctx)
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_DECODER_CONFIG, & PROP_DATA_NO_COPY(dsi_b, dsi_s) );
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_PROFILE_LEVEL, & PROP_UINT (ctx->acfg.audioPL) );
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_SAMPLE_RATE, & PROP_UINT(sr));
-
+	ctx->sample_rate = sr;
 	timescale = sr;
 
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_TIMESCALE, & PROP_UINT(ctx->timescale ? ctx->timescale : timescale));
@@ -459,9 +459,13 @@ GF_Err latm_dmx_process(GF_Filter *filter)
 	GF_LATMDmxCtx *ctx = gf_filter_get_udta(filter);
 	GF_FilterPacket *pck, *dst_pck;
 	u32 pos;
-	u8 *data=NULL, *output;
+	u8 *data, *output;
 	u32 pck_size=0, prev_pck_size;
-	u64 cts = GF_FILTER_NO_TS;
+	u64 cts;
+
+restart:
+	cts = GF_FILTER_NO_TS;
+	data=NULL;
 
 	if (ctx->in_error)
 		return ctx->in_error;
@@ -556,7 +560,10 @@ GF_Err latm_dmx_process(GF_Filter *filter)
 			memcpy(output, latm_buffer, latm_frame_size);
 
 			gf_filter_pck_set_cts(dst_pck, ctx->cts);
-			gf_filter_pck_set_duration(dst_pck, ctx->dts_inc);
+			if (ctx->timescale && (ctx->timescale!=ctx->sample_rate))
+				gf_filter_pck_set_duration(dst_pck, (u32) gf_timestamp_rescale(ctx->dts_inc, ctx->sample_rate, ctx->timescale) );
+			else
+				gf_filter_pck_set_duration(dst_pck, ctx->dts_inc);
 			gf_filter_pck_set_framing(dst_pck, GF_TRUE, GF_TRUE);
 
 			/*xHE-AAC, check RAP*/
@@ -596,7 +603,8 @@ GF_Err latm_dmx_process(GF_Filter *filter)
 		assert(!ctx->resume_from);
 	} else {
 		ctx->latm_buffer_size = 0;
-		return latm_dmx_process(filter);
+		//avoid recursive call
+		goto restart;
 	}
 	return GF_OK;
 }
@@ -683,13 +691,13 @@ GF_FilterRegister LATMDmxRegister = {
 };
 
 
-const GF_FilterRegister *latm_dmx_register(GF_FilterSession *session)
+const GF_FilterRegister *rflatm_register(GF_FilterSession *session)
 {
 	return &LATMDmxRegister;
 }
 
 #else
-const GF_FilterRegister *latm_dmx_register(GF_FilterSession *session)
+const GF_FilterRegister *rflatm_register(GF_FilterSession *session)
 {
 	return NULL;
 }

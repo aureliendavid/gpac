@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / MPEG-1/2/4(Part2) video reframer filter
@@ -356,7 +356,11 @@ static void mpgviddmx_check_pid(GF_Filter *filter, GF_MPGVidDmxCtx *ctx, u32 vos
 		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_CAN_DATAREF, & PROP_BOOL(GF_TRUE ) );
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_STREAM_TYPE, & PROP_UINT(GF_STREAM_VISUAL));
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_TIMESCALE, & PROP_UINT(ctx->timescale ? ctx->timescale : ctx->cur_fps.num));
-	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_FPS, & PROP_FRAC(ctx->cur_fps));
+
+	//if we have a FPS prop, use it
+	if (!gf_filter_pid_get_property(ctx->ipid, GF_PROP_PID_FPS))
+		gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_FPS, & PROP_FRAC(ctx->cur_fps));
+
 	gf_filter_pid_set_property(ctx->opid, GF_PROP_PID_UNFRAMED, NULL);
 
 	if (ctx->width && ctx->height) {
@@ -1241,7 +1245,7 @@ static void mpgviddmx_finalize(GF_Filter *filter)
 			GF_LOG(GF_LOG_INFO, GF_LOG_MEDIA, ("\t%d max consecutive B-frames%s\n", ctx->max_b, ctx->is_packed ? " - packed bitstream" : "" ));
 		}
 		if (ctx->is_vfr && ctx->nb_b && ctx->is_packed) {
-			GF_LOG(GF_LOG_INFO, GF_LOG_MEDIA, ("Warning: Mix of non-coded frames: packed bitstream and encoder skiped - unpredictable timing\n"));
+			GF_LOG(GF_LOG_INFO, GF_LOG_MEDIA, ("Warning: Mix of non-coded frames: packed bitstream and encoder skipped - unpredictable timing\n"));
 		}
 	}
 }
@@ -1396,13 +1400,13 @@ GF_FilterRegister MPGVidDmxRegister = {
 };
 
 
-const GF_FilterRegister *mpgviddmx_register(GF_FilterSession *session)
+const GF_FilterRegister *rfmpgvid_register(GF_FilterSession *session)
 {
 	return &MPGVidDmxRegister;
 }
 
 #else
-const GF_FilterRegister *mpgviddmx_register(GF_FilterSession *session)
+const GF_FilterRegister *rfmpgvid_register(GF_FilterSession *session)
 {
 	return NULL;
 }

@@ -28,6 +28,8 @@
 #include <gpac/modules/hardcoded_proto.h>
 #include <gpac/modules/compositor_ext.h>
 
+#ifndef GPAC_DISABLE_COMPOSITOR
+
 #include "nodes_stacks.h"
 
 #include "visual_manager.h"
@@ -665,6 +667,15 @@ static GF_Err gf_sc_load_driver(GF_Compositor *compositor)
 		GF_LOG(GF_LOG_ERROR, GF_LOG_CORE, ("[Compositor] Failed to load a video output module.\n"));
 		return GF_IO_ERR;
 	}
+
+#ifdef GPAC_CONFIG_EMSCRIPTEN
+	if (compositor->player) {
+		void gpac_force_step_mode(Bool for_display);
+		gpac_force_step_mode(compositor->player ? GF_TRUE : GF_FALSE);
+	}
+#endif
+
+
 
 	sOpt = gf_opts_get_key("temp", "window-display");
 	if (sOpt) sscanf(sOpt, "%p", &os_disp);
@@ -1863,9 +1874,11 @@ GF_Err gf_sc_set_option(GF_Compositor *compositor, GF_CompositorOption type, u32
 
 	case GF_OPT_HTTP_MAX_RATE:
 	{
+#ifndef GPAC_DISABLE_NETWORK
 		GF_DownloadManager *dm = gf_filter_get_download_manager(compositor->filter);
 		if (!dm) return GF_SERVICE_ERROR;
 		gf_dm_set_data_rate(dm, value);
+#endif
 		e = GF_OK;
 		break;
 	}
@@ -4206,12 +4219,6 @@ void gf_sc_unqueue_node_traverse(GF_Compositor *compositor, GF_Node *node)
 	gf_sc_lock(compositor, GF_FALSE);
 }
 
-GF_EXPORT
-GF_DownloadManager *gf_sc_get_downloader(GF_Compositor *compositor)
-{
-	return gf_filter_get_download_manager(compositor->filter);
-}
-
 void gf_sc_sys_frame_pending(GF_Compositor *compositor, u32 cts, u32 obj_time, GF_Filter *from_filter)
 {
 	if (!compositor->player) {
@@ -4445,11 +4452,15 @@ static u32 gf_sc_get_option_internal(GF_Compositor *compositor, u32 type)
 	case GF_OPT_CAN_SELECT_STREAMS:
 		return (compositor->root_scene && compositor->root_scene->is_dynamic_scene) ? 1 : 0;
 	case GF_OPT_HTTP_MAX_RATE:
+#ifndef GPAC_DISABLE_NETWORK
 	{
 		GF_DownloadManager *dm = gf_filter_get_download_manager(compositor->filter);
 		if (!dm) return 0;
 		return gf_dm_get_data_rate(dm);
 	}
+#else
+		return 0;
+#endif
 	case GF_OPT_VIDEO_BENCH:
 		return compositor->bench_mode ? GF_TRUE : GF_FALSE;
 	case GF_OPT_ORIENTATION_SENSORS_ACTIVE:
@@ -5044,9 +5055,7 @@ GF_EXPORT
 void gf_sc_select_service(GF_Compositor *compositor, u32 service_id)
 {
 	if (!compositor || !compositor->root_scene) return;
-#ifndef GPAC_DISABLE_VRML
 	gf_scene_set_service_id(compositor->root_scene, service_id);
-#endif
 }
 
 
@@ -5182,3 +5191,5 @@ u32 gf_sc_get_current_service_id(GF_Compositor *compositor)
 	if (mo && mo->odm) return mo->odm->ServiceID;
 	return 0;
 }
+
+#endif // GPAC_DISABLE_COMPOSITOR
