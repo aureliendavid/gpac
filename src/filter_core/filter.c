@@ -3539,10 +3539,13 @@ void gf_filter_remove(GF_Filter *filter)
 
 	//locate source filter(s)
 	gf_mx_p(filter->tasks_mx);
+	fprintf(stderr, "%s:%d filter remove: %s\n", __FILE__, __LINE__, filter->name);
 	for (i=0; i<filter->num_input_pids; i++) {
 		GF_FilterPidInst *pidi = gf_list_get(filter->input_pids, i);
+		fprintf(stderr, "%s:%d filter : %s num_destinations %d\n", __FILE__, __LINE__, filter->name, pidi->pid->num_destinations);
 		//fanout, only disconnect this pid instance
 		if (pidi->pid->num_destinations>1) {
+			fprintf(stderr, "%s:%d branching remove: %s\n", __FILE__, __LINE__, filter->name);
 			//post STOP and disconnect
 			GF_FilterEvent fevt;
 			GF_FEVT_INIT(fevt, GF_FEVT_STOP, (GF_FilterPid *) pidi);
@@ -3552,13 +3555,16 @@ void gf_filter_remove(GF_Filter *filter)
 		}
 		//this is a source for the chain
 		else if (!pidi->pid->filter->num_input_pids) {
+			fprintf(stderr, "%s:%d branching remove: %s\n", __FILE__, __LINE__, filter->name);
 			gf_filter_remove_internal(pidi->pid->filter, NULL, GF_FALSE);
 		}
 		//otherwise walk down the chain if we have one-to-one
 		else if (pidi->pid->filter->num_output_pids==1) {
+			fprintf(stderr, "%s:%d branching remove: %s\n", __FILE__, __LINE__, filter->name);
 			gf_filter_remove(pidi->pid->filter);
 		} else {
 			GF_FilterEvent fevt;
+			fprintf(stderr, "%s:%d branching remove: %s\n", __FILE__, __LINE__, filter->name);
 			//source filter still active, mark output pid as not connected, send a stop and post disconnect
 			assert(pidi->pid->num_destinations==1);
 			pidi->pid->not_connected=1;

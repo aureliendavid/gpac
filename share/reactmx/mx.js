@@ -96,9 +96,9 @@ let dst = new FileIO(
 		console.log("closing file with written = " + JSON.stringify(this.written) + " and probe = " + JSON.stringify(gpac_filter_to_object(probefilter, true)))
 		this.target.close();
 		if (probefilter && this.written) {
-			console.log("removing probe " + JSON.stringify(gpac_filter_to_object(probefilter)));
-			probefilter.remove()
-			probefilter = null;
+			// console.log("removing probe " + JSON.stringify(gpac_filter_to_object(probefilter)));
+			// probefilter.remove()
+			// probefilter = null;
 		}
 	},
 	//write
@@ -223,8 +223,9 @@ function add_png_probe(idx, name) {
 		print("discrepency in filter names " + filter.name + " v. " + name);
 	}
 	else {
-		probefilter = filter.insert("dst="+dst.url+":osize=128x128:dur=33/1000");
-		probefilter.tagged = "hideme";
+		// probefilter = filter.insert("dst="+dst.url+":osize=128x128:dur=33/1000:ITAG=NODISPLAY");ù
+		probefilter = filter.insert("dst="+dst.url+":osize=128x128:fps=1/1");
+		//probefilter.tagged = "hideme";
 		//let probefilter = session.add_filter("dst="+dst.url+":osize=128x128", filter);
 		console.log("probe added :" + JSON.stringify(gpac_filter_to_object(probefilter)));
 	}
@@ -390,7 +391,7 @@ function send_all_filters() {
 
 
 
-let filter_props_lite = ['name', 'status', 'bytes_done', 'type', 'ID', 'nb_ipid', 'nb_opid', 'idx']
+let filter_props_lite = ['name', 'status', 'bytes_done', 'type', 'ID', 'nb_ipid', 'nb_opid', 'idx', 'itag']
 let filter_args_lite = []
 let pid_props_lite = []
 
@@ -461,6 +462,11 @@ session.set_new_filter_fun( (f) => {
 		// let jsf = gpac_filter_to_object(f);
 		// print(JSON.stringify(jsf, null, 2));
 		all_filters.push(f);
+
+		console.log("NEW FILTER ITAG " + f.itag);
+		if (f.itag == "NODISPLAY")
+			return
+
 		if (draned_once) {
 			sys.sleep(100);
 			send_all_filters();
@@ -468,10 +474,15 @@ session.set_new_filter_fun( (f) => {
 } );
 
 session.set_del_filter_fun( (f) => {
-	print("delete filter " + f.iname);
+	print("delete filter " + f.iname + " " + f.name);
 	let idx = all_filters.indexOf(f);
 	if (idx>=0)
 		all_filters.splice(idx, 1);
+
+	console.log("RM FILTER ITAG " + f.itag);
+	if (f.itag == "NODISPLAY")
+		return
+
 	if (draned_once) {
 		sys.sleep(100);
 		send_all_filters();

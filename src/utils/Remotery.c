@@ -3280,7 +3280,7 @@ static void WebSocket_PrepareBuffer(Buffer* buffer)
     char empty_frame_header[WEBSOCKET_MAX_FRAME_HEADER_SIZE];
 
     assert(buffer != NULL);
-
+    
     // Reset to start
     buffer->bytes_used = 0;
 
