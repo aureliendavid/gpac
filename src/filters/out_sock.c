@@ -114,6 +114,7 @@ static GF_Err sockout_initialize(GF_Filter *filter)
 	else if (!strncmp(ctx->dst, "udp://", 6)) e = GF_OK;
 	else if (!strncmp(ctx->dst, "tcpu://", 7)) e = GF_OK;
 	else if (!strncmp(ctx->dst, "udpu://", 7)) e = GF_OK;
+	else if (!strncmp(ctx->dst, "ws://", 5)) e = GF_OK;
 
 
 	if (e)  {
@@ -174,6 +175,9 @@ static GF_Err sockout_initialize(GF_Filter *filter)
 	} else if (!strnicmp(ctx->dst, "tcpu://", 7)) {
 		sock_type = GF_SOCK_TYPE_TCP_UN;
 #endif
+	} else if (!strnicmp(ctx->dst, "ws://", 5)) {
+		sock_type = GF_SOCK_TYPE_WS;
+		ctx->listen = GF_TRUE;
 	} else {
 		return GF_NOT_SUPPORTED;
 	}
@@ -357,6 +361,8 @@ static GF_Err sockout_process(GF_Filter *filter)
 			strcpy(sc->address, "unknown");
 			gf_sk_get_remote_address(new_conn, sc->address);
 
+			//TODO: do websocket handshake here
+
 			GF_LOG(GF_LOG_INFO, GF_LOG_NETWORK, ("[SockOut] Accepting new connection from %s\n", sc->address));
 			gf_list_add(ctx->clients, sc);
 			ctx->had_clients = GF_TRUE;
@@ -530,6 +536,7 @@ static GF_FilterProbeScore sockout_probe_url(const char *url, const char *mime)
 	if (!strnicmp(url, "tcpu://", 7)) return GF_FPROBE_SUPPORTED;
 	if (!strnicmp(url, "udpu://", 7)) return GF_FPROBE_SUPPORTED;
 #endif
+	if (!strnicmp(url, "ws://", 5)) return GF_FPROBE_SUPPORTED;
 	return GF_FPROBE_NOT_SUPPORTED;
 }
 
