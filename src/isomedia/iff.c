@@ -482,7 +482,9 @@ void imir_box_del(GF_Box *a)
 GF_Err imir_box_read(GF_Box *s, GF_BitStream *bs)
 {
 	GF_ImageMirrorBox *p = (GF_ImageMirrorBox *)s;
-	p->axis = gf_bs_read_u8(bs) & 0x1;
+	p->axis = gf_bs_read_u8(bs);
+	if (p->type==GF_ISOM_BOX_TYPE_IMIR)
+		p->axis = p->axis & 0x1;
 	return GF_OK;
 }
 
@@ -1619,7 +1621,7 @@ import_next_sample:
 
 		memset(&ipro, 0, sizeof(GF_ImageItemProtection));
 		gf_isom_get_cenc_info(fsrc, imported_track, sample_desc_index, NULL, &ipro.scheme_type, &ipro.scheme_version);
-		e = gf_isom_get_sample_cenc_info(fsrc, imported_track, sample_desc_index, &Is_Encrypted, &ipro.crypt_byte_block, &ipro.skip_byte_block, &ipro.key_info, &ipro.key_info_size);
+		e = gf_isom_get_sample_cenc_info(fsrc, imported_track, sample_number, &Is_Encrypted, &ipro.crypt_byte_block, &ipro.skip_byte_block, &ipro.key_info, &ipro.key_info_size);
 		if (e) goto exit;
 
 		if (Is_Encrypted) {

@@ -26,7 +26,8 @@
 
 #include "isoffin.h"
 
-#ifndef GPAC_DISABLE_ISOM
+#if !defined(GPAC_DISABLE_ISOM) && !defined(GPAC_DISABLE_MP4DMX)
+
 #include <gpac/network.h>
 #include <gpac/avparse.h>
 
@@ -47,6 +48,7 @@ void isor_reset_reader(ISOMChannel *ch)
 	ch->start = ch->end = 0;
 	ch->to_init = 1;
 	ch->playing = 0;
+	ch->nb_empty_retry = 0;
 	if (ch->sai_buffer) gf_free(ch->sai_buffer);
 	ch->sai_buffer = NULL;
 	ch->sai_alloc_size = 0;
@@ -393,6 +395,8 @@ void isor_reader_get_sample(ISOMChannel *ch)
 			if (ch->edit_sync_frame) {
 				ch->edit_sync_frame++;
 				if (ch->edit_sync_frame < ch->sample_num) {
+					ch->static_sample->alloc_size = 0;
+					ch->static_sample->dataLength = 0;
 					ch->sample = gf_isom_get_sample_ex(ch->owner->mov, ch->track, ch->edit_sync_frame, &sample_desc_index, ch->static_sample, &ch->sample_data_offset);
 					if (ch->sample) {
 						ch->sample->DTS = ch->sample_time;
@@ -414,12 +418,20 @@ void isor_reader_get_sample(ISOMChannel *ch)
 							//e = GF_EOS;
 						} else {
 							u32 time_diff = gf_isom_get_sample_duration(ch->owner->mov, ch->track, sample_num);
+
+							ch->static_sample->alloc_size = 0;
+							ch->static_sample->dataLength = 0;
+
 							e = gf_isom_get_sample_for_movie_time(ch->owner->mov, ch->track, ch->sample_time + time_diff, &sample_desc_index, GF_ISOM_SEARCH_FORWARD, &ch->static_sample, &ch->sample_num, &ch->sample_data_offset);
 							ch->static_sample->alloc_size = 0;
 							if (e==GF_OK) {
 								if (ch->sample_num == prev_sample) {
 									ch->sample_time += time_diff;
 									ch->sample = NULL;
+									if (ch->pck) {
+										gf_filter_pck_discard(ch->pck);
+										ch->pck = NULL;
+									}
 									return;
 								} else {
 									ch->sample = ch->static_sample;
@@ -435,6 +447,8 @@ void isor_reader_get_sample(ISOMChannel *ch)
 					GF_ISOSample *found = ch->static_sample;
 					u32 samp_num = ch->sample_num;
 					ch->sample = NULL;
+					ch->static_sample->alloc_size = 0;
+					ch->static_sample->dataLength = 0;
 					e = gf_isom_get_sample_for_movie_time(ch->owner->mov, ch->track, ch->sample_time + 1, &sample_desc_index, GF_ISOM_SEARCH_SYNC_BACKWARD, &ch->static_sample, &ch->sample_num, &ch->sample_data_offset);
 
 					ch->static_sample->alloc_size = 0;
@@ -493,6 +507,7 @@ void isor_reader_get_sample(ISOMChannel *ch)
 				if (ch->pck) {
 					gf_filter_pck_discard(ch->pck);
 					ch->pck = NULL;
+					ch->static_sample->alloc_size = ch->static_sample->dataLength = 0;
 				}
 				isor_reader_get_sample(ch);
 				return;
@@ -1082,13 +1097,13 @@ void isor_reader_check_config(ISOMChannel *ch)
 	if (needs_reset) {
 		u8 *dsi=NULL;
 		u32 dsi_size=0;
-		if (ch->check_avc_ps) {
+		if (ch->check_avc_ps && ch->avcc) {
 			gf_odf_avc_cfg_write(ch->avcc, &dsi, &dsi_size);
 		}
-		else if (ch->check_hevc_ps) {
+		else if (ch->check_hevc_ps && ch->hvcc) {
 			gf_odf_hevc_cfg_write(ch->hvcc, &dsi, &dsi_size);
 		}
-		else if (ch->check_vvc_ps) {
+		else if (ch->check_vvc_ps && ch->vvcc) {
 			gf_odf_vvc_cfg_write(ch->vvcc, &dsi, &dsi_size);
 		}
 		if (dsi && dsi_size) {
@@ -1164,4 +1179,4 @@ void isor_set_sample_groups_and_aux_data(ISOMReader *read, ISOMChannel *ch, GF_F
 }
 
 
-#endif /*GPAC_DISABLE_ISOM*/
+#endif // !defined(GPAC_DISABLE_ISOM) && !defined(GPAC_DISABLE_MP4DMX)

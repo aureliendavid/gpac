@@ -1048,7 +1048,7 @@ static u32 read_nal_size_hdr(u8 *ptr, u32 nalh_size)
 	return nal_size;
 }
 
-#ifndef GPAC_DISABLE_AV_PARSERS
+#if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_INSPECT)
 void gf_inspect_dump_nalu(FILE *dump, u8 *ptr, u32 ptr_size, Bool is_svc, HEVCState *hevc, AVCState *avc, VVCState *vvc, u32 nalh_size, Bool dump_crc, Bool is_encrypted);
 #endif
 
@@ -1089,7 +1089,7 @@ static GF_Err dump_isom_nal_ex(GF_ISOFile *file, GF_ISOTrackID trackID, FILE *du
 
 	fprintf(dump, "<NALUTrack trackID=\"%d\" SampleCount=\"%d\" TimeScale=\"%d\">\n", trackID, count, timescale);
 
-#ifndef GPAC_DISABLE_AV_PARSERS
+#if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_INSPECT)
 
 #define DUMP_ARRAY(arr, name, loc, _is_svc)\
 	if (arr) {\
@@ -1326,7 +1326,7 @@ static GF_Err dump_isom_nal_ex(GF_ISOFile *file, GF_ISOTrackID trackID, FILE *du
 				break;
 			} else {
 				fprintf(dump, "   <NALU size=\"%d\" ", nal_size);
-#ifndef GPAC_DISABLE_AV_PARSERS
+#if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_INSPECT)
 				Bool is_encrypted = 0;
 				if (is_cenc_protected) {
 					e = gf_isom_get_sample_cenc_info(file, track, i + 1, &is_encrypted, NULL, NULL, NULL, NULL);
@@ -1446,14 +1446,14 @@ GF_Err dump_isom_nal(GF_ISOFile *file, GF_ISOTrackID trackID, char *inName, Bool
 	return e;
 }
 
-#ifndef GPAC_DISABLE_AV_PARSERS
+#if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_INSPECT)
 void gf_inspect_dump_opus(FILE *dump, u8 *ptr, u64 size, u32 channel_count, Bool dump_crc);
 #endif
 
 static GF_Err dump_isom_opus(GF_ISOFile *file, GF_ISOTrackID trackID, FILE *dump, Bool dump_crc)
 {
     GF_Err e = GF_OK;
-#ifndef GPAC_DISABLE_AV_PARSERS
+#if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_INSPECT)
     u32 i, count, track, timescale, channel_count;
     GF_OpusConfig opcfg;
     track = gf_isom_get_track_by_id(file, trackID);
@@ -1514,14 +1514,14 @@ static GF_Err dump_isom_opus(GF_ISOFile *file, GF_ISOTrackID trackID, FILE *dump
     return e;
 }
 
-#ifndef GPAC_DISABLE_AV_PARSERS
+#if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_INSPECT)
 void gf_inspect_dump_obu(FILE *dump, AV1State *av1, u8 *obu, u64 obu_length, ObuType obu_type, u64 obu_size, u32 hdr_size, Bool dump_crc);
 #endif
 
 static GF_Err dump_isom_obu(GF_ISOFile *file, GF_ISOTrackID trackID, FILE *dump, Bool dump_crc)
 {
 	GF_Err e = GF_OK;
-#ifndef GPAC_DISABLE_AV_PARSERS
+#if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_INSPECT)
 	u32 i, count, track, timescale;
 	AV1State av1;
 	ObuType obu_type = 0;
@@ -1617,7 +1617,7 @@ static GF_Err dump_isom_obu(GF_ISOFile *file, GF_ISOTrackID trackID, FILE *dump,
 static GF_Err dump_qt_prores(GF_ISOFile *file, u32 trackID, FILE *dump, Bool dump_crc)
 {
 	GF_Err e = GF_OK;
-#ifndef GPAC_DISABLE_AV_PARSERS
+#if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_INSPECT)
 	u32 i, count, track, timescale;
 
 	track = gf_isom_get_track_by_id(file, trackID);
@@ -2246,9 +2246,8 @@ void print_udta(GF_ISOFile *file, u32 track_number, Bool has_meta_tags)
 			u32 type;
 			bin128 uuid;
 			gf_isom_get_udta_type(file, track_number, i+1, &type, &uuid);
-			if (type == GF_ISOM_BOX_TYPE_META) {
+			if ((type == GF_ISOM_BOX_TYPE_META) || (type==GF_ISOM_UDTA_GPAC_SRD)) {
 				count--;
-				break;
 			}
 		}
 		if (!count) return;
@@ -2260,6 +2259,7 @@ void print_udta(GF_ISOFile *file, u32 track_number, Bool has_meta_tags)
 		u32 j, type, nb_items;
 		bin128 uuid;
 		gf_isom_get_udta_type(file, track_number, i+1, &type, &uuid);
+		if (type==GF_ISOM_UDTA_GPAC_SRD) continue;
 		nb_items = gf_isom_get_user_data_count(file, track_number, type, uuid);
 		if (!nb_items) continue;
 
@@ -2530,7 +2530,7 @@ static void DumpMetaItem(GF_ISOFile *file, Bool root_meta, u32 tk_num, char *nam
 					}
 					fprintf(stderr, " bpc)");
 				}
-				if (img_props.hOffset || img_props.vOffset)
+				if (img_props.hOffset || img_props.vOffset || (it_type==GF_ISOM_SUBTYPE_HVT1))
 					fprintf(stderr, " Offset %ux%u", img_props.hOffset, img_props.vOffset);
 				if (img_props.alpha) fprintf(stderr, " Alpha");
 				if (img_props.hidden) fprintf(stderr, " Hidden");
@@ -2743,7 +2743,9 @@ void dump_vvc_track_info(GF_ISOFile *file, u32 trackNum, GF_VVCConfig *vvccfg
 	}
 }
 
+#if !defined(GPAC_DISABLE_INSPECT)
 void gf_inspect_format_timecode(const u8 *data, u32 size, u32 tmcd_flags, u32 tc_num, u32 tc_den, u32 tmcd_fpt, char szFmt[100]);
+#endif
 
 static void DumpStsdInfo(GF_ISOFile *file, u32 trackNum, Bool full_dump, Bool dump_m4sys, u32 mtype, u32 stsd_idx, Bool *is_od_track)
 {
@@ -3348,6 +3350,7 @@ static void DumpStsdInfo(GF_ISOFile *file, u32 trackNum, Bool full_dump, Bool du
 		u32 w, h;
 		s16 l;
 		s32 tx, ty;
+		Bool check_tx3g=GF_FALSE;
 		const char *content_encoding = NULL;
 		const char *mime = NULL;
 		const char *config  = NULL;
@@ -3387,8 +3390,23 @@ static void DumpStsdInfo(GF_ISOFile *file, u32 trackNum, Bool full_dump, Bool du
 			}
 		} else if (mtype == GF_ISOM_MEDIA_SUBT) {
 			fprintf(stderr, "\tQT/3GPP subtitle");
+			check_tx3g = GF_TRUE;
+		} else if (mtype == GF_ISOM_MEDIA_TEXT) {
+			fprintf(stderr, "\tQT/3GPP text");
+			check_tx3g = GF_TRUE;
 		} else {
 			fprintf(stderr, "\tUnknown Text Stream");
+		}
+		if (check_tx3g) {
+			GF_TextSampleDescriptor *txtcfg = NULL;
+			gf_isom_get_text_description(file, trackNum, stsd_idx, &txtcfg);
+			if (txtcfg) {
+				if (txtcfg->displayFlags & GF_TXT_ALL_SAMPLES_FORCED)
+					fprintf(stderr, " - all samples forced");
+				else if (txtcfg->displayFlags & GF_TXT_SOME_SAMPLES_FORCED)
+					fprintf(stderr, " - forced samples");
+				gf_odf_desc_del((GF_Descriptor *) txtcfg);
+			}
 		}
 		fprintf(stderr, "\n\tSize %d x %d - Translation X=%d Y=%d - Layer %d\n", w, h, tx, ty, l);
 	} else if (mtype == GF_ISOM_MEDIA_META) {
@@ -3541,11 +3559,13 @@ static void DumpStsdInfo(GF_ISOFile *file, u32 trackNum, Bool full_dump, Bool du
 			u32 tmcd_flags, tmcd_num, tmcd_den, tmcd_fpt;
 
 			gf_isom_get_tmcd_config(file, trackNum, a_stsd_idx, &tmcd_flags, &tmcd_num, &tmcd_den, &tmcd_fpt);
+#if !defined(GPAC_DISABLE_INSPECT)
 			if (sample->data) {
 				char szTimecode[100];
 				gf_inspect_format_timecode(sample->data, sample->dataLength, tmcd_flags, tmcd_num, tmcd_den, tmcd_fpt, szTimecode);
 				fprintf(stderr, "\tFirst timecode: %s\n", szTimecode);
 			}
+#endif
 			gf_isom_sample_del(&sample);
 		}
 	} else if (msub_type==GF_ISOM_SUBTYPE_OPUS) {
@@ -3719,6 +3739,11 @@ void DumpTrackInfo(GF_ISOFile *file, GF_ISOTrackID trackID, Bool full_dump, Bool
 	msub_type = gf_isom_get_mpeg4_subtype(file, trackNum, 1);
 	if (!msub_type) msub_type = gf_isom_get_media_subtype(file, trackNum, 1);
 
+	if (gf_isom_is_track_referenced(file, trackNum, GF_ISOM_REF_CHAP)) {
+		if (gf_isom_is_video_handler_type(mtype)) fprintf(stderr, "Chapter Thumbnails\n");
+		else if ((mtype==GF_ISOM_MEDIA_TEXT) || (mtype==GF_ISOM_MEDIA_SUBT)) fprintf(stderr, "Chapter Labels\n");
+	}
+
 	fprintf(stderr, "Media Samples: %d", gf_isom_get_sample_count(file, trackNum));
 	cdur = gf_isom_get_constant_sample_duration(file, trackNum);
 	if (cdur) {
@@ -3772,6 +3797,24 @@ void DumpTrackInfo(GF_ISOFile *file, GF_ISOTrackID trackID, Bool full_dump, Bool
 		const char *handler_name;
 		gf_isom_get_handler_name(file, trackNum, &handler_name);
 		fprintf(stderr, "Handler name: %s\n", handler_name);
+
+		u32 ridx=0;
+		while (1) {
+			u32 rtype, rcount, j;
+			const GF_ISOTrackID *refs = gf_isom_enum_track_references(file, trackNum, ridx, &rtype, &rcount);
+			if (!refs) break;
+			if (!ridx)
+				fprintf(stderr, "Track References: ");
+			else
+				fprintf(stderr, ", ");
+			ridx++;
+			fprintf(stderr, "%s to", gf_4cc_to_str(rtype));
+			for (j=0; j<rcount; j++) {
+				fprintf(stderr, " %d", refs[j]);
+			}
+		}
+		if (ridx)
+			fprintf(stderr, "\n");
 	}
 
 	print_udta(file, trackNum, GF_FALSE);
@@ -3995,7 +4038,7 @@ void DumpMovieInfo(GF_ISOFile *file, Bool full_dump)
 	gf_isom_get_creation_time(file, &create, &modif);
 	fprintf(stderr, "Created: %s", format_date(create, szDur));
 	if (create != modif)
-		fprintf(stderr, "Modified: %s", format_date(modif, szDur));
+		fprintf(stderr, " - Modified: %s", format_date(modif, szDur));
 	fprintf(stderr, "\n");
 
 	DumpMetaItem(file, 0, 0, "# Movie Meta");

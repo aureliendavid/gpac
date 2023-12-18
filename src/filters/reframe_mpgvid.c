@@ -28,7 +28,7 @@
 #include <gpac/filters.h>
 #include <gpac/internal/media_dev.h>
 
-#ifndef GPAC_DISABLE_AV_PARSERS
+#if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_RFMPGVID)
 
 #define MIN_HDR_STORE	12
 typedef struct
@@ -908,7 +908,7 @@ GF_Err mpgviddmx_process(GF_Filter *filter)
 							ctx->hdr_store_alloc = (u32) (ctx->hdr_store_size + pck_size - vosh_start);
 							ctx->hdr_store = gf_realloc(ctx->hdr_store, sizeof(char)*ctx->hdr_store_alloc);
 						}
-						memcpy(ctx->hdr_store + ctx->hdr_store_size, data + vosh_start, (size_t) (pck_size - vosh_start) );
+						memmove(ctx->hdr_store + ctx->hdr_store_size, data + vosh_start, (size_t) (pck_size - vosh_start) );
 						ctx->hdr_store_size += pck_size - (u32) vosh_start;
 					}
 					gf_filter_pid_drop_packet(ctx->ipid);
@@ -956,7 +956,7 @@ GF_Err mpgviddmx_process(GF_Filter *filter)
 							ctx->hdr_store_alloc = (u32) (ctx->hdr_store_size + pck_size - (u32) vosh_start);
 							ctx->hdr_store = gf_realloc(ctx->hdr_store, sizeof(char)*ctx->hdr_store_alloc);
 						}
-						memcpy(ctx->hdr_store + ctx->hdr_store_size, data + vosh_start, (size_t) (pck_size - vosh_start) );
+						memmove(ctx->hdr_store + ctx->hdr_store_size, data + vosh_start, (size_t) (pck_size - vosh_start) );
 						ctx->hdr_store_size += pck_size - (u32) vosh_start;
 					}
 					gf_filter_pid_drop_packet(ctx->ipid);
@@ -1081,6 +1081,11 @@ GF_Err mpgviddmx_process(GF_Filter *filter)
 		//needs adjustement
 		if (bytes_from_store) {
 			size += bytes_from_store + hdr_offset;
+			if (size > remain) {
+				e = GF_NON_COMPLIANT_BITSTREAM;
+				GF_LOG(GF_LOG_ERROR, GF_LOG_MEDIA, ("[MPGVid] packet too large to process (size %llu remain %d)\n", size, remain ));
+				break;
+			}
 		}
 
 		if ((e == GF_EOS) && !ctx->input_is_au_end) {
@@ -1184,7 +1189,7 @@ GF_Err mpgviddmx_process(GF_Filter *filter)
 			if (ctx->input_is_au_start) {
 				ctx->input_is_au_start = GF_FALSE;
 			} else {
-				//we use the carousel flag temporarly to indicate the cts must be recomputed
+				//we use the carousel flag temporarily to indicate the cts must be recomputed
 				gf_filter_pck_set_carousel_version(dst_pck, 1);
 			}
 			gf_filter_pck_set_sap(dst_pck, (ftype==1) ? GF_FILTER_SAP_1 : GF_FILTER_SAP_NONE);
@@ -1404,12 +1409,9 @@ const GF_FilterRegister *rfmpgvid_register(GF_FilterSession *session)
 {
 	return &MPGVidDmxRegister;
 }
-
 #else
 const GF_FilterRegister *rfmpgvid_register(GF_FilterSession *session)
 {
 	return NULL;
 }
-#endif // GPAC_DISABLE_AV_PARSERS
-
-
+#endif // #if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_RFMPGVID)

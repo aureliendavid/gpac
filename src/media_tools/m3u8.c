@@ -123,7 +123,7 @@ GF_Err playlist_element_del(PlaylistElement * e) {
 		gf_free(e->init_segment_url);
 	}
 	memset(e->key_iv, 0, sizeof(bin128) );
-	if (e->url) 
+	if (e->url)
 		gf_free(e->url);
 
 	switch (e->element_type) {
@@ -293,7 +293,7 @@ static GFINLINE int string2num(const char *s) {
 	MEDIA_TYPE_##type + \
 	string2num(group_id) \
 	) \
- 
+
 static Bool safe_start_equals(const char *attribute, const char *line) {
 	size_t len, atlen;
 	if (line == NULL)
@@ -334,7 +334,7 @@ static char** extract_attributes(const char *name, const char *line, const int n
 			sz = i - start;
 			if (quote && (line[i] == quote))
 				sz++;
-			
+
 			while (line[start+spaces] == ' ')
 				spaces++;
 			if ((sz-spaces<=1) && (line[start+spaces]==',')) {
@@ -345,10 +345,12 @@ static char** extract_attributes(const char *name, const char *line, const int n
 					ret[curr_attribute] = gf_calloc( (1+sz-spaces), sizeof(char));
 					strncpy(ret[curr_attribute], &(line[start+spaces]), sz-spaces);
 					curr_attribute++;
+					if (curr_attribute >= num_attributes)
+						break;
 				}
 			}
 			start = i+1;
-			
+
 			if (start == len) {
 				return ret;
 			}
@@ -372,6 +374,15 @@ static char** extract_attributes(const char *name, const char *line, const int n
 	if (v > attributes->compatibility_version) \
 		attributes->compatibility_version = v;
 
+static void free_attrs(char** attributes)
+{
+	u32 i = 0;
+	while (attributes[i] != NULL) {
+		gf_free(attributes[i]);
+		i++;
+	}
+	gf_free(attributes);
+}
 /**
  * Parses the attributes and accumulate into the attributes structure
  */
@@ -532,10 +543,12 @@ static char** parse_attributes(const char *line, s_accumulated_attributes *attri
 			if (safe_start_equals("URI=\"", val)) {
 				char *uri = val + 5;
 				int_value = (u32) strlen(uri);
-				if (uri[int_value-1] == '"') {
+				if (int_value > 0 && uri[int_value-1] == '"') {
 					if (attributes->init_url) gf_free(attributes->init_url);
 					attributes->init_url = gf_strdup(uri);
 					attributes->init_url[int_value-1]=0;
+				} else {
+					GF_LOG(GF_LOG_ERROR, GF_LOG_DASH,("[M3U8] Invalid URI (%s) in EXT-X-MAP\n", val));
 				}
 			}
 			else if (safe_start_equals("BYTERANGE=\"", val)) {
@@ -604,6 +617,7 @@ static char** parse_attributes(const char *line, s_accumulated_attributes *attri
 		}
 		if (!attributes->bandwidth) {
 			GF_LOG(GF_LOG_WARNING, GF_LOG_DASH,("[M3U8] Invalid #EXT-X-STREAM-INF: no BANDWIDTH found. Ignoring the line.\n"));
+			free_attrs(ret);
 			return NULL;
 		}
 		return ret;
@@ -690,6 +704,7 @@ static char** parse_attributes(const char *line, s_accumulated_attributes *attri
 					attributes->stream_id = GROUP_ID_TO_PROGRAM_ID(CLOSED_CAPTIONS, attributes->group.closed_captions);
 				} else if (attributes->type == MEDIA_TYPE_UNKNOWN) {
 					GF_LOG(GF_LOG_ERROR, GF_LOG_DASH,("[M3U8] Invalid #EXT-X-MEDIA:GROUP-ID=%s. Ignoring the line.\n", ret[i]+9));
+					free_attrs(ret);
 					return NULL;
 				}
 			} else if (safe_start_equals("LANGUAGE=\"", ret[i])) {
@@ -735,6 +750,7 @@ static char** parse_attributes(const char *line, s_accumulated_attributes *attri
 
 		if (attributes->type == MEDIA_TYPE_UNKNOWN) {
 			GF_LOG(GF_LOG_WARNING, GF_LOG_DASH,("[M3U8] Invalid #EXT-X-MEDIA: TYPE is missing. Ignoring the line.\n"));
+			free_attrs(ret);
 			return NULL;
 		}
 		if (attributes->type == MEDIA_TYPE_CLOSED_CAPTIONS && attributes->mediaURL) {
@@ -745,10 +761,12 @@ static char** parse_attributes(const char *line, s_accumulated_attributes *attri
 		if ((attributes->type == MEDIA_TYPE_AUDIO && !attributes->group.audio)
 		        || (attributes->type == MEDIA_TYPE_VIDEO && !attributes->group.video)) {
 			GF_LOG(GF_LOG_WARNING, GF_LOG_DASH,("[M3U8] Invalid #EXT-X-MEDIA: missing GROUP-ID attribute. Ignoring the line.\n"));
+			free_attrs(ret);
 			return NULL;
 		}
 		if (!attributes->stream_id) {
 			GF_LOG(GF_LOG_WARNING, GF_LOG_DASH,("[M3U8] Invalid #EXT-X-MEDIA: no ID was computed. Check previous errors. Ignoring the line.\n"));
+			free_attrs(ret);
 			return NULL;
 		}
 

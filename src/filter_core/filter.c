@@ -691,6 +691,8 @@ void gf_filter_del(GF_Filter *filter)
 				a_filter->cap_dst_filter = NULL;
 			if (a_filter->cloned_from == filter)
 				a_filter->cloned_from = NULL;
+			if (a_filter->cloned_instance == filter)
+				a_filter->cloned_instance = NULL;
 			if (a_filter->on_setup_error_filter == filter)
 				a_filter->on_setup_error_filter = NULL;
 			if (a_filter->target_filter == filter)
@@ -701,6 +703,13 @@ void gf_filter_del(GF_Filter *filter)
 		}
 		gf_mx_v(filter->session->filters_mx);
 	}
+	if (filter->skip_cids.vals) {
+		GF_PropertyValue prop;
+		prop.value.string_list = filter->skip_cids;
+		prop.type = GF_PROP_STRING_LIST;
+		gf_props_reset_single(&prop);
+	}
+
 	if (filter->instance_description)
 		gf_free(filter->instance_description);
 	if (filter->instance_version)
@@ -768,7 +777,7 @@ void gf_filter_set_name(GF_Filter *filter, const char *name)
 	filter->name = gf_strdup(name ? name : filter->freg->name);
 }
 
-static void gf_filter_set_id(GF_Filter *filter, const char *ID)
+void gf_filter_set_id(GF_Filter *filter, const char *ID)
 {
 	assert(filter);
 
@@ -978,8 +987,9 @@ static void gf_filter_set_arg(GF_Filter *filter, const GF_FilterArgs *a, GF_Prop
 }
 
 
-static void filter_translate_autoinc(GF_Filter *filter, char *value)
+void filter_solve_prop_template(GF_Filter *filter, GF_FilterPid *pid, char **value)
 {
+	char ref_prop_dump[GF_PROP_DUMP_ARG_SIZE];
 	u32 ainc_crc, i;
 	GF_FSAutoIncNum *auto_int=NULL;
 	u32 inc_count;
@@ -988,11 +998,45 @@ static void filter_translate_autoinc(GF_Filter *filter, char *value)
 	s32 increment=1;
 	char szInt[100];
 
+	char *search_str = *value;
 	while (1) {
 		char *step_sep;
 		char *inc_end, *inc_sep;
-		inc_sep = strstr(value, "$GINC(");
+		char *s1 = strchr(search_str, '$');
+		char *s2 = strchr(search_str, '@');
+		if (s1 && s2 && (s2<s1)) s1 = NULL;
+		inc_sep = s1 ? s1 : s2;
+
 		if (!inc_sep) return;
+		if (strncmp(inc_sep+1, "GINC(", 5)) {
+			char *next = pid ?  strchr(inc_sep+1, inc_sep[0]) : NULL;
+			if (!next) {
+				search_str = inc_sep+1;
+				continue;
+			}
+			//check for prop
+			next[0] = 0;
+
+			const GF_PropertyValue *src_prop=NULL;
+			u32 ref_p4cc = gf_props_get_id(inc_sep+1);
+
+			if (ref_p4cc)
+				src_prop = gf_filter_pid_get_property(pid, ref_p4cc);
+			else
+				src_prop = gf_filter_pid_get_property_str(pid, inc_sep+1);
+
+			char *solved = src_prop ? (char*) gf_props_dump(ref_p4cc, src_prop, ref_prop_dump, GF_PROP_DUMP_DATA_INFO) : "";
+			inc_sep[0] = 0;
+			char *new_val = gf_strdup(*value);
+			gf_dynstrcat(&new_val, solved, NULL);
+			u32 len = (u32) strlen(new_val);
+			gf_dynstrcat(&new_val, next+1, NULL);
+			gf_free(*value);
+			*value = new_val;
+			search_str = new_val + len;
+			continue;
+		}
+
 		inc_end = strstr(inc_sep, ")");
 		if (!inc_end) return;
 
@@ -1014,10 +1058,11 @@ static void filter_translate_autoinc(GF_Filter *filter, char *value)
 				auto_int=NULL;
 				continue;
 			}
-			if (auto_int->filter == filter) {
+			if ((auto_int->filter == filter) && (auto_int->pid==pid)) {
 				sprintf(szInt, "%d", auto_int->inc_val);
 				break;
 			}
+
 			if (!assigned)
 				max_int = auto_int->inc_val;
 			else if ((increment>0) && (max_int < auto_int->inc_val))
@@ -1032,6 +1077,7 @@ static void filter_translate_autoinc(GF_Filter *filter, char *value)
 			GF_SAFEALLOC(auto_int, GF_FSAutoIncNum);
 			if (auto_int) {
 				auto_int->filter = filter;
+				auto_int->pid = pid;
 				auto_int->crc = ainc_crc;
 				if (assigned) auto_int->inc_val = max_int + increment;
 				else sscanf(szInt, "%d", &auto_int->inc_val);
@@ -1040,8 +1086,15 @@ static void filter_translate_autoinc(GF_Filter *filter, char *value)
 		}
 		if (auto_int) {
 			sprintf(szInt, "%d", auto_int->inc_val);
-			strcat(value, szInt);
-			strcat(value, inc_end);
+			char *new_val = gf_strdup(*value);
+			gf_dynstrcat(&new_val, szInt, NULL);
+			gf_dynstrcat(&new_val, inc_end, NULL);
+			u32 len = (u32) strlen(new_val);
+			gf_free(*value);
+			*value = new_val;
+			search_str = new_val + len;
+		} else {
+			search_str = inc_sep + 1;
 		}
 	}
 }
@@ -1078,7 +1131,7 @@ GF_PropertyValue gf_filter_parse_prop_solve_env_var(GF_FilterSession *fs, GF_Fil
 
 	if (f && strstr(value, "$GINC(")) {
 		char *a_value = gf_strdup(value);
-		filter_translate_autoinc(f, a_value);
+		filter_solve_prop_template(f, NULL, &a_value);
 		argv = gf_props_parse_value(type, name, a_value, enum_values, fs->sep_list);
 		gf_free(a_value);
 		return argv;
@@ -1152,7 +1205,7 @@ Bool gf_filter_update_arg_apply(GF_Filter *filter, const char *arg_name, const c
 
 		argv = gf_filter_parse_prop_solve_env_var(filter->session, filter, a->arg_type, a->arg_name, arg_value, a->min_max_enum);
 
-		if (argv.type != GF_PROP_FORBIDEN) {
+		if (argv.type != GF_PROP_FORBIDDEN) {
 			GF_Err e = GF_OK;
 			if (!is_sync_call) {
 				FSESS_CHECK_THREAD(filter)
@@ -1462,7 +1515,7 @@ static void filter_parse_dyn_args(GF_Filter *filter, const char *args, GF_Filter
 		&& !filter->multi_sink_target
 		&& (filter->freg->flags & GF_FS_REG_FORCE_REMUX)
 	) {
-		filter->force_demux = GF_TRUE;
+		filter->force_demux = 1;
 	}
 	//implicit linking mode: if not a script or if script init (initialized called) and no extra pid set, enable clonable
 	if ( (filter->session->flags & GF_FS_FLAG_IMPLICIT_MODE)
@@ -1509,6 +1562,7 @@ static void filter_parse_dyn_args(GF_Filter *filter, const char *args, GF_Filter
 		}
 
 		if (!opaque_arg) {
+			Bool check_url_esc=GF_FALSE;
 			//we don't use gf_fs_path_escape_colon here because we also analyse whether the URL is internal or not, and we don't want to do that on each arg
 			if (sep) {
 				//escape XML inputs: simply search for ">:" (: being the arg sep), if not found consider the entire string the arg value
@@ -1627,6 +1681,7 @@ static void filter_parse_dyn_args(GF_Filter *filter, const char *args, GF_Filter
 							//get first : after root
 							if (sep) sep = strchr(sep+1, ':');
 						}
+						check_url_esc = GF_TRUE;
 					}
 				}
 
@@ -1636,10 +1691,13 @@ static void filter_parse_dyn_args(GF_Filter *filter, const char *args, GF_Filter
 				}
 				//escape data/time
 				if (sep) {
-					char *prev_date = sep-3;
-					if (prev_date[0]=='T') {}
-					else if (prev_date[1]=='T') { prev_date ++; }
-					else { prev_date = NULL; }
+					char *prev_date = NULL;
+					if ((u32) (sep - args)>=3) {
+						prev_date = sep-3;
+						if (prev_date[0]=='T') {}
+						else if (prev_date[1]=='T') { prev_date ++; }
+						else { prev_date = NULL; }
+					}
 
 skip_date:
 					if (prev_date) {
@@ -1696,6 +1754,10 @@ skip_date:
 			if (sep) {
 				escaped = (sep[1] == filter->session->sep_args) ? NULL : strstr(sep, szEscape);
 				if (escaped && xml_start && (escaped>xml_start)) escaped = NULL;
+				//if we have a :gfopt: or :gfloc: set without :gpac: on a source, consider this as a valid escape pattern
+				if (check_url_esc && !escaped && !strncmp(args, szSrc, 4) && (!strncmp(sep, ":gfopt:", 7) ||!strncmp(sep, ":gfloc:", 7)))
+					escaped = sep;
+
 				if (escaped) {
 					sep = escaped;
 				}
@@ -1830,7 +1892,7 @@ skip_date:
 				if (reverse_bool && (argv.type==GF_PROP_BOOL))
 					argv.value.boolean = !argv.value.boolean;
 
-				if (argv.type != GF_PROP_FORBIDEN) {
+				if (argv.type != GF_PROP_FORBIDDEN) {
 					if (!for_script && (a->offset_in_private>=0)) {
 						gf_filter_set_arg(filter, a, &argv);
 					} else if (filter->freg->update_arg) {
@@ -1923,6 +1985,20 @@ skip_date:
 				found = GF_TRUE;
 				internal_arg = GF_TRUE;
 			}
+			else if (!strcmp("ccp", szArg)) {
+				found = GF_TRUE;
+				internal_arg = GF_TRUE;
+				if (!filter->dynamic_filter) {
+					if (value) {
+						GF_PropertyValue res = gf_filter_parse_prop_solve_env_var(filter->session, filter, GF_PROP_STRING_LIST, "ccp", value, NULL);
+						filter->skip_cids = res.value.string_list;
+					} else {
+						filter->skip_cids.nb_items = 1;
+						filter->skip_cids.vals = gf_malloc(sizeof(char*));
+						filter->skip_cids.vals[0] = gf_strdup("AUTO");
+					}
+				}
+			}
 			//non tracked options
 			else if (!strcmp("gfopt", szArg)) {
 				found = GF_TRUE;
@@ -1956,9 +2032,9 @@ skip_date:
 				//only apply fo explicit sink, not dynamic and no multi-sink target
 				if ((arg_type==GF_FILTER_ARG_EXPLICIT_SINK) && !filter->dynamic_filter && !filter->multi_sink_target) {
 					if (value && (!strcmp(value, "0") || !strcmp(value, "false") || !strcmp(value, "no"))) {
-						filter->force_demux = GF_TRUE;
+						filter->force_demux = 2;
 					} else {
-						filter->force_demux = GF_FALSE;
+						filter->force_demux = 0;
 					}
 				}
 				found = GF_TRUE;
@@ -2107,7 +2183,7 @@ static void gf_filter_parse_args(GF_Filter *filter, const char *args, GF_FilterA
 
 		argv = gf_filter_parse_prop_solve_env_var(filter->session, filter, a->arg_type, a->arg_name, def_val, a->min_max_enum);
 
-		if (argv.type != GF_PROP_FORBIDEN) {
+		if (argv.type != GF_PROP_FORBIDDEN) {
 			if (!for_script && (a->offset_in_private>=0)) {
 				gf_filter_set_arg(filter, a, &argv);
 			} else if (filter->freg->update_arg) {
@@ -2153,7 +2229,7 @@ static void reset_filter_args(GF_Filter *filter)
 		i++;
 		if (!a || !a->arg_name) break;
 
-		if (a->arg_type != GF_PROP_FORBIDEN) {
+		if (a->arg_type != GF_PROP_FORBIDDEN) {
 			memset(&argv, 0, sizeof(GF_PropertyValue));
 			argv.type = a->arg_type;
 			gf_filter_set_arg(filter, a, &argv);
@@ -2205,7 +2281,7 @@ static GF_FilterPidInst *filter_relink_get_upper_pid(GF_FilterPidInst *src_pidin
 		if (pidinst->filter->num_input_pids != 1) break;
 		if (pidinst->filter->num_output_pids != 1) break;
 		//filter was explicitly loaded, cannot go beyond
-		if (! pidinst->filter->dynamic_filter && !pidinst->filter->encoder_stream_type) break;
+		if (! pidinst->filter->dynamic_filter && !pidinst->filter->encoder_codec_id) break;
 		opid = gf_list_get(pidinst->filter->output_pids, 0);
 		assert(opid);
 		//we have a fan-out, we cannot replace the filter graph after that point
@@ -2254,7 +2330,7 @@ void gf_filter_relink_dst(GF_FilterPidInst *from_pidinst, GF_Err reason)
 	GF_FilterPidInst *dst_pidinst = NULL;
 	GF_Filter *cur_filter = from_pidinst->filter;
 
-	if (from_pidinst->filter->encoder_stream_type) {
+	if (from_pidinst->filter->encoder_codec_id) {
 		is_encoder = GF_TRUE;
 	}
 	//locate the true destination
@@ -2327,7 +2403,7 @@ void gf_filter_relink_dst(GF_FilterPidInst *from_pidinst, GF_Err reason)
 	gf_filter_renegociate_output_dst(link_from_pid, link_from_pid->filter, filter_dst, dst_pidinst, src_pidinst);
 }
 
-GF_Filter *gf_fs_load_encoder(GF_FilterSession *fsess, const char *args, GF_List *filter_blacklist);
+GF_Filter *gf_fs_load_encoder(GF_FilterSession *fsess, const char *args, GF_List *filter_blacklist, GF_Err *err_code);
 
 void gf_filter_renegociate_output_dst(GF_FilterPid *pid, GF_Filter *filter, GF_Filter *filter_dst, GF_FilterPidInst *dst_pidi, GF_FilterPidInst *src_pidi)
 {
@@ -2344,8 +2420,8 @@ void gf_filter_renegociate_output_dst(GF_FilterPid *pid, GF_Filter *filter, GF_F
 
 	src_f = src_pidi ? src_pidi->pid->filter : pid->pid->filter;
 
-	if (src_pidi && src_pidi->filter->encoder_stream_type) {
-		new_f = gf_fs_load_encoder(filter->session, src_pidi->filter->orig_args, filter->blacklisted);
+	if (src_pidi && src_pidi->filter->encoder_codec_id) {
+		new_f = gf_fs_load_encoder(filter->session, src_pidi->filter->orig_args, filter->blacklisted, NULL);
 
 		//store destination
 		if (new_f) {
@@ -2817,6 +2893,7 @@ static void gf_filter_process_task(GF_FSTask *task)
 	}
 
 	if (filter->prevent_blocking) skip_block_mode = GF_TRUE;
+	else if (filter->in_eos_resume) skip_block_mode = GF_TRUE;
 	else if (filter->session->in_final_flush) skip_block_mode = GF_TRUE;
 
 	//blocking filter: remove filter process task - task will be reinserted upon unblock()
@@ -3064,7 +3141,7 @@ GF_Filter *gf_filter_clone(GF_Filter *filter, GF_Filter *source_filter)
 		GF_Filter *old_source;
 		GF_FilterPidInst *first_in = gf_list_get(filter->input_pids, 0);
 		//if source filter is set, this is a clone due to a new instance request, so we have at least one input
-		assert(first_in);
+		if (!first_in) return NULL;
 		old_source = first_in->pid->filter;
 		//get source arguments for new source filter connecting to the clone
 		const char *args_src_new = gf_filter_get_args_stripped(filter->session, source_filter->src_args ? source_filter->src_args : source_filter->orig_args, GF_FALSE);
@@ -3097,6 +3174,7 @@ GF_Filter *gf_filter_clone(GF_Filter *filter, GF_Filter *source_filter)
 	}
 	if (!new_filter) return NULL;
 	new_filter->cloned_from = filter;
+	new_filter->dynamic_filter = filter->dynamic_filter ? 1 : 0;
 	GF_LOG(GF_LOG_DEBUG, GF_LOG_FILTER, ("Filter cloned (register %s, args %s)\n", filter->freg->name, filter->orig_args ? filter->orig_args : "none"));
 
 	return new_filter;
@@ -5234,6 +5312,12 @@ const char *gf_filter_meta_get_instances(GF_Filter *filter)
 {
 	return filter ? filter->meta_instances : NULL;
 }
+
+void gf_filter_skip_seg_size_events(GF_Filter *filter)
+{
+	if (filter) filter->no_segsize_evts=GF_TRUE;
+}
+
 
 #if 0
 void gf_filter_pid_dump_buffers(GF_FilterPid *pid)

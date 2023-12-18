@@ -236,7 +236,7 @@ struct __tag_compositor
 
 	/*the main scene graph*/
 	GF_SceneGraph *scene;
-	/*extra scene graphs (OSD, etc), always registered in draw order. That's the module responsability
+	/*extra scene graphs (OSD, etc), always registered in draw order. That's the module responsibility
 	to draw them*/
 	GF_List *extra_scenes;
 
@@ -707,6 +707,7 @@ struct __tag_compositor
 
 	Bool gazer_enabled, sgaze;
 	s32 gaze_x, gaze_y;
+	Bool gaze_changed;
 
 	Bool validator_mode;
 
@@ -1343,7 +1344,7 @@ typedef struct
 } GF_AudioInput;
 /*setup interface with audio renderer - overwrite any functions needed after setup EXCEPT callback object*/
 void gf_sc_audio_setup(GF_AudioInput *ai, GF_Compositor *sr, GF_Node *node);
-/*unregister interface from renderer/mixer and stops source - deleteing the interface is the caller responsability*/
+/*unregister interface from renderer/mixer and stops source - deleteing the interface is the caller responsibility*/
 void gf_sc_audio_predestroy(GF_AudioInput *ai);
 /*open audio object*/
 GF_Err gf_sc_audio_open(GF_AudioInput *ai, MFURL *url, Double clipBegin, Double clipEnd, Bool lock_timeline);
@@ -2065,6 +2066,9 @@ enum
 
 	/*flag indicates this visual pid is a text subtitle*/
 	GF_ODM_IS_SPARSE = (1<<18),
+
+	/*flag set when ODM is a forced subtitle in normal play mode*/
+	GF_ODM_SUB_FORCED = (1<<19),
 };
 
 enum
@@ -2362,6 +2366,7 @@ struct _mediaobj
 
 	Bool is_eos;
 	Bool config_changed;
+	Bool srd_map_changed;
 
 	/*currently valid properties of the object*/
 	u32 width, height, stride, pixel_ar, pixelformat, bitrate;
@@ -2369,7 +2374,8 @@ struct _mediaobj
 	u32 sample_rate, num_channels, afmt, bytes_per_sec;
 	u64 channel_config;
 	Bool planar_audio;
-	u32 srd_x, srd_y, srd_w, srd_h, srd_full_w, srd_full_h;
+	u32 srd_x, srd_y, srd_w, srd_h;
+	u32 srd_full_w, srd_full_h, srd_map_ox, srd_map_oy;
 	u32 flip, rotate;
 
 	u32 quality_degradation_hint;

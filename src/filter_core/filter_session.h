@@ -60,6 +60,7 @@ struct __gf_prop_entry
 //we use the same value internally but with reverse meaning
 #define GF_FS_FLAG_IMPLICIT_MODE	GF_FS_FLAG_NO_IMPLICIT
 
+#define GF_FS_FLAG_FORCE_DEBUG	(1<<30)
 
 #ifndef GF_PROPS_HASHTABLE_SIZE
 #define GF_PROPS_HASHTABLE_SIZE 0
@@ -296,6 +297,7 @@ struct __gf_fs_task
 	const char *log_name;
 	void *udta;
 	u32 class_type;
+	u32 thid;
 };
 
 void gf_fs_post_task(GF_FilterSession *fsess, gf_fs_task_callback fun, GF_Filter *filter, GF_FilterPid *pid, const char *log_name, void *udta);
@@ -524,6 +526,9 @@ struct __gf_filter_session
 	Bool is_worker;
 	volatile u32 pending_threads;
 #endif
+
+
+	u32 dbg_flags;
 };
 
 #ifdef GPAC_HAS_QJS
@@ -540,6 +545,7 @@ typedef struct
 	u32 crc;
 	s32 inc_val;
 	GF_Filter *filter;
+	GF_FilterPid *pid;
 } GF_FSAutoIncNum;
 
 #ifndef GPAC_DISABLE_3D
@@ -641,7 +647,8 @@ struct __gf_filter
 	Bool no_probe;
 	Bool no_inputs;
 	Bool is_blocking_source;
-	Bool force_demux;
+	//0: no action, 1: force demux if input is file, 2: force demux if input is not file (i.e :nomux=0)
+	u32 force_demux;
 
 	s32 nb_pids_playing;
 
@@ -676,6 +683,7 @@ struct __gf_filter
 	volatile u32 out_pid_connection_pending;
 	volatile u32 pending_packets;
 	volatile u32 nb_ref_packets;
+	volatile u64 ref_bytes;
 
 	volatile u32 stream_reset_pending;
 	volatile u32 num_events_queued;
@@ -741,6 +749,7 @@ struct __gf_filter
 
 	//requested by a filter to disable blocking
 	Bool prevent_blocking;
+	Bool in_eos_resume;
 
 	//filter destroy task has been posted
 	Bool finalized;
@@ -807,7 +816,9 @@ struct __gf_filter
 	Bool user_pid_props;
 
 	//for encoder filters, set to the corresponding stream type - used to discard filters during the resolution
-	u32 encoder_stream_type;
+	u32 encoder_codec_id;
+	GF_PropStringList skip_cids;
+	Bool filter_skiped;
 
 	Bool act_as_sink;
 	Bool require_source_id;
@@ -845,6 +856,10 @@ struct __gf_filter
 	GF_Filter *multi_sink_target;
 
 	Bool event_target;
+	//clone of filter for new instance handling - if  new instance is required by configure
+	//if NULL, clone and rememeber here the clone
+	//if not NULL, post configure to the cloned instance
+	struct __gf_filter *cloned_instance;
 
 	u64 last_schedule_task_time;
 
@@ -855,6 +870,7 @@ struct __gf_filter
 	GF_Filter *single_source;
 
 	char *meta_instances;
+	Bool no_segsize_evts;
 
 #ifdef GPAC_HAS_QJS
 	char *iname;
@@ -944,6 +960,7 @@ struct __gf_filter_pid_inst
 	u64 max_process_time, max_sap_process_time;
 	u64 first_frame_time;
 	Bool is_end_of_stream;
+	Bool keepalive_signaled;
 	Bool is_playing, is_paused;
 	u8 play_queued, stop_queued;
 	
@@ -1010,6 +1027,7 @@ struct __gf_filter_pid
 	
 	//set whenever an eos packet is dispatched, reset whenever a regular packet is dispatched
 	Bool has_seen_eos;
+	Bool eos_keepalive;
 	u32 nb_reaggregation_pending;
 
 	//only valid for decoder output pids
@@ -1063,6 +1081,9 @@ struct __gf_filter_pid
 	//only used in filter_check_caps
 	GF_PropertyMap *local_props;
 	volatile u32 num_pidinst_del_pending;
+
+	u32 link_flags;
+
 };
 
 
@@ -1087,6 +1108,7 @@ void gf_filter_pid_detach_task(GF_FSTask *task);
 void gf_filter_pid_detach_task_no_flush(GF_FSTask *task);
 
 u32 gf_filter_caps_bundle_count(const GF_FilterCapability *caps, u32 nb_caps);
+void gf_filter_set_id(GF_Filter *filter, const char *ID);
 
 void gf_filter_post_remove(GF_Filter *filter);
 
@@ -1142,6 +1164,10 @@ const GF_PropertyValue *gf_filter_pid_get_property_str_first(GF_FilterPid *pid, 
 void gf_filter_pid_set_args(GF_Filter *filter, GF_FilterPid *pid);
 
 Bool gf_filter_aggregate_packets(GF_FilterPidInst *dst);
+
+//solve property template, or jusr GINC() if pid is NULL
+void filter_solve_prop_template(GF_Filter *filter, GF_FilterPid *pid, char **value);
+
 enum
 {
 	EDGE_STATUS_NONE=0,
@@ -1206,6 +1232,10 @@ Bool gf_filter_update_arg_apply(GF_Filter *filter, const char *arg_name, const c
 GF_List *gf_filter_pid_compute_link(GF_FilterPid *pid, GF_Filter *dst);
 
 GF_PropertyValue gf_filter_parse_prop_solve_env_var(GF_FilterSession *fs, GF_Filter *f, u32 type, const char *name, const char *value, const char *enum_values);
+
+//check if item can be added to a reservoir queue, returns GF_TRUE if not added
+Bool gf_fq_res_add(GF_FilterQueue *fq, void *item);
+
 #endif //_GF_FILTER_SESSION_H_
 
 

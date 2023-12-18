@@ -260,7 +260,6 @@ enum
 	GF_ISOM_BOX_TYPE_IREF	= GF_4CC( 'i', 'r', 'e', 'f' ),
 	GF_ISOM_BOX_TYPE_ENCA	= GF_4CC( 'e', 'n', 'c', 'a' ),
 	GF_ISOM_BOX_TYPE_ENCV	= GF_4CC( 'e', 'n', 'c', 'v' ),
-	GF_ISOM_BOX_TYPE_RESV	= GF_4CC( 'r', 'e', 's', 'v' ),
 	GF_ISOM_BOX_TYPE_ENCT	= GF_4CC( 'e', 'n', 'c', 't' ),
 	GF_ISOM_BOX_TYPE_ENCS	= GF_4CC( 'e', 'n', 'c', 's' ),
 	GF_ISOM_BOX_TYPE_ENCF	= GF_4CC( 'e', 'n', 'c', 'f' ),
@@ -271,11 +270,23 @@ enum
 	GF_ISOM_BOX_TYPE_SCHM	= GF_4CC( 's', 'c', 'h', 'm' ),
 	GF_ISOM_BOX_TYPE_SCHI	= GF_4CC( 's', 'c', 'h', 'i' ),
 
+	GF_ISOM_BOX_TYPE_RESV	= GF_4CC( 'r', 'e', 's', 'v' ),
+	GF_ISOM_BOX_TYPE_RESA	= GF_4CC( 'r', 'e', 's', 'a' ),
+	GF_ISOM_BOX_TYPE_RESM	= GF_4CC( 'r', 'e', 's', 'm' ),
+	GF_ISOM_BOX_TYPE_REST	= GF_4CC( 'r', 'e', 's', 't' ),
+	GF_ISOM_BOX_TYPE_RESU	= GF_4CC( 'r', 'e', 's', 'u' ),
+	GF_ISOM_BOX_TYPE_RESS	= GF_4CC( 'r', 'e', 's', 's' ),
+	GF_ISOM_BOX_TYPE_RESF	= GF_4CC( 'r', 'e', 's', 'f' ),
+	GF_ISOM_BOX_TYPE_RESP	= GF_4CC( 'r', 'e', 's', 'p' ),
+	GF_ISOM_BOX_TYPE_RES3	= GF_4CC( 'r', 'e', 's', '3' ),
+
 	GF_ISOM_BOX_TYPE_STVI	= GF_4CC( 's', 't', 'v', 'i' ),
 
 
 	GF_ISOM_BOX_TYPE_METX	= GF_4CC( 'm', 'e', 't', 'x' ),
 	GF_ISOM_BOX_TYPE_METT	= GF_4CC( 'm', 'e', 't', 't' ),
+	GF_ISOM_BOX_TYPE_URIM	= GF_4CC( 'u', 'r', 'i', 'm' ),
+	GF_ISOM_BOX_TYPE_MEBX	= GF_4CC( 'm', 'e', 'b', 'x' ),
 
 	/* ISMA 1.0 Encryption and Authentication V 1.0 */
 	GF_ISOM_BOX_TYPE_IKMS	= GF_4CC( 'i', 'K', 'M', 'S' ),
@@ -367,7 +378,6 @@ enum
 	GF_ISOM_BOX_TYPE_DIMC	= GF_4CC( 'd', 'i', 'm', 'C' ),
 	GF_ISOM_BOX_TYPE_DIST	= GF_4CC( 'd', 'i', 'S', 'T' ),
 
-
 	GF_ISOM_BOX_TYPE_AC3	= GF_4CC( 'a', 'c', '-', '3' ),
 	GF_ISOM_BOX_TYPE_DAC3	= GF_4CC( 'd', 'a', 'c', '3' ),
 	GF_ISOM_BOX_TYPE_EC3	= GF_4CC( 'e', 'c', '-', '3' ),
@@ -423,6 +433,7 @@ enum
 	GF_ISOM_BOX_TYPE_TOLS	= GF_4CC( 't', 'o', 'l', 's' ),
 	GF_ISOM_BOX_TYPE_IENC	= GF_4CC( 'i', 'e', 'n', 'c' ),
 	GF_ISOM_BOX_TYPE_IAUX 	= GF_4CC('i', 'a', 'u', 'x'),
+	GF_ISOM_BOX_TYPE_ILCE   = GF_4CC( 'i', 'l', 'c', 'e' ),
 
 	/* MIAF Boxes */
 	GF_ISOM_BOX_TYPE_CLLI	= GF_4CC('c', 'l', 'l', 'i'),
@@ -490,6 +501,8 @@ enum
 	GF_QT_BOX_TYPE_CHRM = GF_4CC('c','h','r','m'),
 	GF_QT_BOX_TYPE_STPS = GF_4CC('s','t','p','s'),
 	GF_QT_BOX_TYPE_CIOS = GF_4CC('c','i','o','s'),
+	GF_QT_BOX_TYPE_ENCD	= GF_4CC( 'e', 'n', 'c', 'd' ),
+	GF_QT_BOX_TYPE_FRCD	= GF_4CC( 'f', 'r', 'c', 'd' ),
 
 	/* from drm_sample.c */
 	GF_ISOM_BOX_TYPE_264B 	= GF_4CC('2','6','4','b'),
@@ -624,13 +637,13 @@ typedef struct
 	tmp->type = __4cc;
 
 #define ISOM_DECREASE_SIZE(__ptr, bytes)	if (__ptr->size < (bytes) ) {\
-			GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[isom] not enough bytes in box %s: %d left, reading %d (file %s, line %d)\n", gf_4cc_to_str(__ptr->type), (u32) __ptr->size, (bytes), __FILE__, __LINE__ )); \
+			GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[isom] not enough bytes in box %s: %d left, reading %d (file %s, line %d) - try specifying -no-check (might crash)\n", gf_4cc_to_str(__ptr->type), (u32) __ptr->size, (bytes), __FILE__, __LINE__ )); \
 			return GF_ISOM_INVALID_FILE; \
 		}\
 		__ptr->size -= bytes; \
 
 #define ISOM_DECREASE_SIZE_GOTO_EXIT(__ptr, bytes)	if (__ptr->size < (bytes) ) {\
-			GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[isom] not enough bytes in box %s: %d left, reading %d (file %s, line %d)\n", gf_4cc_to_str(__ptr->type), (u32) __ptr->size, (bytes), __FILE__, __LINE__ )); \
+			GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[isom] not enough bytes in box %s: %d left, reading %d (file %s, line %d) - try specifying -no-check (might crash)\n", gf_4cc_to_str(__ptr->type), (u32) __ptr->size, (bytes), __FILE__, __LINE__ )); \
 			e = GF_ISOM_INVALID_FILE; \
 			goto exit;\
 		}\
@@ -638,7 +651,7 @@ typedef struct
 
 
 #define ISOM_DECREASE_SIZE_NO_ERR(__ptr, bytes)	if (__ptr->size < (bytes) ) {\
-			GF_LOG(GF_LOG_WARNING, GF_LOG_CONTAINER, ("[isom] not enough bytes in box %s: %d left, reading %d (file %s, line %d), skipping box\n", gf_4cc_to_str(__ptr->type), (u32) __ptr->size, (bytes), __FILE__, __LINE__ )); \
+			GF_LOG(GF_LOG_WARNING, GF_LOG_CONTAINER, ("[isom] not enough bytes in box %s: %d left, reading %d (file %s, line %d), skipping box - try specifying -no-check (might crash)\n", gf_4cc_to_str(__ptr->type), (u32) __ptr->size, (bytes), __FILE__, __LINE__ )); \
 			return GF_OK; \
 		}\
 		__ptr->size -= bytes; \
@@ -647,7 +660,7 @@ typedef struct
 /*constructor*/
 GF_Box *gf_isom_box_new(u32 boxType);
 //some boxes may have different syntax based on container. Use this constructor for this case
-GF_Box *gf_isom_box_new_ex(u32 boxType, u32 parentType, Bool skip_logs, Bool is_root_box);
+GF_Box *gf_isom_box_new_ex(u32 boxType, u32 parentType, Bool skip_logs, Bool is_root_box, Bool is_uuid);
 
 GF_Err gf_isom_box_write(GF_Box *ptr, GF_BitStream *bs);
 GF_Err gf_isom_box_read(GF_Box *ptr, GF_BitStream *bs);
@@ -755,7 +768,7 @@ typedef struct
 	GF_ISOM_BOX
 	u8 *data;
 	u32 dataSize;
-	u32 original_4cc;
+	u32 original_4cc, parent_4cc;
 	u32 sai_type, sai_aux_info;
 	u64 sai_offset;
 	struct _gf_saio_box *saio_box;
@@ -1146,6 +1159,8 @@ typedef struct
 	u32 r_FirstSampleInEntry;
 	u32 r_currentEntryIndex;
 	u64 r_CurrentDTS;
+	//when removing samples, this is the DTS of first sample after all removed samples
+	u64 cumulated_start_dts;
 
 	//stats for read
 	u32 max_ts_delta;
@@ -2627,6 +2642,7 @@ typedef struct
 	u8 *moof_data;
 	u32 moof_data_len, trun_ref_size;
 
+	GF_List *trun_list;
 } GF_MovieFragmentBox;
 
 
@@ -3516,6 +3532,13 @@ typedef struct
 	u32 *group_types;
 } GF_EssentialSamplegroupEntry;
 
+/*interlace group - 'ilce' type*/
+typedef struct
+{
+	u8 ilce_type;
+} GF_FieldInterlaceType;
+
+
 /*
 		CENC stuff
 */
@@ -3652,7 +3675,7 @@ GF_Err senc_Parse(GF_BitStream *bs, GF_TrackBox *trak,
 #else
 	void *traf,
 #endif
-	GF_SampleEncryptionBox *ptr);
+	GF_SampleEncryptionBox *ptr, u32 samples_in_traf);
 
 
 /*
@@ -3742,6 +3765,11 @@ typedef struct {
 	GF_ISOM_BOX
 	u8 axis;
 } GF_ImageMirrorBox;
+
+typedef struct {
+	GF_ISOM_BOX
+	u8 interlace_type;
+} GF_FieldInterlaceTypeBox;
 
 typedef struct
 {
@@ -4668,6 +4696,7 @@ struct _3gpp_text_sample
 	GF_TextScrollDelayBox *scroll_delay;
 	GF_TextBoxBox *box;
 	GF_TextWrapBox *wrap;
+	Bool is_forced;
 
 	GF_List *others;
 	GF_TextKaraokeBox *cur_karaoke;

@@ -584,12 +584,15 @@ typedef struct {
 # ifndef GPAC_DISABLE_ROUTE
 # define GPAC_DISABLE_ROUTE
 # endif
-#ifdef GPAC_HAS_IPV6
-#undef GPAC_HAS_IPV6
-#endif
-#ifdef GPAC_HAS_SOCK_UN
-#undef GPAC_HAS_SOCK_UN
-#endif
+# ifdef GPAC_HAS_IPV6
+# undef GPAC_HAS_IPV6
+# endif
+# ifdef GPAC_HAS_SOCK_UN
+# undef GPAC_HAS_SOCK_UN
+# endif
+# ifndef GPAC_DISABLE_NETCAP
+# define GPAC_DISABLE_NETCAP
+# endif
 #endif
 
 
@@ -722,6 +725,10 @@ typedef struct {
 
 #ifdef GPAC_CONFIG_EMSCRIPTEN
 #define EM_CAST_PTR	(int)
+#endif
+
+#if defined(GPAC_DISABLE_DASHER) && defined(GPAC_DISABLE_DASHIN)
+#define GPAC_DISABLE_MPD
 #endif
 
 //define this to remove most of built-in doc of libgpac - for now filter description and help is removed, but argument help is not

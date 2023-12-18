@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2017-2021
+ *			Copyright (c) Telecom ParisTech 2017-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / unit test filters
@@ -25,6 +25,8 @@
 
 #include <gpac/filters.h>
 #include <gpac/list.h>
+
+#ifndef GPAC_DISABLE_UNITS
 
 typedef struct
 {
@@ -808,7 +810,7 @@ GF_Err utfilter_initialize(GF_Filter *filter)
 
 		memset(&p, 0, sizeof(GF_PropertyValue));
 		p2=p;
-		for (i=GF_PROP_FORBIDEN; i<GF_PROP_LAST_DEFINED; i++) {
+		for (i=GF_PROP_FORBIDDEN; i<GF_PROP_LAST_DEFINED; i++) {
 			char dump[GF_PROP_DUMP_ARG_SIZE];
 			gf_props_get_type_name(i);
 			p.type = p2.type = i;
@@ -987,5 +989,5 @@ const GF_FilterRegister *ut_sink2_register(GF_FilterSession *session)
 	return &UTSink2Register;
 }
 
-
+#endif //#ifndef GPAC_DISABLE_UNITS
 

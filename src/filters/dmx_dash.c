@@ -26,7 +26,7 @@
 #include <gpac/filters.h>
 #include <gpac/constants.h>
 
-#ifndef GPAC_DISABLE_DASH_CLIENT
+#ifndef GPAC_DISABLE_DASHIN
 
 #include <gpac/dash.h>
 
@@ -78,7 +78,7 @@ typedef struct
 	Bool max_res, abort;
 	u32 use_bmin;
 	char *query;
-	Bool noxlink, split_as, noseek, groupsel;
+	Bool noxlink, split_as, noseek, groupsel, bsmerge;
 	u32 lowlat;
 
 	GF_FilterPid *mpd_pid;
@@ -90,7 +90,7 @@ typedef struct
 	//http io for manifest
 	GF_DASHFileIO dash_io;
 	GF_DownloadManager *dm;
-	
+
 	GF_DownloadSession *reuse_download_session;
 	Bool first_cache_name_fetched;
 
@@ -152,12 +152,12 @@ typedef struct
 	Bool eos_detected;
 	u32 next_dependent_rep_idx, current_dependent_rep_idx;
 	u64 utc_map;
-	
+
 #ifdef GPAC_USE_DOWNLOADER
 	GF_DownloadSession *sess;
 #endif
 	Bool is_timestamp_based, pto_setup;
-	Bool prev_is_init_segment;
+	Bool prev_is_init_segment, init_from_media;
 	//media timescale for which the pto, max_cts_in_period and timedisc_ts_offset were computed
 	u32 timescale;
 	s64 pto;
@@ -265,7 +265,12 @@ static void dashdmx_forward_packet(GF_DASHDmxCtx *ctx, GF_FilterPacket *in_pck, 
 				GF_Fraction64 seg_time;
 				const char *seg_name = NULL;
 				u32 seg_number, seg_dur;
-				gf_dash_group_next_seg_info(ctx->dash, group->idx, group->current_dependent_rep_idx, &seg_name, &seg_number, &seg_time, &seg_dur, NULL);
+				if (group->init_from_media) {
+					group->init_from_media = GF_FALSE;
+					gf_dash_group_next_seg_info(ctx->dash, group->idx, 0, NULL, &seg_number, &seg_time, &seg_dur, &seg_name);
+				} else {
+					gf_dash_group_next_seg_info(ctx->dash, group->idx, group->current_dependent_rep_idx, &seg_name, &seg_number, &seg_time, &seg_dur, NULL);
+				}
 				if (seg_name) {
 					gf_filter_pck_set_property(ref, GF_PROP_PCK_FILENAME, &PROP_STRING(seg_name) );
 					gf_filter_pck_set_property(ref, GF_PROP_PCK_FILENUM, &PROP_UINT(seg_number) );
@@ -422,7 +427,7 @@ static void dashdmx_forward_packet(GF_DASHDmxCtx *ctx, GF_FilterPacket *in_pck, 
 				diff *= 1000;
 				diff /= ts;
 				if (diff<=1) diff=0;
-				
+
 				diff *= ts;
 				diff /= 1000;
 			}
@@ -476,7 +481,7 @@ static void dashdmx_forward_packet(GF_DASHDmxCtx *ctx, GF_FilterPacket *in_pck, 
 
 	dst_pck = gf_filter_pck_new_ref(out_pid, 0, 0, in_pck);
 	if (!dst_pck) return;
-	
+
 	//this will copy over clock info for PCR in TS
 	gf_filter_pck_merge_properties(in_pck, dst_pck);
 	gf_filter_pck_set_dts(dst_pck, dts);
@@ -532,7 +537,7 @@ static Bool dashdmx_on_filter_setup_error(GF_Filter *failed_filter, void *udta, 
 	return GF_FALSE;
 }
 
-#ifndef GPAC_DISABLE_CRYPTO
+#if !defined(GPAC_DISABLE_CRYPTO) && !defined(GPAC_DISABLE_CRYPTFILE)
 void gf_cryptfin_set_kms(GF_Filter *f, const char *key_url, bin128 key_IV);
 #endif
 
@@ -625,8 +630,10 @@ static GF_Err dashdmx_load_source(GF_DASHDmxCtx *ctx, u32 group_index, const cha
 
 	gf_filter_set_setup_failure_callback(ctx->filter, group->seg_filter_src, dashdmx_on_filter_setup_error, group);
 
-	if (gf_dash_group_init_segment_is_media(ctx->dash, group_index))
+	if (gf_dash_group_init_segment_is_media(ctx->dash, group_index)) {
 		group->prev_is_init_segment = GF_FALSE;
+		group->init_from_media = GF_TRUE;
+	}
 	else {
 		group->prev_is_init_segment = GF_TRUE;
 		//consider init is always in clear if AES-128, might need further checks
@@ -638,7 +645,7 @@ static GF_Err dashdmx_load_source(GF_DASHDmxCtx *ctx, u32 group_index, const cha
 	//if HLS AES-CBC, set key BEFORE discarding segment URL (if TS, discarding the segment will discard the key uri)
 	if (key_uri) {
 		if (crypto_type==1) {
-#ifndef GPAC_DISABLE_CRYPTO
+#if !defined(GPAC_DISABLE_CRYPTO) && !defined(GPAC_DISABLE_CRYPTFILE)
 			gf_cryptfin_set_kms(group->seg_filter_src, key_uri, key_IV);
 #else
 			gf_free(sURL);
@@ -1129,8 +1136,8 @@ GF_Err dashdmx_io_on_dash_event(GF_DASHFileIO *dashio, GF_DASHEventType dash_evt
 				if (! gf_dash_group_enum_descriptor(ctx->dash, i, GF_MPD_DESC_ESSENTIAL_PROPERTIES, j, &desc_id, &desc_scheme, &desc_value))
 					break;
 				j++;
-				if (!strcmp(desc_scheme, "urn:mpeg:dash:srd:2014")) {
-				} else if (!strcmp(desc_scheme, "http://dashif.org/guidelines/trickmode")) {
+				if (desc_scheme && !strcmp(desc_scheme, "urn:mpeg:dash:srd:2014")) {
+				} else if (desc_scheme && !strcmp(desc_scheme, "http://dashif.org/guidelines/trickmode")) {
 				} else {
 					playable = GF_FALSE;
 					break;
@@ -1686,7 +1693,8 @@ static void dashdmx_declare_properties(GF_DASHDmxCtx *ctx, GF_DASHGroup *group, 
 	}
 
 	if ((ctx->forward==DFWD_FILE) && (stream_type!=GF_STREAM_UNKNOWN)) {
-		gf_filter_pid_set_property(opid, GF_PROP_PID_ORIG_STREAM_TYPE, &PROP_UINT(stream_type) );
+		//for routeout
+		gf_filter_pid_set_property(opid, GF_PROP_PID_PREMUX_STREAM_TYPE, &PROP_UINT(stream_type) );
 
 		gf_filter_pid_set_property(opid, GF_PROP_PCK_HLS_REF, &PROP_LONGUINT( (u64) 1+group->idx) );
 
@@ -1752,6 +1760,30 @@ static void dashdmx_declare_properties(GF_DASHDmxCtx *ctx, GF_DASHGroup *group, 
 
 		gf_filter_pid_set_property(opid, GF_PROP_PID_SRD, &srd);
 		gf_filter_pid_set_property(opid, GF_PROP_PID_SRD_REF, &srdref);
+
+
+
+		const GF_PropertyValue *p = gf_filter_pid_get_property(ipid, GF_PROP_PID_CODECID);
+		if (p && (p->value.uint==GF_CODECID_HEVC)) {
+			//remove any SRD info from source
+			gf_filter_pid_set_property(opid, GF_PROP_PID_CROP_POS, NULL);
+			gf_filter_pid_set_property(opid, GF_PROP_PID_ORIG_SIZE, NULL);
+			//if compositor is loaded, try merging hevc streams
+			if (!ctx->forward && gf_opts_get_bool("temp", "compositor")  && ctx->bsmerge) {
+				i=0;
+				while (1) {
+					const char *desc_id, *desc_scheme, *desc_value;
+					if (! gf_dash_group_enum_descriptor(ctx->dash, group_idx, GF_MPD_DESC_SUPPLEMENTAL_PROPERTIES, i, &desc_id, &desc_scheme, &desc_value))
+						break;
+					i++;
+					if (!strcmp(desc_scheme, "urn:gpac:video:merge:2023") && desc_value) {
+						gf_filter_pid_set_property(opid, GF_PROP_PID_CODECID, &PROP_UINT(GF_CODECID_HEVC_MERGE));
+						gf_filter_pid_set_property(opid, GF_PROP_PID_CODEC_MERGEABLE, &PROP_UINT(atoi(desc_value) ));
+						break;
+					}
+				}
+			}
+		}
 	}
 
 	//setup initial quality - this is disabled in test mode for the time being (invalidates all dash playback hashes)
@@ -1826,6 +1858,10 @@ static void dashdmx_declare_properties(GF_DASHDmxCtx *ctx, GF_DASHGroup *group, 
 	if (!gf_sys_old_arch_compat()) {
 		const char *str = gf_dash_group_get_representation_id(ctx->dash, group->idx);
 		gf_filter_pid_set_property(opid, GF_PROP_PID_REP_ID, str ? &PROP_STRING(str) : NULL );
+
+		s32 gf_dash_get_base_group_index(GF_DashClient *dash, u32 idx);
+		s32 dep_group = 1 + gf_dash_get_base_group_index(ctx->dash, group->idx);
+		gf_filter_pid_set_property(opid, GF_PROP_PID_DASH_DEP_GROUP, (dep_group > 0) ? &PROP_UINT(dep_group) : NULL );
 
 		str = gf_dash_get_period_id(ctx->dash);
 		gf_filter_pid_set_property(opid, GF_PROP_PID_PERIOD_ID, str ? &PROP_STRING(str) : NULL );
@@ -1927,9 +1963,10 @@ static GF_Err dashdmx_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool i
 			gf_filter_pid_copy_properties(ctx->output_mpd_pid, pid);
 			gf_filter_pid_set_name(ctx->output_mpd_pid, "manifest");
 			GF_LOG(GF_LOG_INFO, GF_LOG_DASH, ("[DASHDmx] Creating manifest output PID\n"));
-			//for route
-			gf_filter_pid_set_property(ctx->output_mpd_pid, GF_PROP_PID_ORIG_STREAM_TYPE, &PROP_UINT(GF_STREAM_FILE));
-			gf_filter_pid_set_property(ctx->output_mpd_pid, GF_PROP_PID_IS_MANIFEST, &PROP_BOOL(GF_TRUE));
+			//for routeout
+			gf_filter_pid_set_property(ctx->output_mpd_pid, GF_PROP_PID_PREMUX_STREAM_TYPE, &PROP_UINT(GF_STREAM_FILE));
+			u32 manifest_type = gf_dash_is_m3u8(ctx->dash) ? 2 : 1;
+			gf_filter_pid_set_property(ctx->output_mpd_pid, GF_PROP_PID_IS_MANIFEST, &PROP_UINT(manifest_type));
 		}
 
 
@@ -2398,7 +2435,7 @@ static GF_Err dashdmx_initialize(GF_Filter *filter)
 	}
 #endif
 
-	//we are blocking in live mode for manifest update 
+	//we are blocking in live mode for manifest update
 	gf_filter_set_blocking(filter, GF_TRUE);
 
 	return GF_OK;
@@ -2490,7 +2527,7 @@ static Bool dashdmx_process_event(GF_Filter *filter, const GF_FilterEvent *fevt)
 			for (i=0; i<gf_dash_get_group_count(ctx->dash); i++) {
 				group = gf_dash_get_group_udta(ctx->dash, i);
 				if (!group || !group->template) continue;
-				
+
 				if (!strncmp(group->template, fevt->file_del.url, strlen(group->template) )) {
 					GF_FilterPid *pid = dashdmx_opid_from_group(ctx, group);
 					if (pid) {
@@ -2664,6 +2701,7 @@ static Bool dashdmx_process_event(GF_Filter *filter, const GF_FilterEvent *fevt)
 		}
 		group->is_playing = GF_FALSE;
 		group->prev_is_init_segment = GF_FALSE;
+		group->init_from_media = GF_FALSE;
 		if (ctx->nb_playing) {
 			ctx->initial_play = GF_FALSE;
 			group->force_seg_switch = GF_TRUE;
@@ -2999,7 +3037,7 @@ fetch_next:
 
 	if (next_url_init_or_switch_segment && !group->init_switch_seg_sent) {
 		if (group->in_is_cryptfile) {
-#ifndef GPAC_DISABLE_CRYPTO
+#if !defined(GPAC_DISABLE_CRYPTO) && !defined(GPAC_DISABLE_CRYPTFILE)
 			gf_cryptfin_set_kms(group->seg_filter_src, key_url, key_IV);
 #endif
 		}
@@ -3027,6 +3065,7 @@ fetch_next:
 
 	group->segment_sent = GF_TRUE;
 	group->prev_is_init_segment = GF_FALSE;
+	group->init_from_media = GF_FALSE;
 	group->init_switch_seg_sent = GF_FALSE;
 	group->signal_seg_name = (ctx->forward==DFWD_FILE) ? GF_TRUE : GF_FALSE;
 	group->us_at_seg_start = gf_sys_clock_high_res();
@@ -3045,7 +3084,7 @@ fetch_next:
 	}
 
 	if (group->in_is_cryptfile) {
-#ifndef GPAC_DISABLE_CRYPTO
+#if !defined(GPAC_DISABLE_CRYPTO) && !defined(GPAC_DISABLE_CRYPTFILE)
 		gf_cryptfin_set_kms(group->seg_filter_src, key_url, key_IV);
 #endif
 	}
@@ -3073,7 +3112,7 @@ static GF_Err dashin_abort(GF_DASHDmxCtx *ctx)
 {
 	u32 i;
 	if (!ctx || ctx->in_error) return GF_EOS;
-	
+
 	for (i=0; i<gf_filter_get_ipid_count(ctx->filter); i++) {
 		GF_FilterEvent evt;
 		GF_FilterPid *pid = gf_filter_get_ipid(ctx->filter, i);
@@ -3311,7 +3350,7 @@ GF_Err dashdmx_process(GF_Filter *filter)
 			check_eos = GF_FALSE;
 			dashdmx_forward_packet(ctx, pck, ipid, opid, group);
 			group->wait_for_pck = GF_FALSE;
-			dashdmx_update_group_stats(ctx, group);
+			//do not update stats yet, wait for eos or flush in abort mode
 		}
 	}
 	if (ctx->compute_min_dts) {
@@ -3531,6 +3570,7 @@ static const GF_FilterArgs DASHDmxArgs[] =
 	"- on: use MPD chaining once over, fallback if MPD load failure\n"
 	"- error: use MPD chaining once over or if error (MPD or segment download)", GF_PROP_UINT, "on", "off|on|error", GF_FS_ARG_HINT_ADVANCED},
 	{ OFFS(asloop), "when auto switch is enabled, iterates back and forth from highest to lowest qualities", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_EXPERT},
+	{ OFFS(bsmerge), "allow merging of video bitstreams (only HEVC for now)", GF_PROP_BOOL, "true", NULL, GF_FS_ARG_HINT_EXPERT},
 	{0}
 };
 
@@ -3563,7 +3603,7 @@ GF_FilterRegister DASHDmxRegister = {
 	"- run with no adaptation, to grab maximum quality.\n"
 	"EX gpac -i MANIFEST_URL:algo=none:start_with=max_bw -o dest.mp4\n"
 	"- run with no adaptation, fetching all qualities.\n"
-	"EX gpac -i MANIFEST_URL:split_as -o dst=$File$.mp4:clone\n"
+	"EX gpac -i MANIFEST_URL:split_as -o dst=$File$.mp4\n"
 	"\n"
 	"# File mode\n"
 	"When [-forward]() is set to `file`, the client forwards media files without demultiplexing them.\n"
@@ -3631,11 +3671,11 @@ GF_FilterRegister DASHDmxRegister = {
 };
 
 
-#endif //GPAC_DISABLE_DASH_CLIENT
+#endif // GPAC_DISABLE_DASHIN
 
 const GF_FilterRegister *dashin_register(GF_FilterSession *session)
 {
-#ifndef GPAC_DISABLE_DASH_CLIENT
+#ifndef GPAC_DISABLE_DASHIN
 	return &DASHDmxRegister;
 #else
 	return NULL;
@@ -3643,7 +3683,7 @@ const GF_FilterRegister *dashin_register(GF_FilterSession *session)
 }
 
 
-#ifndef GPAC_DISABLE_DASH_CLIENT
+#ifndef GPAC_DISABLE_DASHIN
 static s32 dashdmx_rate_adaptation_ext(void *udta, u32 group_idx, u32 base_group_idx, Bool force_lower_complexity, GF_DASHCustomAlgoInfo *stats)
 {
 	GF_DASHDmxCtx *ctx = (GF_DASHDmxCtx*) udta;
@@ -3674,20 +3714,18 @@ static s32 dashdmx_download_monitor_ext(void *udta, u32 group_idx, u32 bits_per_
 	stats.current_seg_dur = current_seg_dur;
 	return ctx->on_download_monitor(ctx->rt_udta, group_idx, &stats);
 }
-#endif /*GPAC_DISABLE_DASH_CLIENT*/
+#endif // GPAC_DISABLE_DASHIN
 
 
 GF_EXPORT
 GF_Err gf_filter_bind_dash_algo_callbacks(GF_Filter *filter, void *udta,
-		void (*period_reset)(void *rate_adaptation, u32 type),
+		void (*period_reset)(void *udta, u32 type),
 		void (*new_group)(void *udta, u32 group_idx, void *dash),
 		s32 (*rate_adaptation)(void *udta, u32 group_idx, u32 base_group_idx, Bool force_low_complex, void *stats),
 		s32 (*download_monitor)(void *udta, u32 group_idx, void *stats)
 )
 {
-#ifdef GPAC_DISABLE_DASH_CLIENT
-	return GF_NOT_SUPPORTED;
-#else
+#ifndef GPAC_DISABLE_DASHIN
 	if (!gf_filter_is_instance_of(filter, &DASHDmxRegister))
 		return GF_BAD_PARAM;
 	GF_DASHDmxCtx *ctx = (GF_DASHDmxCtx*) gf_filter_get_udta(filter);
@@ -3710,6 +3748,7 @@ GF_Err gf_filter_bind_dash_algo_callbacks(GF_Filter *filter, void *udta,
 		gf_dash_set_algo(ctx->dash, GF_DASH_ALGO_GPAC_LEGACY_BUFFER);
 	}
 	return GF_OK;
-
+#else
+	return GF_NOT_SUPPORTED;
 #endif
 }

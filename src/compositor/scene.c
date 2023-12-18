@@ -1072,7 +1072,7 @@ GF_MediaObject *gf_scene_get_media_object(GF_Scene *scene, MFURL *url, u32 obj_t
 static void gf_scene_get_video_size(GF_MediaObject *mo, u32 *w, u32 *h)
 {
 	u32 pixel_ar;
-	if (!gf_mo_get_visual_info(mo, w, h, NULL, &pixel_ar, NULL, NULL)) return;
+	if (!gf_mo_get_visual_info_ex(mo, w, h, NULL, &pixel_ar, NULL, NULL, GF_FALSE)) return;
 	if (mo->c_w && mo->c_h) {
 		*w = (u32) mo->c_w;
 		*h = (u32) mo->c_h;
@@ -1611,7 +1611,11 @@ static void create_movie(GF_Scene *scene, GF_Node *root, const char *tr_name, co
 		((M_Appearance *)app)->material = n2;
 		gf_node_register(n2, app);
 	} else if (scene->vr_type && !is_untransform) {
-		n2 = is_create_node(scene->graph, TAG_MPEG4_Sphere, name_geo);
+		if (scene->vr_type==2) {
+			n2 = load_vr_proto_node(scene->graph, "urn:inet:gpac:builtin:SRDSphere", name_geo);
+		} else {
+			n2 = is_create_node(scene->graph, TAG_MPEG4_Sphere, name_geo);
+		}
 		((M_Shape *)n1)->geometry = n2;
 		gf_node_register(n2, n1);
 	} else {
@@ -2112,6 +2116,24 @@ void gf_scene_select_object(GF_Scene *scene, GF_ObjectManager *odm)
 	else if (check_odm_deactivate(&scene->subs_url, odm, gf_sg_find_node_by_name(scene->graph, "DYN_SUBT_IMG") )) pre_selected=GF_TRUE;
 	if (pre_selected) {
 		if (odm->state) {
+			if (odm->pid) {
+				const GF_PropertyValue *p = gf_filter_pid_get_property(odm->pid, GF_PROP_PID_FORCED_SUB);
+				if (p && p->value.uint) {
+					if (p->value.uint==2) return;
+					//toggle forced on/off
+					GF_FilterEvent evt;
+					GF_FEVT_INIT(evt, GF_FEVT_QUALITY_SWITCH, odm->pid);
+					if (odm->flags & GF_ODM_SUB_FORCED) {
+						evt.quality_switch.up = 0;
+						odm->flags &= ~GF_ODM_SUB_FORCED;
+					} else {
+						evt.quality_switch.up = 1;
+						odm->flags |= GF_ODM_SUB_FORCED;
+					}
+					gf_filter_pid_send_event(odm->pid, &evt);
+					return;
+				}
+			}
 			gf_odm_stop(odm, GF_FALSE);
 		} else {
 			gf_odm_play(odm);

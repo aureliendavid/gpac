@@ -40,7 +40,7 @@
 #include <gpac/internal/swf_dev.h>
 #endif
 
-#if !defined(GPAC_DISABLE_ISOM_WRITE)
+#if !defined(GPAC_DISABLE_ISOM_WRITE) && !defined(GPAC_DISABLE_TXTIN)
 
 #define TTML_NAMESPACE "http://www.w3.org/ns/ttml"
 
@@ -140,6 +140,9 @@ struct __txtin_ctx
 
 	GF_List *intervals;
 	u64 cts_first_interval;
+
+	Bool forced_sub;
+	u32 has_forced;
 };
 
 typedef struct
@@ -373,6 +376,10 @@ char *gf_text_get_utf8_line(char *szLine, u32 lineSize, FILE *txt_in, s32 unicod
 		if ( j >= GF_ARRAY_LENGTH(szLineConv) ) {
 			GF_LOG(GF_LOG_DEBUG, GF_LOG_PARSER, ("[TXTIn] Line too long to convert to utf8 (len: %d)\n", len));
 			j = GF_ARRAY_LENGTH(szLineConv) -1 ;
+		}
+		if ( j >= lineSize ) {
+			GF_LOG(GF_LOG_DEBUG, GF_LOG_PARSER, ("[TXTIn] UT8 converted line too long for buffer (len: %d, buffer: %d)\n", j, lineSize));
+			j = lineSize-1 ;
 		}
 		szLineConv[j] = 0;
 		strcpy(szLine, szLineConv);
@@ -695,6 +702,7 @@ static void txtin_process_send_text_sample(GF_TXTIn *ctx, GF_TextSample *txt_sam
 	dst_pck = gf_filter_pck_new_alloc(ctx->opid, size, &pck_data);
 	if (!dst_pck) return;
 
+	ctx->has_forced |= 4;
 	gf_bs_reassign_buffer(ctx->bs_w, pck_data, size);
 	gf_isom_text_sample_write_bs(txt_samp, ctx->bs_w);
 
@@ -936,6 +944,7 @@ static GF_Err parse_srt_line(GF_TXTIn *ctx, char *szLine, u32 *char_l, Bool *set
 	if (len == GF_UTF8_FAIL) len = 0;
 
 	gf_isom_text_add_text(ctx->samp, szText, len);
+	if (ctx->forced_sub) gf_isom_text_set_forced(ctx->samp, GF_TRUE);
 	*char_l += char_line;
 	return GF_OK;
 }
@@ -1079,6 +1088,9 @@ force_line:
 				ctx->start = ctx->end;
 				ctx->state = 3;
 			}
+			ctx->forced_sub = (strstr(szLine, "!!!")) ? GF_TRUE : GF_FALSE;
+			if (ctx->forced_sub) ctx->has_forced |= 1;
+			else ctx->has_forced &= ~2;
 			break;
 
 		default:
@@ -1184,7 +1196,6 @@ static void gf_webvtt_flush_sample(void *user, GF_WebVTTSample *samp)
 
 	if (gf_filter_pid_would_block(ctx->opid))
 		gf_webvtt_parser_suspend(ctx->vttparser);
-
 }
 
 static GF_Err txtin_webvtt_setup(GF_Filter *filter, GF_TXTIn *ctx)
@@ -1371,6 +1382,10 @@ static void ebu_ttd_remove_samples(GF_XMLNode *root, GF_XMLNode **out_body_node)
 	}
 }
 
+#endif
+
+#if !defined(GPAC_DISABLE_TXTIN) || !defined(GPAC_DISABLE_TTMLCONV)
+
 u64 ttml_get_timestamp_ex(char *value, u32 tick_rate, u32 *ttml_fps_num, u32 *ttml_fps_den, u32 *ttml_sfps)
 {
 	u32 h, m, s, ms, f, sf;
@@ -1465,6 +1480,11 @@ u64 ttml_get_timestamp_ex(char *value, u32 tick_rate, u32 *ttml_fps_num, u32 *tt
 	}
 	return ts;
 }
+#endif
+
+
+#if !defined(GPAC_DISABLE_ISOM_WRITE) && !defined(GPAC_DISABLE_TXTIN)
+
 static u64 ttml_get_timestamp(GF_TXTIn *ctx, char *value)
 {
 	return ttml_get_timestamp_ex(value, ctx->tick_rate, &ctx->ttml_fps_num, &ctx->ttml_fps_den, &ctx->ttml_sfps);
@@ -1852,6 +1872,11 @@ static GF_Err ttml_setup_intervals(GF_TXTIn *ctx)
 	return GF_OK;
 }
 
+#endif
+
+
+#if !defined(GPAC_DISABLE_TTMLCONV) || !defined(GPAC_DISABLE_TXTIN)
+
 GF_Err ttml_parse_root(GF_XMLNode *root, const char **lang, u32 *tick_rate, u32 *ttml_fps_num, u32 *ttml_fps_den, u32 *ttml_sfps)
 {
 	/*** root (including language) ***/
@@ -1914,6 +1939,9 @@ GF_Err ttml_parse_root(GF_XMLNode *root, const char **lang, u32 *tick_rate, u32 
 	}
 	return GF_OK;
 }
+#endif
+
+#if !defined(GPAC_DISABLE_ISOM_WRITE) && !defined(GPAC_DISABLE_TXTIN)
 
 static GF_Err gf_text_ttml_setup(GF_Filter *filter, GF_TXTIn *ctx)
 {
@@ -3066,6 +3094,12 @@ static GF_Err txtin_setup_ttxt(GF_Filter *filter, GF_TXTIn *ctx)
 							else if (!stricmp(att->value, "Down")) scroll_mode = GF_TXT_SCROLL_DOWN;
 							td.displayFlags |= ((scroll_mode<<7) & GF_TXT_SCROLL_DIRECTION);
 						}
+						else if (!strcmp(att->name, "forced")) {
+							if (!strcmp(att->value, "yes") || !strcmp(att->value, "true") || !strcmp(att->value, "1"))
+								td.displayFlags |= GF_TXT_SOME_SAMPLES_FORCED;
+							if (!strcmp(att->value, "all"))
+								td.displayFlags |= GF_TXT_ALL_SAMPLES_FORCED|GF_TXT_SOME_SAMPLES_FORCED;
+						}
 					}
 
 					k=0;
@@ -3178,6 +3212,7 @@ static GF_Err txtin_process_ttxt(GF_Filter *filter, GF_TXTIn *ctx, GF_FilterPack
 		ts = 0;
 		descIndex = 1;
 		ctx->last_sample_empty = GF_TRUE;
+		Bool has_force = GF_FALSE;
 
 		j=0;
 		while ( (att=(GF_XMLAttribute*)gf_list_enum(node->attributes, &j))) {
@@ -3201,7 +3236,15 @@ static GF_Err txtin_process_ttxt(GF_Filter *filter, GF_TXTIn *ctx, GF_FilterPack
 			else if (!strcmp(att->name, "scrollDelay")) gf_isom_text_set_scroll_delay(samp, (u32) (1000*atoi(att->value)));
 			else if (!strcmp(att->name, "highlightColor")) gf_isom_text_set_highlight_color(samp, ttxt_get_color(att->value));
 			else if (!strcmp(att->name, "wrap") && !strcmp(att->value, "Automatic")) gf_isom_text_set_wrap(samp, 0x01);
+			else if (!strcmp(att->name, "forced") &&
+				(!strcmp(att->value, "yes") || !strcmp(att->value, "true") || !strcmp(att->value, "1"))
+			) {
+				gf_isom_text_set_forced(samp, GF_TRUE);
+				ctx->has_forced |= 1;
+			}
 		}
+		if (!has_force)
+				ctx->has_forced &= ~2;
 
 		/*get all modifiers*/
 		j=0;
@@ -3979,8 +4022,13 @@ static GF_Err txtin_process(GF_Filter *filter)
 		if (pck)
 			gf_filter_pid_drop_packet(ctx->ipid);
 
-		if (gf_filter_pid_is_eos(ctx->ipid))
+		if (gf_filter_pid_is_eos(ctx->ipid)) {
+			if (ctx->has_forced & 4) {
+				if (ctx->has_forced & 2) gf_filter_pid_set_info(ctx->opid, GF_PROP_PID_FORCED_SUB, &PROP_UINT(2));
+				else if (ctx->has_forced & 1) gf_filter_pid_set_info(ctx->opid, GF_PROP_PID_FORCED_SUB, &PROP_UINT(1));
+			}
 			gf_filter_pid_set_eos(ctx->opid);
+		}
 	}
 	return e;
 }
@@ -4238,7 +4286,7 @@ GF_Err txtin_initialize(GF_Filter *filter)
 	char data[1];
 	GF_TXTIn *ctx = gf_filter_get_udta(filter);
 	ctx->bs_w = gf_bs_new(data, 1, GF_BITSTREAM_WRITE);
-
+	ctx->has_forced = 2;
 	return GF_OK;
 }
 
@@ -4609,4 +4657,4 @@ const GF_FilterRegister *rfsrt_register(GF_FilterSession *session)
 	return NULL;
 }
 
-#endif // GPAC_DISABLE_ISOM_WRITE
+#endif // !defined(GPAC_DISABLE_ISOM_WRITE) && !defined(GPAC_DISABLE_TXTIN)

@@ -384,6 +384,8 @@ enum
 	GF_ISOM_SUBTYPE_DTSH = GF_4CC('d','t','s','h'),
 	GF_ISOM_SUBTYPE_DTSL = GF_4CC('d','t','s','l'),
 	GF_ISOM_SUBTYPE_DTSE = GF_4CC('d','t','s','e'),
+	GF_ISOM_SUBTYPE_DTSX = GF_4CC('d','t','s','x'),
+	GF_ISOM_SUBTYPE_DTSY = GF_4CC('d','t','s','y'),
 
 	GF_ISOM_SUBTYPE_UNCV	= GF_4CC( 'u', 'n', 'c', 'v' ),
 	GF_ISOM_ITEM_TYPE_UNCI	= GF_4CC( 'u', 'n', 'c', 'i' ),
@@ -1236,6 +1238,13 @@ GF_Err gf_isom_get_reference_ID(GF_ISOFile *isom_file, u32 trackNumber, u32 refe
 \return the reference index if the given track has a reference of type referenceType to refTreckID, 0 otherwise*/
 u32 gf_isom_has_track_reference(GF_ISOFile *isom_file, u32 trackNumber, u32 referenceType, GF_ISOTrackID refTrackID);
 
+/*! checks if a track is referenced by another track wuth the given reference type
+\param isom_file the target ISO file
+\param trackNumber the target track
+\param referenceType the four character code of the reference to query
+\return the track number of the first track  referencing the target track, 0 otherwise*/
+u32 gf_isom_is_track_referenced(GF_ISOFile *isom_file, u32 trackNumber, u32 referenceType);
+
 /*! fetches a sample for a given movie time, handling possible track edit lists.
 
 if no sample is playing, an empty sample is returned with no data and a DTS set to MovieTime when searching in sync modes
@@ -1456,9 +1465,23 @@ typedef struct
 {
 	/*! stream structure flags, 1: has channel layout, 2: has objects*/
 	u8 stream_structure;
+	/*!  order of formats in the stream : 0 unknown, 1: Channels, possibly followed by Objects, 2 Objects, possibly followed by Channels*/
+	u8 format_ordering;
+	/*! combined channel count of the channel layout and the object count*/
+	u8 base_channel_count;
 
 	/*! defined CICP channel layout*/
 	u8 definedLayout;
+	/*! indicates where the ordering of the audio channels for the definedLayout are specified
+	0: as listed for the ChannelConfigurations in ISO/IEC 23091-3
+	1: Default order of audio codec specification
+	2: Channel ordering #2 of audio codec specification
+	3: Channel ordering #3 of audio codec specification
+	4: Channel ordering #4 of audio codec specification
+	*/
+	u8 channel_order_definition;
+	/*! indicates if omittedChannelsMap is present*/
+	u8 omitted_channels_present;
 
 	/*! number of channels*/
 	u32 channels_count;
@@ -3591,7 +3614,7 @@ GF_Err gf_isom_hevc_set_inband_config(GF_ISOFile *isom_file, u32 trackNumber, u3
 */
 GF_Err gf_isom_lhvc_force_inband_config(GF_ISOFile *isom_file, u32 trackNumber, u32 sampleDescriptionIndex);
 
-/*! sets hvt1 entry type (tile track) or hev2/hvc2 type if is_base_track is set. It is the use responsability to set the tbas track reference to the base hevc track
+/*! sets hvt1 entry type (tile track) or hev2/hvc2 type if is_base_track is set. It is the use responsibility to set the tbas track reference to the base hevc track
 \param isom_file the target ISO file
 \param trackNumber the target track
 \param sampleDescriptionIndex the target sample description index
@@ -4257,7 +4280,7 @@ GF_Err gf_isom_reset_tables(GF_ISOFile *isom_file, Bool reset_sample_count);
 
 /*! sets the offset for parsing from the input buffer to 0 (used to reclaim input buffer)
 \param isom_file the target ISO file
-\param top_box_start set to the byte offset in the source buffer of the first top level box
+\param top_box_start set to the byte offset in the source buffer of the first top level box, may be NULL
 \return error if any
 */
 GF_Err gf_isom_reset_data_offset(GF_ISOFile *isom_file, u64 *top_box_start);
@@ -5171,6 +5194,15 @@ GF_Err gf_isom_text_dump(GF_ISOFile *isom_file, u32 trackNumber, FILE *dump, GF_
 */
 GF_Err gf_isom_text_get_encoded_tx3g(GF_ISOFile *isom_file, u32 trackNumber, u32 sampleDescriptionIndex, u32 sidx_offset, u8 **tx3g, u32 *tx3g_size);
 
+/*! sets TX3G flags for forced samples
+\param isom_file the target ISO file
+\param trackNumber the target track
+\param sampleDescriptionIndex the sample description index
+\param force_type if 0, no forced subs are present. If 1, some forced subs are present; if 2, all samples are forced subs
+\return error if any
+*/
+GF_Err gf_isom_set_forced_text(GF_ISOFile *isom_file, u32 trackNumber, u32 sampleDescriptionIndex, u32 force_type);
+
 /*! text sample formatting*/
 typedef struct _3gpp_text_sample GF_TextSample;
 /*! creates text sample handle
@@ -5444,6 +5476,13 @@ GF_Err gf_isom_text_add_blink(GF_TextSample *tx_samp, u16 start_char, u16 end_ch
 \return error if any
 */
 GF_Err gf_isom_text_set_wrap(GF_TextSample *tx_samp, u8 wrap_flags);
+
+/*! sets force for the sample
+\param tx_samp the target text sample
+\param is_forced for ce sample if TRUE
+\return error if any
+*/
+GF_Err gf_isom_text_set_forced(GF_TextSample *tx_samp, Bool is_forced);
 
 /*! formats sample as a regular GF_ISOSample payload in a bitstream object.
 \param tx_samp the target text sample
@@ -6122,6 +6161,16 @@ u32 gf_isom_meta_get_item_ref_count(GF_ISOFile *isom_file, Bool root_meta, u32 t
 \return ID if the referred item*/
 u32 gf_isom_meta_get_item_ref_id(GF_ISOFile *isom_file, Bool root_meta, u32 track_num, u32 from_id, u32 type, u32 ref_idx);
 
+/*! gets number of references of a given type to a given item ID
+\param isom_file the target ISO file
+\param root_meta if GF_TRUE uses meta at the file, otherwise uses meta at the movie level if track number is 0
+\param track_num if GF_TRUE and root_meta is GF_FALSE, uses meta at the track level
+\param to_id item ID to check
+\param type reference type to check
+\return number of referenced items*/
+u32 gf_isom_meta_item_has_ref(GF_ISOFile *isom_file, Bool root_meta, u32 track_num, u32 to_id, u32 type);
+
+
 /*! item tile mode*/
 typedef enum {
 	/*! not a tile item*/
@@ -6232,6 +6281,9 @@ typedef struct
 	u32 av1_layer_size[3];
 	/*AV1 operation point index*/
 	u8 av1_op_index;
+
+	/*interlace type - uncv*/
+	u8 interlace_type;
 
 	const char *aux_urn;
 	const u8 *aux_data;
@@ -6913,6 +6965,7 @@ enum {
 	GF_ISOM_SAMPLE_GROUP_SPOR = GF_4CC( 's', 'p', 'o', 'r'), //p15
 	GF_ISOM_SAMPLE_GROUP_SULM = GF_4CC( 's', 'u', 'l', 'm'), //p15
 	GF_ISOM_SAMPLE_GROUP_ESGH = GF_4CC( 'e', 's', 'g', 'h'), //p12
+	GF_ISOM_SAMPLE_GROUP_ILCE = GF_4CC( 'i', 'l', 'c', 'e'), //uncv
 };
 
 /*! gets 'rap ' and 'roll' group info for the given sample
@@ -7074,7 +7127,7 @@ GF_Err gf_isom_remove_sample_group(GF_ISOFile *isom_file, u32 trackNumber, u32 g
 \param grouping_type_parameter associated grouping type parameter (usually 0)
 \param data the payload of the sample group description
 \param data_size the size of the payload
-\param sgpd_flags flags for sgpd: 1: static description, 2, static mapping, 1<<31: default sample description
+\param sgpd_flags flags for sgpd: 1: static description, 2, static mapping, 1<<30: essential sample group, 1<<31: default sample description
 \return error if any
 */
 GF_Err gf_isom_set_sample_group_description(GF_ISOFile *isom_file, u32 trackNumber, u32 sampleNumber, u32 grouping_type, u32 grouping_type_parameter, void *data, u32 data_size, u32 sgpd_flags);

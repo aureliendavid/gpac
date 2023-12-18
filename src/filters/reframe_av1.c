@@ -28,7 +28,7 @@
 #include <gpac/filters.h>
 #include <gpac/internal/media_dev.h>
 
-#ifndef GPAC_DISABLE_AV_PARSERS
+#if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_RFAV1)
 
 typedef struct
 {
@@ -276,7 +276,7 @@ GF_Err av1dmx_check_format(GF_Filter *filter, GF_AV1DmxCtx *ctx, GF_BitStream *b
 			ctx->bsmode = UNSUPPORTED;
 			return e;
 		}
-		if (!ctx->timescale && (ctx->state.obu_type != OBU_TEMPORAL_DELIMITER)) {
+		if (!ctx->timescale && !ctx->state.has_temporal_delim) {
 			GF_LOG(GF_LOG_ERROR, GF_LOG_MEDIA, ("[AV1Dmx] Error OBU stream start with %s, not a temporal delimiter - NOT SUPPORTED\n", gf_av1_get_obu_name(ctx->state.obu_type) ));
 			gf_filter_setup_failure(filter, e);
 			ctx->bsmode = UNSUPPORTED;
@@ -1394,10 +1394,10 @@ const GF_FilterRegister *rfav1_register(GF_FilterSession *session)
 {
 	return &AV1DmxRegister;
 }
-
 #else
 const GF_FilterRegister *rfav1_register(GF_FilterSession *session)
 {
 	return NULL;
 }
-#endif // GPAC_DISABLE_AV_PARSERS
+#endif // #if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_RFAV1)
+

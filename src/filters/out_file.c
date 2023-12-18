@@ -27,6 +27,9 @@
 #include <gpac/filters.h>
 #include <gpac/constants.h>
 #include <gpac/xml.h>
+#include <gpac/network.h>
+
+#ifndef GPAC_DISABLE_FOUT
 
 enum
 {
@@ -77,6 +80,9 @@ typedef struct
 	GF_List *past_files;
 
 	Bool gfio_pending;
+
+	u64 last_file_size;
+	Bool use_rel;
 
 #ifdef GPAC_HAS_FD
 	Bool no_fd;
@@ -225,7 +231,7 @@ static GF_Err fileout_open_close(GF_FileOutCtx *ctx, const char *filename, const
 #endif
 	) {
 		GF_LOG(GF_LOG_ERROR, GF_LOG_MMIO, ("[FileOut] cannot open output file %s\n", ctx->szFileName));
-		return ctx->error = GF_IO_ERR;;
+		return ctx->error = GF_IO_ERR;
 	}
 
 	return GF_OK;
@@ -300,16 +306,20 @@ static GF_Err fileout_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool i
 	if (p && p->value.uint) ctx->dash_mode = 1;
 
 	ctx->max_segs = 0;
-	p = gf_filter_pid_get_property(pid, GF_PROP_PID_TIMESHIFT_SEGS);
-	if (ctx->max_cache_segs<0) {
-		ctx->max_segs = (u32) -ctx->max_cache_segs;
-	} else if (ctx->max_cache_segs>0) {
-		ctx->max_segs = (u32) ctx->max_cache_segs;
-		if (p && (p->value.uint > (u32) ctx->max_cache_segs))
-			ctx->max_segs = p->value.uint;
+	p = gf_filter_pid_get_property(pid, GF_PROP_PID_IS_MANIFEST);
+	//do not cleanup manifest pids
+	if (!p || !p->value.uint) {
+		p = gf_filter_pid_get_property(pid, GF_PROP_PID_TIMESHIFT_SEGS);
+		if (ctx->max_cache_segs<0) {
+			ctx->max_segs = (u32) -ctx->max_cache_segs;
+		} else if (ctx->max_cache_segs>0) {
+			ctx->max_segs = (u32) ctx->max_cache_segs;
+			if (p && (p->value.uint > (u32) ctx->max_cache_segs))
+				ctx->max_segs = p->value.uint;
+		}
+		if (ctx->max_segs && !ctx->past_files)
+			ctx->past_files = gf_list_new();
 	}
-	if (ctx->max_segs && !ctx->past_files)
-		ctx->past_files = gf_list_new();
 
 #ifdef GPAC_HAS_FD
 	//disable fd for mp2t since we only dispatch small blocks - todo check this for other streams ?
@@ -375,8 +385,7 @@ static GF_Err fileout_initialize(GF_Filter *filter)
 	if (ctx->ext) ext = ctx->ext;
 	else if (dst) {
 		ext = gf_file_ext_start(dst);
-		if (!ext) ext = ".*";
-		ext += 1;
+		if (ext) ext += 1;
 	}
 
 	if (!ext && !ctx->mime) {
@@ -438,21 +447,22 @@ static GF_Err fileout_process(GF_Filter *filter)
 	u32 pck_size, nb_write;
 	GF_FileOutCtx *ctx = (GF_FileOutCtx *) gf_filter_get_udta(filter);
 
+	pck = gf_filter_pid_get_packet(ctx->pid);
+
 restart:
 
 	if (ctx->error)
 		return ctx->error;
 
-	pck = gf_filter_pid_get_packet(ctx->pid);
 	if (!pck) {
-		if (gf_filter_pid_is_eos(ctx->pid)) {
+		if (gf_filter_pid_is_eos(ctx->pid) && !gf_filter_pid_is_flush_eos(ctx->pid)) {
 			if (gf_filter_reporting_enabled(filter)) {
 				char szStatus[1024];
 				snprintf(szStatus, 1024, "%s: done - wrote "LLU" bytes", gf_file_basename(ctx->szFileName), ctx->nb_write);
 				gf_filter_update_status(filter, 10000, szStatus);
 			}
 
-			if (ctx->dash_mode && (ctx->file
+			if (ctx->dash_mode && (ctx->file || ctx->last_file_size
 #ifdef GPAC_HAS_FD
 				|| (ctx->fd>=0)
 #endif
@@ -472,10 +482,18 @@ restart:
 					evt.seg_size.media_range_start = ctx->offset_at_seg_start;
 #ifdef GPAC_HAS_FD
 					if (ctx->fd>=0) {
-						evt.seg_size.media_range_end = lseek(ctx->fd, 0, SEEK_CUR) - 1;
+						evt.seg_size.media_range_end = lseek(ctx->fd, 0, SEEK_CUR);
 					} else
 #endif
-						evt.seg_size.media_range_end = gf_ftell(ctx->file)-1;
+					if (ctx->file) {
+						evt.seg_size.media_range_end = gf_ftell(ctx->file);
+					} else {
+						evt.seg_size.media_range_end = ctx->last_file_size;
+					}
+					//end range excludes last byte, except if 0 size (some text segments)
+					if (evt.seg_size.media_range_end)
+						evt.seg_size.media_range_end -= 1;
+
 					gf_filter_pid_send_event(ctx->pid, &evt);
 				}
 			}
@@ -516,6 +534,7 @@ restart:
 			GF_LOG(GF_LOG_INFO, GF_LOG_MMIO, ("[FileOut] null close (file name was %s)\n", ctx->szFileName));
 		}
 		gf_filter_pid_drop_packet(ctx->pid);
+		pck = gf_filter_pid_get_packet(ctx->pid);
 		goto restart;
 	}
 
@@ -549,23 +568,37 @@ restart:
 				evt.seg_size.media_range_start = ctx->offset_at_seg_start;
 #ifdef GPAC_HAS_FD
 				if (ctx->fd>=0) {
-					evt.seg_size.media_range_end = lseek(ctx->fd, 0, SEEK_CUR) - 1;
+					evt.seg_size.media_range_end = lseek(ctx->fd, 0, SEEK_CUR);
 				} else
 #endif
-					evt.seg_size.media_range_end = gf_ftell(ctx->file)-1;
+				if (ctx->file) {
+					evt.seg_size.media_range_end = gf_ftell(ctx->file);
+				} else {
+					evt.seg_size.media_range_end = ctx->last_file_size;
+				}
+				//end range excludes last byte, except if 0 size (some text segments)
+				if (evt.seg_size.media_range_end)
+					evt.seg_size.media_range_end -= 1;
+
 				ctx->offset_at_seg_start = evt.seg_size.media_range_end+1;
 				gf_filter_pid_send_event(ctx->pid, &evt);
 			}
 			if ( gf_filter_pck_get_property(pck, GF_PROP_PCK_FILENAME))
 				start = GF_TRUE;
 		}
+
+		p = gf_filter_pck_get_property(pck, GF_PROP_PCK_EODS);
+		if (p && p->value.boolean) {
+			end = GF_TRUE;
+		}
 	}
 
 	if (start) {
-		const GF_PropertyValue *ext, *fnum, *fsuf;
+		const GF_PropertyValue *ext, *fnum, *fsuf, *rel;
 		Bool explicit_overwrite = GF_FALSE;
 		const char *name = NULL;
 		fname = ext = NULL;
+		ctx->last_file_size = 0;
 		//file num increased per packet, open new file
 		fnum = gf_filter_pck_get_property(pck, GF_PROP_PCK_FILENUM);
 		if (fnum) {
@@ -585,7 +618,21 @@ restart:
 			explicit_overwrite = GF_TRUE;
 
 		if (name) {
+			Bool use_rel = GF_FALSE;
+			if (ctx->dst) {
+				use_rel = ctx->use_rel;
+				rel = gf_filter_pck_get_property(pck, GF_PROP_PID_FILE_REL);
+				if (rel && rel->value.boolean) use_rel = GF_TRUE;
+			}
+			if (use_rel) {
+				name = gf_url_concatenate(ctx->dst, name);
+			}
 			fileout_open_close(ctx, name, ext ? ext->value.string : NULL, fnum ? fnum->value.uint : 0, explicit_overwrite, fsuf ? fsuf->value.string : NULL);
+
+			if (use_rel) {
+				gf_free((char*) name);
+			}
+
 		} else if (!ctx->file && !ctx->noinitraw
 #ifdef GPAC_HAS_FD
 			&& (ctx->fd<0)
@@ -593,6 +640,8 @@ restart:
 		) {
 			fileout_setup_file(ctx, explicit_overwrite);
 		}
+		if (!ctx->cat)
+			ctx->offset_at_seg_start = 0;
 
 		if (gf_fileio_check(ctx->file)) {
 			ctx->gfio_pending = GF_TRUE;
@@ -818,13 +867,25 @@ check_gfio:
 		} else {
 			GF_LOG(GF_LOG_WARNING, GF_LOG_MMIO, ("[FileOut] No data associated with packet, cannot write\n"));
 		}
-	} else {
+	} else if (pck_size) {
 		GF_LOG(GF_LOG_ERROR, GF_LOG_MMIO, ("[FileOut] output file handle is not opened, discarding %d bytes\n", pck_size));
 	}
 	gf_filter_pid_drop_packet(ctx->pid);
 	if (end && !ctx->cat) {
+		if (ctx->dash_mode) {
+#ifdef GPAC_HAS_FD
+			if (ctx->fd>=0) {
+				ctx->last_file_size = lseek(ctx->fd, 0, SEEK_CUR);
+			} else
+#endif
+				ctx->last_file_size = gf_ftell(ctx->file);
+		}
 		fileout_open_close(ctx, NULL, NULL, 0, GF_FALSE, NULL);
 	}
+	pck = gf_filter_pid_get_packet(ctx->pid);
+	if (pck)
+		goto restart;
+
 	if (gf_filter_reporting_enabled(filter)) {
 		char szStatus[1024];
 		snprintf(szStatus, 1024, "%s: wrote % 16"LLD_SUF" bytes", gf_file_basename(ctx->szFileName), (s64) ctx->nb_write);
@@ -841,7 +902,13 @@ static Bool fileout_process_event(GF_Filter *filter, const GF_FilterEvent *evt)
 			GF_LOG(GF_LOG_INFO, GF_LOG_MMIO, ("[FileOut] null delete (file name was %s)\n", evt->file_del.url));
 		} else {
 			GF_LOG(GF_LOG_INFO, GF_LOG_MMIO, ("[FileOut] delete file %s\n", evt->file_del.url));
-			gf_file_delete(evt->file_del.url);
+			if (ctx->use_rel) {
+				char *fname = gf_url_concatenate(ctx->dst, evt->file_del.url);
+				gf_file_delete(fname);
+				gf_free(fname);
+			} else {
+				gf_file_delete(evt->file_del.url);
+			}
 		}
 		return GF_TRUE;
 	}
@@ -888,6 +955,7 @@ static const GF_FilterArgs FileOutArgs[] =
 	{ OFFS(noinitraw), "do not produce initial segment", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_HIDE},
 	{ OFFS(max_cache_segs), "maximum number of segments cached per HAS quality when recording live sessions (0 means no limit)", GF_PROP_SINT, "0", NULL, GF_FS_ARG_HINT_EXPERT},
 	{ OFFS(force_null), "force no output regardless of file name", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_EXPERT},
+	{ OFFS(use_rel), "packet filename use relative names (only set by dasher)", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_HIDE},
 	{0}
 };
 
@@ -941,4 +1009,9 @@ const GF_FilterRegister *fout_register(GF_FilterSession *session)
 	}
 	return &FileOutRegister;
 }
-
+#else
+const GF_FilterRegister *fout_register(GF_FilterSession *session)
+{
+	return NULL;
+}
+#endif //GPAC_DISABLE_FOUT

@@ -142,6 +142,8 @@ esac
 nb_features=0
 all_features=""
 all_descs=""
+nb_filters=0
+all_filters=""
 
 push_feature()
 {
@@ -156,6 +158,18 @@ push_feature()
     else
         eval "disable_$var=\"no\""
     fi
+
+    if test "$fc" = "*" ; then
+        desc=`echo $desc | cut -c2-`
+        desc="$desc filter"
+        if [ -z $all_filters ] ; then
+            all_filters="$1"
+        else
+            all_filters="$all_filters|$1"
+        fi
+        nb_filters=$((nb_filters+1))
+    fi
+
 
     if [ -z $all_features ] ; then
         all_features="$1"
@@ -214,7 +228,6 @@ push_feature "isoff-hint" "ISOBMFF hinting support"
 push_feature "isoff-frag" "ISOBMFF fragments support"
 push_feature "isoff-hds" "Adobe HDS in ISOBMFF support"
 push_feature "streaming" "RTP/RTSP/SDP support"
-push_feature "compositor" "Compositor filter"
 push_feature "fonts" "Font and Text engine (used by compositor and EVG.js"
 push_feature "player" "deprecated - old name for compositor feature"
 push_feature "dvbx" "!DVB-specific tools (MPE, FEC, DSM-CC)"
@@ -222,22 +235,85 @@ push_feature "vobsub" "VobSub support"
 push_feature "ttxt" "TTXT (3GPP / MPEG-4 Timed Text) support"
 push_feature "ttml" "TTML/EBU TTD support"
 push_feature "vtt" "WebVTT support"
-push_feature "mpd" "DASH MPD read/write support"
-push_feature "dash" "DASH and HLS support"
-push_feature "hevc" "HEVC support"
 push_feature "route" "ROUTE (ATSC3) support"
 push_feature "qjs" "QuickJS support"
 push_feature "qjs-libc" "QuickJS libc module support"
 push_feature "qjs-stack" "!stack depth checking in QuickJS (WILL CRASH in multithreaded modes)"
-push_feature "nvdec" "NVDec support"
 push_feature "tinygl" "!TinyGL support"
 push_feature "doc" "Embedded documentation"
 push_feature "evg" "EVG (GPAC vector graphics tools)"
-push_feature "vout" "video output filter"
-push_feature "aout" "audio output filter"
 push_feature "avdevice" "avdevice support in FFMPEG"
 push_feature "avfilter" "avfilter support in FFMPEG"
+push_feature "net-cap" "network grab and replay support"
 
+push_feature "compositor" "*Compositor"
+push_feature "vout" "*video output"
+push_feature "aout" "*audio output"
+push_feature "bsagg" "*scalable bitstream aggregator"
+push_feature "bssplit" "*scalable bitstream spliter"
+push_feature "bsrw" "*bitstream rewriter"
+push_feature "dasher" "*DASH/HLS mux"
+push_feature "dashin" "*DASH/HLS demux"
+push_feature "imgdec" "*image decoder"
+push_feature "uncvdec" "*uncompressed video decoder"
+push_feature "cdcrypt" "*CENC decryptor"
+push_feature "ghidmx" "*GPAC HTTP Streaming index demuxer"
+push_feature "gsfdmx" "*GPAC serialized format demuxer"
+push_feature "nhmlr" "*NHML demuxer"
+push_feature "nhntr" "*NHNT demuxer"
+push_feature "cecrypt" "*CENC Encryptor"
+push_feature "flist" "*Playlist concetenator"
+push_feature "hevcmerge" "*HEVC tile merger"
+push_feature "hevcsplit" "*HEVC tile spliter"
+push_feature "fin" "*File input"
+push_feature "pin" "*Pipe input"
+push_feature "inspect" "*Inspecter"
+push_feature "cryptfile" "*Crypted input and output file"
+push_feature "mp4dmx" "*MP4/QT demuxer"
+push_feature "txtin" "*Subtitle loader"
+push_feature "gsfmx" "*GPAC serialized format demuxer"
+push_feature "mp4mx" "*MP4/QT muxer"
+push_feature "fout" "*File output"
+push_feature "pout" "*Pipe output"
+push_feature "rfac3" "*AC3 parser"
+push_feature "rfadts" "*ADTS parser"
+push_feature "rfamr" "*AMR parser"
+push_feature "rfav1" "*AV1/VP9 parser"
+push_feature "rfflac" "*FLAC parser"
+push_feature "rfh263" "*H263 parser"
+push_feature "rfimg" "*Image parser"
+push_feature "rflatm" "*LATM parser"
+push_feature "rfmhas" "*MPEG-H Audio parser"
+push_feature "rfmp3" "*MP3 parser"
+push_feature "rfmpgvid" "*MPEG 1/2/4 video parser"
+push_feature "rfnalu" "*NALU-based video parser"
+push_feature "rfprores" "*QT ProRes parser"
+push_feature "rfqcp" "*QCP file parser"
+push_feature "rfpcm" "*Raw PCM and wav parser"
+push_feature "rfrawvid" "*Raw video parser"
+push_feature "rftruehd" "*Dolby TrueHD parser"
+push_feature "reframer" "*Reframer"
+push_feature "resample" "*Audio resampler"
+push_feature "restamp" "*Restamper"
+push_feature "rewind" "*Reverse playback"
+push_feature "ufaac" "*ADTS and LATM rewriter"
+push_feature "ufmhas" "*MPEG-H Audio rewriter"
+push_feature "ufm4v" "*MPEG 1/2/4 and VC1 video rewriter"
+push_feature "ufnalu" "*NALU-based video rewriter"
+push_feature "ufobu" "*AV1/VP9 video rewriter"
+push_feature "tileagg" "*HEVC Tile aggregator"
+push_feature "tilesplit" "*HEVC Tile spliter"
+push_feature "ttmlconv" "*TTML conversion"
+push_feature "unframer" "*Unframer"
+push_feature "vcrop" "*Video croping"
+push_feature "vflip" "*Video flip"
+push_feature "writegen" "*Generic rewriter"
+push_feature "nhmlw" "*NHML writer"
+push_feature "nhntw" "*NHNT writer"
+push_feature "writeqcp" "*QCP writer"
+push_feature "units" "*unit tests"
+push_feature "nvdec" "*NVDec decoder"
+push_feature "vtbdec" "*VideoToolBox (OSX/iOS) decoder"
 
 ar_it=""
 get_item()
@@ -264,7 +340,7 @@ get_size()
 
 #zlib MUST be first
 all_packages="zlib opensvc openhevc platinum freetype ssl jpeg openjpeg png mad a52 xvid faad ffmpeg freenect vorbis theora nghttp2"
-all_packages="$all_packages oss dvb4linux alsa pulseaudio jack directfb hid lzma tinygl vtb ogg sdl"
+all_packages="$all_packages oss dvb4linux alsa pulseaudio jack directfb hid lzma tinygl vtb ogg sdl caption mpeghdec libcaca"
 disabled_packages=""
 
 #init all has_FOO=no and set FOO_cflags=
@@ -381,6 +457,7 @@ cat << EOF
 
 NOTE: The object files are built at the place where configure is launched
 EOF
+
 exit 1
 fi
 #end help
@@ -514,6 +591,7 @@ set_package ()
     echo "no package pck $1 - please check help (-h)"
     exit 1
 }
+
 
 #parse all options
 for opt do
@@ -1206,7 +1284,7 @@ fi
 cat > $TMPC << EOF
 #include <ifaddrs.h>
 #include <net/if.h>
-int main( void ) {  struct ifaddrs *ifap = NULL; getifaddrs(&ifap); return 0; }
+int main( void ) {  struct ifaddrs *ifap; getifaddrs(&ifap); return 0; }
 EOF
 has_ifaddrs="no"
 if docc $LDFLAGS ; then
@@ -1321,14 +1399,14 @@ config_package_test ()
             return
         fi
 
-        if docxx -I"$local_inc/$local_inc_dir" -L$local_lib $package_ldflags ; then
+        if docxx -I"$local_inc/$local_inc_dir" $package_cflags $LDFLAGS -L$local_lib $package_ldflags ; then
             pck_cflags="-I$local_inc/$local_inc_dir $package_cflags"
             pck_ldflags="-L$local_lib $package_ldflags"
             has_pck="local"
             return
         fi
 
-        if docxx -I"$local_inc/$local_inc_dir" -L$execdir $package_ldflags ; then
+        if docxx -I"$local_inc/$local_inc_dir" $package_cflags $LDFLAGS -L$execdir $package_ldflags ; then
             pck_cflags="-I$local_inc/$local_inc_dir $package_cflags"
             pck_ldflags="-L$execdir $package_ldflags"
             has_pck="local (bin dir)"
@@ -1340,7 +1418,7 @@ config_package_test ()
     echo "$package_src" > $TMPC
 
     if test "$custom" = "yes" ; then
-        if docc -I"$forced//include" -L$forced//lib $package_ldflags ; then
+        if docc -I"$forced//include" $package_cflags -L$forced//lib $package_ldflags ; then
             pck_cflags="-I$forced//include $package_cflags"
             pck_ldflags="-L$forced//lib $package_ldflags"
             has_pck="custom"
@@ -1371,14 +1449,14 @@ config_package_test ()
         return
     fi
 
-    if docc -I"$local_inc/$local_inc_dir" -L$local_lib $package_ldflags ; then
+    if docc -I"$local_inc/$local_inc_dir" $package_cflags $LDFLAGS -L$local_lib $package_ldflags ; then
         pck_cflags="-I$local_inc/$local_inc_dir $package_cflags"
         pck_ldflags="-L$local_lib $package_ldflags"
         has_pck="local"
         return
     fi
 
-    if docc -I"$local_inc/$local_inc_dir" -L$execdir $package_ldflags ; then
+    if docc -I"$local_inc/$local_inc_dir" $package_cflags $LDFLAGS -L$execdir $package_ldflags ; then
         pck_cflags="-I$local_inc/$local_inc_dir $package_cflags"
         pck_ldflags="-L$execdir $package_ldflags"
         has_pck="local"
@@ -1523,12 +1601,17 @@ config_package openjpeg "libopenjp2" "" "-lopenjp2" "openjp2" '#include <stdio.h
 #include <openjpeg.h>
 int main( void ) { opj_create_decompress(OPJ_CODEC_J2K); return 0; }'
 
-if test "has_openjpeg" = "no" ; then
-config_package openjpeg "libopenjpeg" "" "-lopenjpeg" "openjpeg" '#include <stdio.h>
+if test "$has_openjpeg" = "no" ; then
+config_package openjpeg "libopenjpeg" "" "-lopenjpeg -lm" "openjpeg" '#include <stdio.h>
 #include <openjpeg.h>
 int main( void ) { opj_create_decompress(CODEC_J2K); return 0; }'
 fi
 
+if test "$has_openjpeg" = "no" ; then
+config_package openjpeg "libopenjpeg" "-DOPJ_STATIC" "-lopenjpeg -lm" "openjpeg" '#include <stdio.h>
+#include <openjpeg.h>
+int main( void ) { opj_create_decompress(CODEC_J2K); return 0; }'
+fi
 
 config_package png "libpng" "" "-lpng -lz" "png" '#include <png.h>
 int main( void ) {  png_struct *png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL); return 0; }'
@@ -1537,7 +1620,7 @@ int main( void ) {  png_struct *png_ptr = png_create_read_struct(PNG_LIBPNG_VER_
 config_package mad "mad" "" "-lmad" "" '#include <mad.h>
 int main( void ) {  struct mad_stream stream; mad_stream_finish(&stream); return 0; }'
 
-config_package a52 "liba52" "" "-la52" "" '#include <inttypes.h>
+config_package a52 "liba52" "" "-la52 -lm" "" '#include <inttypes.h>
 #define uint32_t unsigned int
 #define uint8_t unsigned char
 #include <a52dec/mm_accel.h>
@@ -1549,7 +1632,7 @@ int main( void ) { a52_state_t *codec; a52_free(codec); return 0; }'
 config_package xvid "xvid" "" "-lxvidcore $PTHREAD_LDFLAGS" "" '#include <xvid.h>
 int main( void ) { void *codec; xvid_decore(codec, XVID_DEC_DESTROY, NULL, NULL); return 0; }'
 
-config_package faad "faad2" "" "-lfaad" "" '#include <faad.h>
+config_package faad "faad2" "" "-lfaad -lm" "" '#include <faad.h>
 int main( void ) { NeAACDecOpen(); return 0; }'
 
 
@@ -1613,6 +1696,20 @@ int main( void ) { theora_info ti; theora_info_init(&ti); return 0; }'
 config_package nghttp2 "libnghttp2" "" "-lnghttp2" "" '#include <stdio.h>
 #include <nghttp2/nghttp2.h>
 int main( void ) {  nghttp2_session *ng_sess; nghttp2_session_del(ng_sess); return 0; }'
+
+config_package caption "libcaption" "" "-lcaption" "" '#include <caption/cea708.h>
+int main( void ) { caption_frame_t ccframe; caption_frame_init(&ccframe); return 0; }'
+
+config_package libcaca "caca" "" "-lcaca" "" '#include <caca.h>
+int main( void ) { caca_canvas_t *canvas = caca_create_canvas(20, 20); return 0; }'
+
+
+config_package mpeghdec "mpeghdec" "" "-lMpeghDec -lMpegTPDec -lPCMutils -lIGFdec -lArithCoding -lFormatConverter -lgVBAPRenderer -lDRCdec -lUIManager -lSYS -lFDK -lm" "" '
+#ifndef bool
+typedef int bool;
+#endif
+#include <mpeghdecoder.h>
+int main( void ) { HANDLE_MPEGH_DECODER_CONTEXT codec = mpeghdecoder_init(2); return 0; }'
 
 
 #look for VideoToolBox support
@@ -2009,11 +2106,6 @@ if test "$disable_scenegraph" = "yes" ; then
     disable_streaming="yes"
     disable_compositor="yes"
     disable_smgr="yes"
-    disable_nvdec="yes"
-fi
-
-if test "$disable_mpd" = "yes"; then
-    disable_dash="yes"
 fi
 
 if test "$disable_od_parse" = "yes" ; then
@@ -2316,21 +2408,6 @@ if test "$disable_qjs_stack" = "no" ; then
     echo "#define GPAC_QJS_STACK_CHECK" >> $TMPH
 fi
 
-if test "$disable_mpd" = "yes" ; then
-    echo "HLS and DASH Manifest Disabled"
-    echo "#define GPAC_DISABLE_MPD" >> $TMPH
-fi
-
-if test "$disable_dash" = "yes" ; then
-    echo "Adaptive HTTP Streaming Client disabled"
-    echo "#define GPAC_DISABLE_DASH_CLIENT" >> $TMPH
-fi
-
-if test "$disable_hevc" = "yes" ; then
-    echo "HEVC Support disabled"
-    echo "#define GPAC_DISABLE_HEVC" >> $TMPH
-fi
-
 if test "$disable_doc" = "yes" ; then
     echo "Doc disabled"
     echo "#define GPAC_DISABLE_DOC" >> $TMPH
@@ -2369,6 +2446,12 @@ fi
 if test "$disable_restrict" = "no" ; then
     echo "#define GPAC_ENABLE_RESTRICT" >> $TMPH
 fi
+
+if test "$disable_net_cap" = "yes" ; then
+    echo "Network record/playback disabled"
+    echo "#define GPAC_DISABLE_NETCAP" >> $TMPH
+fi
+
 
 echo ""
 
@@ -2419,6 +2502,9 @@ echo "PNG: $has_png"
 echo "MAD: $has_mad"
 echo "FAAD: $has_faad"
 echo "XVID: $has_xvid"
+echo "libcaption: $has_caption"
+echo "MpeghDecoder: $has_mpeghdec"
+echo "libcaca: $has_libcaca"
 
 ffopts=""
 if test "$has_ffmpeg" != "no" ; then
@@ -2430,7 +2516,7 @@ fi
 if [ -z $ffopts ] ; then
 echo "FFMPEG: $has_ffmpeg"
 else
-echo "FFMPEG: $has_ffmpeg - "$ffopts"supported"
+echo "FFMPEG: $has_ffmpeg - \"$ffopts\" supported"
 fi
 
 
@@ -2789,6 +2875,22 @@ if test "$has_nghttp2" != "no" ; then
     echo "#define GPAC_HAS_HTTP2" >> $TMPH
 fi
 
+if test "$has_caption" != "no" ; then
+    echo "#define GPAC_HAS_LIBCAPTION" >> $TMPH
+fi
+
+
+if test "$has_libcaca" != "no" ; then
+    echo "#define GPAC_HAS_LIBCACA" >> $TMPH
+    echo "CONFIG_CACA=yes" >> config.mak
+else
+    echo "CONFIG_CACA=no" >> config.mak
+fi
+
+if test "$has_mpeghdec" != "no" ; then
+    echo "#define GPAC_HAS_MPEGHDECODER" >> $TMPH
+fi
+
 #dump all cflags
 for pcklib in $all_packages ; do
     eval "has_pck=\$has_$pcklib"
@@ -2804,6 +2906,19 @@ for pcklib in $all_packages ; do
 done
 
 
+idx=1
+while [ $idx -le $nb_filters ]; do
+    get_item $idx "$all_filters"
+    name="$ar_it"
+    var=$(printf '%s' "$name" | tr '-' '_')
+    ret=""
+    eval "ret=\${disable_$var}"
+    uvar=`echo $var | tr a-z A-Z`
+    if test "$ret" = "yes" ; then
+        echo "#define GPAC_DISABLE_$uvar" >> $TMPH
+    fi
+    idx=$((idx+1))
+done
 
 echo "DISABLE_COMPOSITOR=$disable_compositor" >> config.mak
 echo "DISABLE_STREAMING=$disable_streaming" >> config.mak
@@ -2835,8 +2950,6 @@ echo "DISABLE_SMGR=$disable_smgr" >> config.mak
 echo "DISABLE_AV_PARSERS=$disable_parsers" >> config.mak
 echo "DISABLE_MEDIA_IMPORT=$disable_import" >> config.mak
 echo "DISABLE_MEDIA_EXPORT=$disable_export" >> config.mak
-echo "DISABLE_MPD=$disable_mpd" >> config.mak
-echo "DISABLE_DASH_CLIENT=$disable_dash" >> config.mak
 echo "DISABLE_CORE_TOOLS=$disable_core" >> config.mak
 echo "DISABLE_OD_DUMP=$disable_od_dump" >> config.mak
 echo "DISABLE_OD_PARSE=$disable_od_parse" >> config.mak
@@ -2865,10 +2978,6 @@ fi
 
 if test "$has_tinygl" = "yes" ; then
     echo "#define GPAC_USE_TINYGL" >> $TMPH
-fi
-
-if test "$disable_nvdec" = "yes" ; then
-    echo "#define GPAC_DISABLE_NVDEC" >> $TMPH
 fi
 
 if test "$has_sdl" != "no" ; then
@@ -3081,7 +3190,7 @@ generate_pkgconfig () {
 	echo ""
 	echo "Name: gpac"
 	echo "Description: GPAC Multimedia Framework"
-	echo "URL: http://gpac.io"
+	echo "URL: https://gpac.io"
 	echo "Version:$version"
 	echo "Cflags: -I\${prefix}/include"
 	echo "Libs: -L\${libdir} -lgpac"

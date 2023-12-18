@@ -320,7 +320,7 @@ static GF_Err oggmux_process(GF_Filter *filter)
 {
 	u32 nb_skip=0;
 	OGGMuxCtx *ctx = (OGGMuxCtx *) gf_filter_get_udta(filter);
-	u32 i, nb_done = 0, count = gf_list_count(ctx->streams), nb_dash_done = 0;;
+	u32 i, nb_done = 0, count = gf_list_count(ctx->streams), nb_dash_done = 0;
 
 	for (i=0; i<count; i++) {
 		const u8 *data=NULL;
@@ -547,7 +547,7 @@ GF_FilterRegister OGGMuxRegister = {
 	GF_FS_SET_DESCRIPTION("OGG multiplexer")
 	GF_FS_SET_HELP("This filter multiplexes audio and video to produce an OGG stream.\n"
 		"\n"
-		"The [-cdur]() option allows specifiying the interleaving duration (max time difference between consecutive packets of different streams). \n"
+		"The [-cdur]() option allows specifying the interleaving duration (max time difference between consecutive packets of different streams). \n"
 	)
 	.private_size = sizeof(OGGMuxCtx),
 	.max_extra_pids = -1,

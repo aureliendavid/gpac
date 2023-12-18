@@ -280,7 +280,9 @@ static GF_Err sockout_send_packet(GF_SockOutCtx *ctx, GF_FilterPacket *pck, GF_S
 	}
 	hwf = gf_filter_pck_get_frame_interface(pck);
 	if (!hwf) {
-		GF_LOG(GF_LOG_ERROR, GF_LOG_NETWORK, ("[SockOut] output file handle is not opened, discarding %d bytes\n", pck_size));
+		if (pck_size) {
+			GF_LOG(GF_LOG_ERROR, GF_LOG_NETWORK, ("[SockOut] output file handle is not opened, discarding %d bytes\n", pck_size));
+		}
 		return GF_OK;
 	}
 
@@ -390,7 +392,7 @@ static GF_Err sockout_process(GF_Filter *filter)
 
 	pck = gf_filter_pid_get_packet(ctx->pid);
 	if (!pck) {
-		if (gf_filter_pid_is_eos(ctx->pid)) {
+		if (gf_filter_pid_is_eos(ctx->pid) && !gf_filter_pid_is_flush_eos(ctx->pid) ) {
 			if (ctx->rev_pck) {
 				is_pck_ref = GF_TRUE;
 				pck = ctx->rev_pck;
@@ -501,6 +503,10 @@ static GF_Err sockout_process(GF_Filter *filter)
 		if (ctx->pck_pending) return GF_OK;
 
 	} else {
+		if (gf_sk_select(ctx->socket, GF_SK_SELECT_WRITE)==GF_IP_NETWORK_EMPTY) {
+			gf_filter_ask_rt_reschedule(filter, 1000);
+			return GF_OK;
+		}
 		e = sockout_send_packet(ctx, pck, ctx->socket);
 		if (e == GF_BUFFER_TOO_SMALL) return GF_OK;
 		if (e==GF_IP_CONNECTION_CLOSED) {

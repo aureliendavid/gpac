@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / Stream Management sub-project
@@ -106,13 +106,13 @@ void gf_mo_pause(GF_MediaObject *mo);
 void gf_mo_resume(GF_MediaObject *mo);
 
 /*!
-	Note on mediaControl: mediaControl is the media management app responsability, therefore
+	Note on mediaControl: mediaControl is the media management app responsibility, therefore
 is hidden from the rendering app. Since MediaControl overrides default settings of the node (speed and loop)
 you must use the gf_mo_get_speed and gf_mo_get_loop in order to know whether the related field applies or not
 */
 
 /*! sets speed of media - speed is not always applied, depending on media control settings.
-\note audio pitching is the responsability of the rendering app
+\note audio pitching is the responsibility of the rendering app
 \param mo the target media object
 \param speed the playback speed to set
 */
@@ -232,6 +232,18 @@ Bool gf_mo_is_started(GF_MediaObject *mo);
 \param is_flipped set to GF_TRUE if the pixels are vertically flipped (happens when reading back OpenGL textures)
 \return GF_TRUE if success*/
 Bool gf_mo_get_visual_info(GF_MediaObject *mo, u32 *width, u32 *height, u32 *stride, u32 *pixel_ar, u32 *pixelFormat, Bool *is_flipped);
+
+/*! gets visual information of a media object
+\param mo the target media object
+\param width set to width in pixels
+\param height set to height in pixels
+\param stride set to stride in bytes for visual objects with data frame, 0 if unknown
+\param pixel_ar set to the pixel aspect ratio as \code (PAR_NUM<<16)|PAR_DEN \endcode
+\param pixelFormat set to the pixel format of the video
+\param is_flipped set to GF_TRUE if the pixels are vertically flipped (happens when reading back OpenGL textures)
+\param for_texture if true check for texture dimensions otherwise for SRD dimensions
+\return GF_TRUE if success*/
+Bool gf_mo_get_visual_info_ex(GF_MediaObject *mo, u32 *width, u32 *height, u32 *stride, u32 *pixel_ar, u32 *pixelFormat, Bool *is_flipped, Bool for_texture);
 
 /*! gets number of views for 3D video object
 \param mo the target media object

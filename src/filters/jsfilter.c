@@ -676,7 +676,7 @@ GF_Err jsf_ToProp_ex(GF_Filter *filter, JSContext *ctx, JSValue value, u32 p4cc,
 			*prop = gf_props_parse_value(type, NULL, val_str, NULL, filter ? gf_filter_get_sep(filter, GF_FS_SEP_LIST) : ',');
 		}
 		JS_FreeCString(ctx, val_str);
-		if (prop->type==GF_PROP_FORBIDEN) return GF_BAD_PARAM;
+		if (prop->type==GF_PROP_FORBIDDEN) return GF_BAD_PARAM;
 		return GF_OK;
 	}
 	if (JS_IsBool(value)) {
@@ -5020,7 +5020,7 @@ static void jsfilter_finalize(GF_Filter *filter)
 		count = gf_list_count(jsf->filter->session->filters);
 		for (i=0; i<count; i++) {
 			GF_Filter *a_f = gf_list_get(jsf->filter->session->filters, i);
-			if (a_f == jsf->filter) continue;;
+			if (a_f == jsf->filter) continue;
 			jsfs_on_filter_destroyed(a_f);
 		}
 		if (!JS_IsUndefined(jsf->filter->jsval)) {

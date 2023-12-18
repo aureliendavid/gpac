@@ -27,6 +27,8 @@
 #include <gpac/constants.h>
 #include <gpac/filters.h>
 
+#ifndef GPAC_DISABLE_RFPCM
+
 typedef struct
 {
 	//opts
@@ -358,6 +360,14 @@ GF_Err pcmreframe_process(GF_Filter *filter)
 			}
 			wav_ok = GF_FALSE;
 		}
+		if (!ctx->ch) {
+			GF_LOG(GF_LOG_ERROR, GF_LOG_MEDIA, ("[PCMReframe] Channel count %d invalid in wave\n", ctx->ch));
+			wav_ok = GF_FALSE;
+		}
+		if (!ctx->sr) {
+			GF_LOG(GF_LOG_ERROR, GF_LOG_MEDIA, ("[PCMReframe] Samplerate %d invalid in wave\n", ctx->sr));
+			wav_ok = GF_FALSE;
+		}
 
 		ctx->wav_hdr_size = (u32) gf_bs_get_position(bs);
 
@@ -527,4 +537,9 @@ const GF_FilterRegister *rfpcm_register(GF_FilterSession *session)
 	PCMReframeCaps[1].val.value.string = (char *) gf_audio_fmt_all_shortnames();
 	return &PCMReframeRegister;
 }
-
+#else
+const GF_FilterRegister *rfpcm_register(GF_FilterSession *session)
+{
+	return NULL;
+}
+#endif //GPAC_DISABLE_RFPCM

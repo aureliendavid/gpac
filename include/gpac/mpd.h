@@ -82,9 +82,10 @@ typedef enum
 \param bandwidth bandwidth used for the representation
 \param segment_number number of the target segment
 \param use_segment_timeline indicates if segmentTimeline is used for segment addressing in the MPD
+\param forced if true, do not append extension or missing $Number$ or $Time$  when resolving template
 \return error if any
 */
-GF_Err gf_media_mpd_format_segment_name(GF_DashTemplateSegmentType seg_type, Bool is_bs_switching, char *segment_name, const char *rep_id, const char *base_url, const char *seg_rad_name, const char *seg_ext, u64 start_time, u32 bandwidth, u32 segment_number, Bool use_segment_timeline);
+GF_Err gf_media_mpd_format_segment_name(GF_DashTemplateSegmentType seg_type, Bool is_bs_switching, char *segment_name, const char *rep_id, const char *base_url, const char *seg_rad_name, const char *seg_ext, u64 start_time, u32 bandwidth, u32 segment_number, Bool use_segment_timeline, Bool forced);
 
 /*! metrics, not yet supported*/
 typedef struct
@@ -233,6 +234,7 @@ WARNING: duration is expressed in GF_MPD_SEGMENT_BASE timescale unit
 	u64 duration;	\
 	u32 start_number;	\
 	GF_MPD_SegmentTimeline *segment_timeline;	\
+	u32 tsb_first_entry;	\
 	GF_MPD_URL *bitstream_switching_url;	\
 
 /*! Multiple segment base*/
@@ -626,6 +628,7 @@ typedef struct {
 	GF_DASH_SegmenterContext *dasher_ctx;
 	/*! list of segment states*/
 	GF_List *state_seg_list;
+	s32 tsb_first_entry;
 	/*! segment timescale (for HLS)*/
 	u32 timescale;
 	/*! stream type (for HLS)*/
@@ -673,6 +676,9 @@ typedef struct {
 	Bool in_progress;
 	char *res_url;
 	u32 trackID;
+
+	Bool sub_forced;
+	const char *hls_forced;
 } GF_MPD_Representation;
 
 /*! AdaptationSet*/
@@ -923,6 +929,7 @@ typedef struct {
 	//als absolute url flag
 	u32 hls_abs_url;
 	Bool m3u8_use_repid;
+	Bool hls_audio_primary;
 
 	/*! requested segment duration for index mode */
 	u32 segment_duration;
@@ -982,7 +989,6 @@ GF_MPD_Period *gf_mpd_period_new();
 \param _item the MPD Period to free*/
 void gf_mpd_period_free(void *_item);
 /*! writes an MPD to a file stream
-GF_Err gf_mpd_write(GF_MPD const * const mpd, FILE *out, Bool compact);
 \param mpd the target MPD to write
 \param out the target file object
 \param compact if set, removes all new line and indentation in the output
@@ -990,7 +996,6 @@ GF_Err gf_mpd_write(GF_MPD const * const mpd, FILE *out, Bool compact);
 */
 GF_Err gf_mpd_write(GF_MPD const * const mpd, FILE *out, Bool compact);
 /*! writes an MPD to a local file
-GF_Err gf_mpd_write(GF_MPD const * const mpd, FILE *out, Bool compact);
 \param mpd the target MPD to write
 \param file_name the target file name
 \return error if any
@@ -1009,7 +1014,6 @@ typedef enum
 } GF_M3U8WriteMode;
 
 /*! writes an MPD to a m3u8 playlist
-GF_Err gf_mpd_write(GF_MPD const * const mpd, FILE *out, Bool compact);
 \param mpd the target MPD to write
 \param out the target file object
 \param m3u8_name the base m3u8 name to use (needed when generating variant playlist file names)
@@ -1021,7 +1025,6 @@ GF_Err gf_mpd_write_m3u8_master_playlist(GF_MPD const * const mpd, FILE *out, co
 
 
 /*! parses an MPD Period and appends it to the MPD period list
-GF_Err gf_mpd_write(GF_MPD const * const mpd, FILE *out, Bool compact);
 \param mpd the target MPD to write
 \param root the DOM element describing the period
 \return error if any

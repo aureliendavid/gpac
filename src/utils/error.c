@@ -30,19 +30,17 @@
 //ugly patch, we have a concurrence issue with gf_4cc_to_str, for now fixed by rolling buffers
 #define NB_4CC_BUF	10
 static char szTYPE_BUF[NB_4CC_BUF][GF_4CC_MSIZE];
-static u32 buf_4cc_idx=0;
+static u32 buf_4cc_idx = NB_4CC_BUF;
 
 GF_EXPORT
-const char *gf_4cc_to_str(u32 type)
+const char *gf_4cc_to_str_safe(u32 type, char szType[GF_4CC_MSIZE])
 {
 	u32 ch, i;
-	char *szTYPE = szTYPE_BUF[buf_4cc_idx];
-	char *name = (char *)szTYPE;
-	if (!type) return "00000000";
-	buf_4cc_idx++;
-	if (buf_4cc_idx>=NB_4CC_BUF)
-		buf_4cc_idx=0;
-
+	if (!type) {
+		strcpy(szType, "00000000");
+		return szType;
+	}
+	char *name = (char *)szType;
 	for (i = 0; i < 4; i++) {
 		ch = type >> (8 * (3-i) ) & 0xff;
 		if ( ch >= 0x20 && ch <= 0x7E ) {
@@ -54,8 +52,21 @@ const char *gf_4cc_to_str(u32 type)
 		}
 	}
 	*name = 0;
-	return (const char *) szTYPE;
+	return szType;
 }
+#include <gpac/thread.h>
+
+GF_EXPORT
+const char *gf_4cc_to_str(u32 type)
+{
+	if (!type) return "00000000";
+	if (safe_int_dec(&buf_4cc_idx)==0)
+		buf_4cc_idx=NB_4CC_BUF;
+
+	return gf_4cc_to_str_safe(type, szTYPE_BUF[buf_4cc_idx-1]);
+}
+
+
 
 GF_EXPORT
 u32 gf_4cc_parse(const char *val)
@@ -655,6 +666,7 @@ u32 gf_log_get_tool_level(GF_LOG_Tool log_tool)
 FILE *gpac_log_file = NULL;
 Bool gpac_log_time_start = GF_FALSE;
 Bool gpac_log_utc_time = GF_FALSE;
+Bool gpac_log_dual = GF_FALSE;
 Bool last_log_is_lf = GF_TRUE;
 static u64 gpac_last_log_time=0;
 
@@ -692,6 +704,12 @@ void default_log_callback(void *cbck, GF_LOG_Level level, GF_LOG_Tool tool, cons
 	if (gf_fileio_check(logs)) {
 		gf_fileio_printf((GF_FileIO *)logs, fmt, vlist);
 	} else {
+		if (gpac_log_dual && gpac_no_color_logs) {
+			va_list vlist_c;
+			va_copy(vlist_c, vlist);
+			vfprintf(stderr, fmt, vlist_c);
+			va_end(vlist_c);
+		}
 		vfprintf(logs, fmt, vlist);
 	}
 	gf_fflush(logs);
@@ -700,8 +718,14 @@ void default_log_callback(void *cbck, GF_LOG_Level level, GF_LOG_Tool tool, cons
 void default_log_callback_color(void *cbck, GF_LOG_Level level, GF_LOG_Tool tool, const char *fmt, va_list vlist)
 {
 	if (gpac_log_file) {
-		default_log_callback(cbck, level, tool, fmt, vlist);
-		return;
+		if (!gpac_log_dual) {
+			default_log_callback(cbck, level, tool, fmt, vlist);
+			return;
+		}
+		va_list vlist_c;
+		va_copy(vlist_c, vlist);
+		default_log_callback(cbck, level, tool, fmt, vlist_c);
+		va_end(vlist_c);
 	}
 	switch(level) {
 	case GF_LOG_ERROR:
@@ -1245,6 +1269,10 @@ static const char *gf_disabled_features()
 #ifdef GPAC_DISABLE_ISOM_DUMP
 	                       "GPAC_DISABLE_ISOM_DUMP "
 #endif
+#ifdef GPAC_DISABLE_NETCAP
+	                       "GPAC_DISABLE_NETCAP "
+#endif
+
 #ifdef GPAC_DISABLE_COMPOSITOR
 	                       "GPAC_DISABLE_COMPOSITOR "
 #endif
@@ -1256,6 +1284,201 @@ static const char *gf_disabled_features()
 #endif
 #ifdef GPAC_DISABLE_AOUT
 	                       "GPAC_DISABLE_AOUT "
+#endif
+#ifdef GPAC_DISABLE_BSAGG
+	                       "GPAC_DISABLE_BSAGG "
+#endif
+#ifdef GPAC_DISABLE_BSSPLIT
+	                       "GPAC_DISABLE_BSSPLIT "
+#endif
+#ifdef GPAC_DISABLE_BSRW
+	                       "GPAC_DISABLE_BSRW "
+#endif
+#ifdef GPAC_DISABLE_DASHER
+	                       "GPAC_DISABLE_DASHER "
+#endif
+#ifdef GPAC_DISABLE_DASHIN
+	                       "GPAC_DISABLE_DASHIN "
+#endif
+#ifdef GPAC_DISABLE_IMGDEC
+	                       "GPAC_DISABLE_IMGDEC "
+#endif
+#ifdef GPAC_DISABLE_UNCVDEC
+	                       "GPAC_DISABLE_UNCVDEC "
+#endif
+#ifdef GPAC_DISABLE_CDCRYPT
+	                       "GPAC_DISABLE_CDCRYPT "
+#endif
+#ifdef GPAC_DISABLE_GHIDMX
+	                       "GPAC_DISABLE_GHIDMX "
+#endif
+#ifdef GPAC_DISABLE_GSFDMX
+	                       "GPAC_DISABLE_GSFDMX "
+#endif
+#ifdef GPAC_DISABLE_NHMLR
+	                       "GPAC_DISABLE_NHMLR "
+#endif
+#ifdef GPAC_DISABLE_NHNTR
+	                       "GPAC_DISABLE_NHNTR "
+#endif
+#ifdef GPAC_DISABLE_CECRYPT
+	                       "GPAC_DISABLE_CECRYPT "
+#endif
+#ifdef GPAC_DISABLE_FLIST
+	                       "GPAC_DISABLE_FLIST "
+#endif
+#ifdef GPAC_DISABLE_HEVCMERGE
+	                       "GPAC_DISABLE_HEVCMERGE "
+#endif
+#ifdef GPAC_DISABLE_HEVCSPLIT
+	                       "GPAC_DISABLE_HEVCSPLIT "
+#endif
+#ifdef GPAC_DISABLE_FIN
+	                       "GPAC_DISABLE_FIN "
+#endif
+#ifdef GPAC_DISABLE_PIN
+	                       "GPAC_DISABLE_PIN "
+#endif
+#ifdef GPAC_DISABLE_INSPECT
+	                       "GPAC_DISABLE_INSPECT "
+#endif
+#ifdef GPAC_DISABLE_CRYPTFILE
+	                       "GPAC_DISABLE_CRYPTFILE "
+#endif
+#ifdef GPAC_DISABLE_MP4DMX
+	                       "GPAC_DISABLE_MP4DMX "
+#endif
+#ifdef GPAC_DISABLE_TXTIN
+	                       "GPAC_DISABLE_TXTIN "
+#endif
+#ifdef GPAC_DISABLE_GSFMX
+	                       "GPAC_DISABLE_GSFMX "
+#endif
+#ifdef GPAC_DISABLE_MP4MX
+	                       "GPAC_DISABLE_MP4MX "
+#endif
+#ifdef GPAC_DISABLE_FOUT
+	                       "GPAC_DISABLE_FOUT "
+#endif
+#ifdef GPAC_DISABLE_POUT
+	                       "GPAC_DISABLE_POUT "
+#endif
+#ifdef GPAC_DISABLE_RFAC3
+	                       "GPAC_DISABLE_RFAC3 "
+#endif
+#ifdef GPAC_DISABLE_RFADTS
+	                       "GPAC_DISABLE_RFADTS "
+#endif
+#ifdef GPAC_DISABLE_RFAMR
+	                       "GPAC_DISABLE_RFAMR "
+#endif
+#ifdef GPAC_DISABLE_RFAV1
+	                       "GPAC_DISABLE_RFAV1 "
+#endif
+#ifdef GPAC_DISABLE_RFFLAC
+	                       "GPAC_DISABLE_RFFLAC "
+#endif
+#ifdef GPAC_DISABLE_RFH263
+	                       "GPAC_DISABLE_RFH263 "
+#endif
+#ifdef GPAC_DISABLE_RFIMG
+	                       "GPAC_DISABLE_RFIMG "
+#endif
+#ifdef GPAC_DISABLE_RFLATM
+	                       "GPAC_DISABLE_RFLATM "
+#endif
+#ifdef GPAC_DISABLE_RFMHAS
+	                       "GPAC_DISABLE_RFMHAS "
+#endif
+#ifdef GPAC_DISABLE_RFMP3
+	                       "GPAC_DISABLE_RFMP3 "
+#endif
+#ifdef GPAC_DISABLE_RFMPGVID
+	                       "GPAC_DISABLE_RFMPGVID "
+#endif
+#ifdef GPAC_DISABLE_RFNALU
+	                       "GPAC_DISABLE_RFNALU "
+#endif
+#ifdef GPAC_DISABLE_RFPRORES
+	                       "GPAC_DISABLE_RFPRORES "
+#endif
+#ifdef GPAC_DISABLE_RFQCP
+	                       "GPAC_DISABLE_RFQCP "
+#endif
+#ifdef GPAC_DISABLE_RFPCM
+	                       "GPAC_DISABLE_RFPCM "
+#endif
+#ifdef GPAC_DISABLE_RFRAWVID
+	                       "GPAC_DISABLE_RFRAWVID "
+#endif
+#ifdef GPAC_DISABLE_RFTRUEHD
+	                       "GPAC_DISABLE_RFTRUEHD "
+#endif
+#ifdef GPAC_DISABLE_REFRAMER
+	                       "GPAC_DISABLE_REFRAMER "
+#endif
+#ifdef GPAC_DISABLE_RESAMPLE
+	                       "GPAC_DISABLE_RESAMPLE "
+#endif
+#ifdef GPAC_DISABLE_RESTAMP
+	                       "GPAC_DISABLE_RESTAMP "
+#endif
+#ifdef GPAC_DISABLE_REWIND
+	                       "GPAC_DISABLE_REWIND "
+#endif
+#ifdef GPAC_DISABLE_UFAAC
+	                       "GPAC_DISABLE_UFAAC "
+#endif
+#ifdef GPAC_DISABLE_UFMHAS
+	                       "GPAC_DISABLE_UFMHAS "
+#endif
+#ifdef GPAC_DISABLE_UFM4V
+	                       "GPAC_DISABLE_UFM4V "
+#endif
+#ifdef GPAC_DISABLE_UFNALU
+	                       "GPAC_DISABLE_UFNALU "
+#endif
+#ifdef GPAC_DISABLE_UFOBU
+	                       "GPAC_DISABLE_UFOBU "
+#endif
+#ifdef GPAC_DISABLE_TILEAGG
+	                       "GPAC_DISABLE_TILEAGG "
+#endif
+#ifdef GPAC_DISABLE_TILESPLIT
+	                       "GPAC_DISABLE_TILESPLIT "
+#endif
+#ifdef GPAC_DISABLE_TTMLCONV
+	                       "GPAC_DISABLE_TTMLCONV "
+#endif
+#ifdef GPAC_DISABLE_UNFRAMER
+	                       "GPAC_DISABLE_UNFRAMER "
+#endif
+#ifdef GPAC_DISABLE_VCROP
+	                       "GPAC_DISABLE_VCROP "
+#endif
+#ifdef GPAC_DISABLE_VFLIP
+	                       "GPAC_DISABLE_VFLIP "
+#endif
+#ifdef GPAC_DISABLE_WRITEGEN
+	                       "GPAC_DISABLE_WRITEGEN "
+#endif
+#ifdef GPAC_DISABLE_NHMLW
+	                       "GPAC_DISABLE_NHMLW "
+#endif
+#ifdef GPAC_DISABLE_NHNTW
+	                       "GPAC_DISABLE_NHNTW "
+#endif
+#ifdef GPAC_DISABLE_WRITEQCP
+	                       "GPAC_DISABLE_WRITEQCP "
+#endif
+#ifdef GPAC_DISABLE_UNITS
+	                       "GPAC_DISABLE_UNITS "
+#endif
+#ifdef GPAC_DISABLE_NVDEC
+	                       "GPAC_DISABLE_NVDEC "
+#endif
+#ifdef GPAC_DISABLE_VTBDEC
+	                       "GPAC_DISABLE_VTBDEC "
 #endif
 	                       ;
 	return features;

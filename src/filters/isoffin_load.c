@@ -29,7 +29,7 @@
 #include <gpac/media_tools.h>
 #include <gpac/internal/isomedia_dev.h>
 
-#ifndef GPAC_DISABLE_ISOM
+#if !defined(GPAC_DISABLE_ISOM) && !defined(GPAC_DISABLE_MP4DMX)
 
 static void isor_get_chapters(GF_ISOFile *file, GF_FilterPid *opid)
 {
@@ -40,7 +40,12 @@ static void isor_get_chapters(GF_ISOFile *file, GF_FilterPid *opid)
 	count = gf_isom_get_chapter_count(file, 0);
 	if (count) {
 		times.vals = gf_malloc(sizeof(u32)*count);
+		if (!times.vals) return;
 		names.vals = gf_malloc(sizeof(char *)*count);
+		if (!names.vals) {
+			gf_free(times.vals);
+			return;
+		}
 		times.nb_items = names.nb_items = count;
 
 		for (i=0; i<count; i++) {
@@ -48,7 +53,7 @@ static void isor_get_chapters(GF_ISOFile *file, GF_FilterPid *opid)
 			u64 start;
 			gf_isom_get_chapter(file, 0, i+1, &start, &name);
 			times.vals[i] = (u32) start;
-			names.vals[i] = gf_strdup(name);
+			names.vals[i] = gf_strdup(name ? name : "");
 		}
 		p.type = GF_PROP_UINT_LIST;
 		p.value.uint_list = times;
@@ -78,18 +83,27 @@ static void isor_get_chapters(GF_ISOFile *file, GF_FilterPid *opid)
 	if (!chap_tk) return;
 
 	times.vals = gf_malloc(sizeof(u32)*count);
+	if (!times.vals) return;
 	names.vals = gf_malloc(sizeof(char *)*count);
+	if (!names.vals) {
+		gf_free(times.vals);
+		return;
+	}
 	times.nb_items = names.nb_items = count;
 
 	for (i=0; i<count; i++) {
 		u32 di;
 		GF_ISOSample *s = gf_isom_get_sample(file, chap_tk, i+1, &di);
-		if (!s) continue;
+		if (!s) {
+			times.vals[i] = 0;
+			names.vals[i] = gf_strdup("");
+			continue;
+		}
 		GF_BitStream *bs = gf_bs_new(s->data, s->dataLength, GF_BITSTREAM_READ);
 		GF_TextSample *txt = gf_isom_parse_text_sample(bs);
 		if (txt) {
 			times.vals[i] = (u32) s->DTS;
-			names.vals[i] = gf_strdup(txt->text);
+			names.vals[i] = gf_strdup(txt->text ? txt->text : "");
 			gf_isom_delete_text_sample(txt);
 		}
 		gf_bs_del(bs);
@@ -151,6 +165,7 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 	char *meta_codec_name = NULL;
 	u32 meta_opaque=0;
 	Bool first_config = GF_FALSE;
+	u32 force_subs = 0;
 
 
 	depends_on_id = avg_rate = max_rate = buffer_size = 0;
@@ -268,6 +283,9 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 				GF_LOG(GF_LOG_WARNING, GF_LOG_CONTAINER, ("[IsoMedia] Track %d unable to fetch TX3G config\n", track));
 			}
 			if (txtcfg) {
+				if (txtcfg->displayFlags & GF_TXT_ALL_SAMPLES_FORCED) force_subs = 2;
+				else if (txtcfg->displayFlags & GF_TXT_SOME_SAMPLES_FORCED) force_subs = 1;
+
 				gf_odf_tx3g_write(txtcfg, &dsi, &dsi_size);
 				gf_odf_desc_del((GF_Descriptor *) txtcfg);
 			}
@@ -686,6 +704,22 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 						gf_filter_pid_set_property(pid, GF_PROP_PID_ORIG_SIZE, &PROP_VEC2I_INT(w, h) );
 					}
 				}
+			} else {
+				u8 *srdg=NULL;
+				u32 srdg_s=0;
+				gf_isom_get_user_data(read->mov, track, GF_ISOM_UDTA_GPAC_SRD, NULL, 1, &srdg, &srdg_s);
+				if (srdg && srdg_s>=21) {
+					GF_BitStream *bs = gf_bs_new(srdg, srdg_s, GF_BITSTREAM_READ);
+					gf_bs_skip_bytes(bs, 5);
+					srd_x = (s32) gf_bs_read_u32(bs);
+					srd_y = (s32) gf_bs_read_u32(bs);
+					srd_w = gf_bs_read_u32(bs);
+					srd_h = gf_bs_read_u32(bs);
+					gf_bs_del(bs);
+					gf_filter_pid_set_property(pid, GF_PROP_PID_CROP_POS, &PROP_VEC2I_INT(srd_x, srd_y) );
+					gf_filter_pid_set_property(pid, GF_PROP_PID_ORIG_SIZE, &PROP_VEC2I_INT(srd_w, srd_h) );
+				}
+				if (srdg) gf_free(srdg);
 			}
 
 
@@ -975,6 +1009,8 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 			if (gf_isom_has_time_offset_table(read->mov, ch->track))
 				gf_filter_pid_set_property_str(ch->pid, "isom_force_ctts", &PROP_BOOL(GF_TRUE) );
 		}
+		if (read->nodata==2)
+			gf_filter_pid_set_property_str(ch->pid, "nodata", &PROP_BOOL(GF_TRUE) );
 
 		if (!gf_sys_is_test_mode()) {
 			u32 nb_udta, alt_grp=0;
@@ -1027,7 +1063,15 @@ static void isor_declare_track(ISOMReader *read, ISOMChannel *ch, u32 track, u32
 							snprintf(szName, 30, "udta_%s", gf_4cc_to_str(type));
 						szName[30]=0;
 						if (gf_utf8_is_legal(udta, udta_size)) {
-							gf_filter_pid_set_property_dyn(ch->pid, szName, &PROP_STRING_NO_COPY(udta));
+							if (!udta[udta_size-1]) {
+								gf_filter_pid_set_property_dyn(ch->pid, szName, &PROP_STRING_NO_COPY(udta));
+							} else {
+								char *data = gf_malloc(udta_size+1);
+								memcpy(data, udta, udta_size);
+								data[udta_size]=0;
+								gf_filter_pid_set_property_dyn(ch->pid, szName, &PROP_STRING_NO_COPY(data));
+								gf_free(udta);
+							}
 						} else {
 							gf_filter_pid_set_property_dyn(ch->pid, szName, &PROP_DATA_NO_COPY(udta, udta_size));
 						}
@@ -1075,7 +1119,7 @@ props_done:
 		gf_odf_desc_del((GF_Descriptor *)lang_desc);
 		lang_desc = NULL;
 	}
-	
+
 	if (read->smode != MP4DMX_SINGLE) {
 		if ((codec_id==GF_CODECID_LHVC) || (codec_id==GF_CODECID_HEVC)) {
 			Bool signal_lhv = (read->smode==MP4DMX_SPLIT) ? GF_TRUE : GF_FALSE;
@@ -1214,6 +1258,9 @@ props_done:
 	if (pix_fmt) {
 		gf_filter_pid_set_property(ch->pid, GF_PROP_PID_PIXFMT, &PROP_UINT(pix_fmt));
 	}
+
+
+	gf_filter_pid_set_property(ch->pid, GF_PROP_PID_FORCED_SUB, force_subs ? &PROP_UINT(force_subs) : NULL );
 
 	gf_filter_pid_set_property(ch->pid, GF_PROP_PID_CONFIG_IDX, &PROP_UINT(stsd_idx) );
 
@@ -1365,7 +1412,11 @@ props_done:
 	if (m_subtype)
 		gf_filter_pid_set_property(ch->pid, GF_PROP_PID_ISOM_SUBTYPE, &PROP_4CC(m_subtype) );
 
-	if (stxtcfg) gf_filter_pid_set_property(ch->pid, GF_PROP_PID_DECODER_CONFIG, &PROP_DATA((char *)stxtcfg, (u32) strlen(stxtcfg) ));
+	if (stxtcfg) {
+		//copy mem to make sure we have a null-terminated string
+		char *dupm = gf_strdup((char *)stxtcfg);
+		gf_filter_pid_set_property(ch->pid, GF_PROP_PID_DECODER_CONFIG, &PROP_DATA_NO_COPY(dupm, (u32) strlen(stxtcfg) ));
+	}
 
 
 #if !defined(GPAC_DISABLE_ISOM_WRITE)
@@ -1504,7 +1555,7 @@ props_done:
 		} else {
 			gf_filter_pid_set_property(ch->pid, GF_PROP_PID_CLAP_W, NULL);
 			gf_filter_pid_set_property(ch->pid, GF_PROP_PID_CLAP_H, NULL);
-			gf_filter_pid_set_property(ch->pid, GF_PROP_PID_CLAP_X, NULL);;
+			gf_filter_pid_set_property(ch->pid, GF_PROP_PID_CLAP_X, NULL);
 			gf_filter_pid_set_property(ch->pid, GF_PROP_PID_CLAP_Y, NULL);
 		}
 
@@ -1638,6 +1689,14 @@ GF_Err isor_declare_objects(ISOMReader *read)
 
 		if (!read->alltk && !read->tkid && !gf_isom_is_track_enabled(read->mov, i+1)) {
 			if (count>1) {
+				u32 type = gf_isom_get_media_type(read->mov, i+1);
+
+				//we don't warn for disabled text tracks due to chapters and forced subs
+				if ((type==GF_ISOM_SUBTYPE_TEXT) || (type==GF_ISOM_MEDIA_SUBT))
+					continue;
+				//disabled tracks using QT chapter refs, do not warn
+				if (gf_isom_is_track_referenced(read->mov, i+1, GF_ISOM_REF_CHAP)) continue;
+
 				GF_LOG(GF_LOG_WARNING, GF_LOG_CONTAINER, ("[IsoMedia] Track %d is disabled, ignoring track - you may retry by specifying alltk option\n", i+1));
 				continue;
 			} else {
@@ -1709,7 +1768,7 @@ GF_Err isor_declare_objects(ISOMReader *read)
 		GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[IsoMedia] No suitable tracks in file\n"));
 		return GF_NOT_SUPPORTED;
 	}
-	
+
 	/*if cover art, declare a video pid*/
 	if (gf_isom_apple_get_tag(read->mov, GF_ISOM_ITUNE_COVER_ART, &tag, &tlen)==GF_OK) {
 
@@ -1748,6 +1807,7 @@ Bool isor_declare_item_properties(ISOMReader *read, ISOMChannel *ch, u32 item_id
 	GF_ESD *esd;
 	u32 item_id=0;
 	u32 scheme_type=0, scheme_version=0, item_type;
+	u32 item_codecid=0;
 	const char *item_name, *item_mime_type, *item_encoding;
 
 retry:
@@ -1780,11 +1840,18 @@ retry:
 
 	esd = gf_media_map_item_esd(read->mov, item_id);
 	if (!esd) {
-		//unsupported item, try next
-		item_idx++;
-		goto retry;
+		switch (item_type) {
+		case GF_ISOM_SUBTYPE_HVT1:
+			item_codecid = GF_CODECID_HEVC_TILES;
+			break;
+		default:
+			//unsupported item, try next
+			item_idx++;
+			goto retry;
+		}
+	} else {
+		item_codecid = esd->decoderConfig->objectTypeIndication;
 	}
-
 
 	//OK declare PID
 	if (!ch)
@@ -1799,23 +1866,32 @@ retry:
 	if (!ch) {
 		if (read->pid)
 			gf_filter_pid_copy_properties(pid, read->pid);
-		gf_filter_pid_set_property(pid, GF_PROP_PID_ID, &PROP_UINT(esd->ESID));
+		gf_filter_pid_set_property(pid, GF_PROP_PID_ID, &PROP_UINT(esd ? esd->ESID : item_id));
 	}
 
 	if (read->itemid)
 		gf_filter_pid_set_property(pid, GF_PROP_PID_ITEM_ID, &PROP_UINT(item_id));
-		
+
+	if ((item_codecid==GF_CODECID_HEVC) && gf_isom_meta_item_has_ref(read->mov, GF_TRUE, 0, item_id, GF_ISOM_REF_TBAS)) {
+		gf_filter_pid_set_property(pid, GF_PROP_PID_TILE_BASE, &PROP_BOOL(GF_TRUE));
+	}
+
+
 	//TODO: no support for LHEVC images
 	//gf_filter_pid_set_property(pid, GF_PROP_PID_DEPENDENCY_ID, &PROP_UINT(esd->dependsOnESID));
 
-	gf_filter_pid_set_property(pid, GF_PROP_PID_STREAM_TYPE, &PROP_UINT(esd->decoderConfig->streamType));
-	gf_filter_pid_set_property(pid, GF_PROP_PID_CODECID, &PROP_UINT(esd->decoderConfig->objectTypeIndication));
+	gf_filter_pid_set_property(pid, GF_PROP_PID_STREAM_TYPE, &PROP_UINT(GF_STREAM_VISUAL));
+	gf_filter_pid_set_property(pid, GF_PROP_PID_CODECID, &PROP_UINT(item_codecid));
 	gf_filter_pid_set_property(pid, GF_PROP_PID_TIMESCALE, &PROP_UINT(1000));
-	if (esd->decoderConfig->decoderSpecificInfo && esd->decoderConfig->decoderSpecificInfo->data) {
-		gf_filter_pid_set_property(pid, GF_PROP_PID_DECODER_CONFIG, &PROP_DATA_NO_COPY(esd->decoderConfig->decoderSpecificInfo->data, esd->decoderConfig->decoderSpecificInfo->dataLength));
+	if (esd) {
+		gf_filter_pid_set_property(pid, GF_PROP_PID_TIMESCALE, &PROP_UINT(1000));
+		if (esd->decoderConfig->decoderSpecificInfo && esd->decoderConfig->decoderSpecificInfo->data) {
+			gf_filter_pid_set_property(pid, GF_PROP_PID_DECODER_CONFIG, &PROP_DATA_NO_COPY(esd->decoderConfig->decoderSpecificInfo->data, esd->decoderConfig->decoderSpecificInfo->dataLength));
 
-		esd->decoderConfig->decoderSpecificInfo->data=NULL;
-		esd->decoderConfig->decoderSpecificInfo->dataLength=0;
+			esd->decoderConfig->decoderSpecificInfo->data=NULL;
+			esd->decoderConfig->decoderSpecificInfo->dataLength=0;
+		}
+		gf_odf_desc_del((GF_Descriptor *)esd);
 	}
 
 	if (props.width && props.height) {
@@ -1836,7 +1912,7 @@ retry:
 	} else {
 		gf_filter_pid_set_property(pid, GF_PROP_PID_CLAP_W, NULL);
 		gf_filter_pid_set_property(pid, GF_PROP_PID_CLAP_H, NULL);
-		gf_filter_pid_set_property(pid, GF_PROP_PID_CLAP_X, NULL);;
+		gf_filter_pid_set_property(pid, GF_PROP_PID_CLAP_X, NULL);
 		gf_filter_pid_set_property(pid, GF_PROP_PID_CLAP_Y, NULL);
 	}
 
@@ -1859,6 +1935,12 @@ retry:
 		gf_filter_pid_set_property(pid, GF_PROP_PID_ISOM_SUBTYPE,  &PROP_4CC(GF_ISOM_ITEM_TYPE_UNCI) );
 	}
 
+	if (item_codecid == GF_CODECID_HEVC_TILES) {
+		gf_filter_pid_set_property(pid, GF_PROP_PID_CROP_POS, &PROP_VEC2I_INT(props.hOffset, props.vOffset) );
+
+		u32 base_id = gf_isom_meta_get_item_ref_id(read->mov, GF_TRUE, 0, item_id, GF_ISOM_REF_TBAS, 1);
+		gf_filter_pid_set_property(pid, GF_PROP_PID_DEPENDENCY_ID, base_id ? &PROP_UINT(base_id) : NULL );
+	}
 
 	//setup cenc
 	if (scheme_type) {
@@ -1866,11 +1948,9 @@ retry:
 		gf_filter_pid_set_property(pid, GF_PROP_PID_PROTECTION_SCHEME_VERSION, &PROP_UINT(scheme_version) );
 		gf_filter_pid_set_property(pid, GF_PROP_PID_ENCRYPTED, &PROP_BOOL(GF_TRUE) );
 
-		gf_filter_pid_set_property(pid, GF_PROP_PID_ORIG_STREAM_TYPE, &PROP_UINT(esd->decoderConfig->streamType));
+		gf_filter_pid_set_property(pid, GF_PROP_PID_ORIG_STREAM_TYPE, &PROP_UINT(GF_STREAM_VISUAL));
 		gf_filter_pid_set_property(pid, GF_PROP_PID_STREAM_TYPE, &PROP_UINT(GF_STREAM_ENCRYPTED) );
 	}
-
-	gf_odf_desc_del((GF_Descriptor *)esd);
 
 	if (!ch) {
 		ch = isor_create_channel(read, pid, 0, item_id, GF_FALSE);
@@ -1885,7 +1965,4 @@ retry:
 	return GF_TRUE;
 }
 
-#endif /*GPAC_DISABLE_ISOM*/
-
-
-
+#endif // !defined(GPAC_DISABLE_ISOM) && !defined(GPAC_DISABLE_MP4DMX)

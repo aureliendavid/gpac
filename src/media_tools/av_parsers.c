@@ -41,7 +41,7 @@ void gf_bs_log_idx(GF_BitStream *bs, u32 nBits, const char *fname, s64 val, s32 
 
 #define gf_bs_log(_bs, _nBits, _fname, _val) gf_bs_log_idx(_bs, _nBits, _fname, _val, -1, -1, -1)
 
-u32 gf_bs_read_int_log_idx3(GF_BitStream *bs, u32 nBits, const char *fname, s32 idx1, s32 idx2, s32 idx3)
+static u32 gf_bs_read_int_log_idx3(GF_BitStream *bs, u32 nBits, const char *fname, s32 idx1, s32 idx2, s32 idx3)
 {
 	u32 val = gf_bs_read_int(bs, nBits);
 	gf_bs_log_idx(bs, nBits, fname, val, idx1, idx2, idx3);
@@ -1640,11 +1640,12 @@ static u32 av1_uvlc(GF_BitStream *bs, const char *fname)
 		if (done)
 			break;
 		leadingZeros++;
+		//avoid calls to bs_available or bs_is_overflow - see #2698 for poc
+		if (leadingZeros >= 32) {
+			return 0xFFFFFFFF;
+		}
 	}
-	if (leadingZeros >= 32) {
-		return 0xFFFFFFFF;
-	}
-	res = gf_bs_read_int(bs, leadingZeros) + (1 << leadingZeros) - 1;
+	res = gf_bs_read_int(bs, leadingZeros) + ((u32)1 << leadingZeros) - 1;
 	gf_bs_log(bs, 2*leadingZeros, fname, res);
 	return res;
 }
@@ -2376,6 +2377,7 @@ GF_Err gf_vp9_parse_sample(GF_BitStream *bs, GF_VPConfig *vp9_cfg, Bool *key_fra
 	return GF_OK;
 }
 
+GF_EXPORT
 GF_Err gf_av1_parse_obu_header(GF_BitStream *bs, ObuType *obu_type, Bool *obu_extension_flag, Bool *obu_has_size_field, u8 *temporal_id, u8 *spatial_id)
 {
 	Bool forbidden = gf_bs_read_int(bs, 1);
@@ -2451,6 +2453,7 @@ static Bool av1_is_obu_frame(AV1State *state, ObuType obu_type)
 	}
 }
 
+GF_EXPORT
 u64 gf_av1_leb128_read(GF_BitStream *bs, u8 *opt_Leb128Bytes) {
 	u64 value = 0;
 	u8 Leb128Bytes = 0, i = 0;
@@ -2501,8 +2504,13 @@ static void av1_add_obu_internal(GF_BitStream *bs, u64 pos, u64 obu_length, ObuT
 	GF_AV1_OBUArrayEntry *a = NULL;
 
 	if (state && state->mem_mode) {
-		if (!state->bs) state->bs = gf_bs_new(NULL, 0, GF_BITSTREAM_WRITE);
-		else gf_bs_reassign_buffer(state->bs, state->frame_obus, state->frame_obus_alloc);
+		if (!state->bs) {
+			state->bs = gf_bs_new(NULL, 0, GF_BITSTREAM_WRITE);
+		} else {
+			gf_bs_reassign_buffer(state->bs, state->frame_obus, state->frame_obus_alloc);
+			//make sure we don't attempt at freeing this buffer while assigned to the bitstream - cf gf_av1_reset_state
+			state->frame_obus = NULL;
+		}
 	}
 	else {
 		GF_SAFEALLOC(a, GF_AV1_OBUArrayEntry);
@@ -2613,9 +2621,10 @@ static void av1_populate_state_from_obu(GF_BitStream *bs, u64 pos, u64 obu_lengt
 GF_Err aom_av1_parse_temporal_unit_from_section5(GF_BitStream *bs, AV1State *state)
 {
 	if (!state) return GF_BAD_PARAM;
-	state->obu_type = -1;
+	state->has_temporal_delim = 0;
+	Bool first_obu = GF_TRUE;
 
-	while (state->obu_type != OBU_TEMPORAL_DELIMITER) {
+	while (1) {
 		GF_Err e;
 		if (!gf_bs_available(bs))
 			return state->unframed ? GF_BUFFER_TOO_SMALL : GF_OK;
@@ -2630,6 +2639,16 @@ GF_Err aom_av1_parse_temporal_unit_from_section5(GF_BitStream *bs, AV1State *sta
 			GF_LOG(GF_LOG_WARNING, GF_LOG_CODING, ("[AV1] OBU (Section 5) frame size "LLU" different from consumed bytes "LLU".\n", obu_size, gf_bs_get_position(bs) - pos));
 			return GF_NON_COMPLIANT_BITSTREAM;
 		}
+
+		if (state->obu_type == OBU_TEMPORAL_DELIMITER) {
+			if (!first_obu) {
+				// seek back
+				gf_bs_seek(bs, pos);
+				break;
+			}
+			state->has_temporal_delim = 1;
+		}
+		first_obu = GF_FALSE;
 
 		GF_LOG(GF_LOG_DEBUG, GF_LOG_CODING, ("[AV1] Section5 OBU detected (size "LLU")\n", obu_size));
 		av1_populate_state_from_obu(bs, pos, obu_size, state->obu_type, state);
@@ -4024,22 +4043,19 @@ void gf_av1_reset_state(AV1State *state, Bool is_destroy)
 		gf_list_del(l1);
 		gf_list_del(l2);
 		if (state->bs) {
-			u32 size, asize=0;
-			u8 *ptr=NULL;
-			//detach BS internal buffer
-			gf_bs_get_content_no_truncate(state->bs, &ptr, &size, &asize);
-			//avoid double free, cf issue 1893
-			if (ptr != state->frame_obus) {
-				gf_free(ptr);
-			}
+			//cf issues #1893 and #2604:
+			//state->frame_obus is either:
+			//- NULL, in which case there is a valid buffer in bs, freed by bs_del
+			//- not NULL, in which case the internal buffer of bs is NULL and we must free the buffer
+
 			if (state->frame_obus) {
 				gf_free(state->frame_obus);
 				state->frame_obus = NULL;
 				state->frame_obus_alloc = 0;
 			}
 			gf_bs_del(state->bs);
+			state->bs = NULL;
 		}
-		state->bs = NULL;
 	}
 	else {
 		state->frame_state.frame_obus = l1;
@@ -5714,7 +5730,7 @@ static s32 avc_parse_slice(GF_BitStream *bs, AVCState *avc, Bool svc_idr_flag, A
 	if (si->sps->poc_type == 0) {
 		si->poc_lsb = gf_bs_read_int_log(bs, si->sps->log2_max_poc_lsb, "poc_lsb");
 		if (si->pps->pic_order_present && !si->field_pic_flag) {
-			si->delta_poc_bottom = gf_bs_read_se_log(bs, "poc_lsb");
+			si->delta_poc_bottom = gf_bs_read_se_log(bs, "delta_poc_bottom");
 		}
 	}
 	else if ((si->sps->poc_type == 1) && !si->sps->delta_pic_order_always_zero_flag) {
@@ -5950,6 +5966,8 @@ static void avc_compute_poc(AVCSliceInfo *si)
 		si->poc_lsb_prev = 0;
 		si->poc_msb_prev = 0;
 		si->frame_num_offset = 0;
+		si->frame_num_offset_prev = 0;
+		si->frame_num_prev = 0;
 	}
 	else {
 		if (si->frame_num < si->frame_num_prev)
@@ -6365,7 +6383,7 @@ u32 gf_avc_reformat_sei(u8 *buffer, u32 nal_size, Bool isobmf_rewrite, AVCState 
 			//if result fits into source buffer, reformat
 			//otherwise ignore and return source (happens in some fuzzing cases, cf issue 1903)
 			if (dst_no_epb_size + nb_bytes_add <= nal_size)
-				nal_size = gf_media_nalu_add_emulation_bytes(buffer, dst_no_epb, dst_no_epb_size);
+				nal_size = gf_media_nalu_add_emulation_bytes(dst_no_epb, buffer, dst_no_epb_size);
 
 			gf_free(dst_no_epb);
 		}
@@ -6858,6 +6876,9 @@ GF_Err gf_avc_change_vui(GF_AVCConfig *avcc, GF_VUIInfo *vui_info)
 	s32 idx;
 	GF_AVCConfigSlot *slc;
 	orig = NULL;
+
+	if (!avcc)
+		return GF_NON_COMPLIANT_BITSTREAM;
 
 	memset(&avc, 0, sizeof(AVCState));
 	avc.sps_active_idx = -1;
@@ -7720,13 +7741,19 @@ static Bool hevc_parse_vps_extension(HEVC_VPS *vps, GF_BitStream *bs)
 		}
 
 		if (splitting_flag) {
-			for (i = 0; i < num_scalability_types; i++) {
+			u32 num_bits=0;
+			for (i = 0; i < num_scalability_types-1; i++) {
 				dim_bit_offset[i] = 0;
+				num_bits+=dimension_id_len[i];
 				for (j = 0; j < i; j++)
 					dim_bit_offset[i] += dimension_id_len[j];
 			}
-			dimension_id_len[num_scalability_types - 1] = 1 + (5 - dim_bit_offset[num_scalability_types - 1]);
-			dim_bit_offset[num_scalability_types] = 6;
+			if (num_bits>=6) {
+				GF_LOG(GF_LOG_ERROR, GF_LOG_CODING, ("[HEVC] Too many its defined for dimension IDs (%d vs 5 max)\n", num_bits));
+				return -1;
+			}
+			dimension_id_len[num_scalability_types - 1] = 6 - num_bits; //1 + (5 - dim_bit_offset[num_scalability_types - 1]);
+			dim_bit_offset[num_scalability_types - 1] = 6;
 		}
 	}
 
@@ -12418,4 +12445,3 @@ void gf_vvc_parse_ps(GF_VVCConfig* vvccfg, VVCState* vvc, u32 nal_type)
 }
 
 #endif /*GPAC_DISABLE_AV_PARSERS*/
-

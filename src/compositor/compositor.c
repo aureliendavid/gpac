@@ -244,6 +244,7 @@ static void gf_sc_reconfig_task(GF_Compositor *compositor)
 	if (notif_size) {
 		gf_filter_pid_set_property(compositor->vout, GF_PROP_PID_WIDTH, &PROP_UINT(compositor->display_width));
 		gf_filter_pid_set_property(compositor->vout, GF_PROP_PID_HEIGHT, &PROP_UINT(compositor->display_height));
+		gf_filter_pid_set_property(compositor->vout, GF_PROP_PID_MIRROR, compositor->is_opengl ? &PROP_UINT(1) : NULL );
 	}
 
 	/*3D driver changed message, recheck extensions*/
@@ -287,7 +288,7 @@ GF_Err gf_sc_frame_ifce_get_plane(GF_FilterFrameInterface *frame_ifce, u32 plane
 	if (plane_idx==0) {
 		e = GF_OK;
 		if (!compositor->fb.video_buffer)
-			e = gf_sc_get_screen_buffer(compositor, &compositor->fb, 0);
+			e = gf_sc_get_screen_buffer(compositor, &compositor->fb, GF_SC_GRAB_DEPTH_NONE);
 	}
 	*outPlane = compositor->fb.video_buffer;
 	*outStride = compositor->fb.pitch_y;
@@ -707,6 +708,8 @@ static void gf_sc_check_video_driver(GF_Compositor *compositor)
 	} else if (compositor->needs_offscreen_gl && (compositor->ogl!=GF_SC_GLMODE_OFF) ) {
 		force_gl_out = GF_TRUE;
 	}
+	if (compositor->root_scene && (compositor->root_scene->is_tiled_srd || compositor->root_scene->vr_type))
+		force_gl_out = GF_TRUE;
 
 	if (force_gl_out) {
 		GF_Err e;
@@ -2048,7 +2051,7 @@ void gf_sc_map_point(GF_Compositor *compositor, s32 X, s32 Y, Fixed *bifsX, Fixe
 
 
 GF_EXPORT
-GF_Err gf_sc_get_screen_buffer(GF_Compositor *compositor, GF_VideoSurface *framebuffer, u32 depth_dump_mode)
+GF_Err gf_sc_get_screen_buffer(GF_Compositor *compositor, GF_VideoSurface *framebuffer, GF_CompositorGrabMode depth_dump_mode)
 {
 	GF_Err e;
 	if (!compositor || !framebuffer) return GF_BAD_PARAM;
@@ -2267,6 +2270,8 @@ static void gf_sc_recompute_ar(GF_Compositor *compositor, GF_Node *top_node)
 			gf_filter_pid_set_property(compositor->vout, GF_PROP_PID_WIDTH, &PROP_UINT(compositor->output_width) );
 			gf_filter_pid_set_property(compositor->vout, GF_PROP_PID_HEIGHT, &PROP_UINT(compositor->output_height) );
 			gf_filter_pid_set_property(compositor->vout, GF_PROP_PID_FPS, &PROP_FRAC(compositor->fps) );
+
+			gf_filter_pid_set_property(compositor->vout, GF_PROP_PID_MIRROR, compositor->is_opengl ? &PROP_UINT(1) : NULL );
 		}
 	}
 }
@@ -2467,6 +2472,7 @@ static Bool gf_sc_draw_scene(GF_Compositor *compositor)
 	}
 	compositor->zoom_changed = 0;
 	compositor->audio_renderer->scene_ready = GF_TRUE;
+	compositor->gaze_changed = GF_FALSE;
 	return GF_TRUE;
 }
 
@@ -3044,7 +3050,7 @@ void gf_sc_render_frame(GF_Compositor *compositor)
 					if (compositor->video_out==&raw_vout) {
 						src = compositor->framebuffer;
 					} else {
-						if (gf_sc_get_screen_buffer(compositor, &compositor->fb, 0) == GF_OK) {
+						if (gf_sc_get_screen_buffer(compositor, &compositor->fb, GF_SC_GRAB_DEPTH_NONE) == GF_OK) {
 							src = compositor->fb.video_buffer;
 							release_fb = GF_TRUE;
 						}
@@ -4281,6 +4287,18 @@ Bool gf_sc_check_sys_frame(GF_Scene *scene, GF_ObjectManager *odm, GF_FilterPid 
 		is_early = GF_TRUE;
 
 	if (is_early) {
+		//little opt: if single resource, more than 10s in future and we dump in VFR, non player mode
+		//jump to the target time
+		if (scene->compositor->vfr
+			&& !scene->compositor->player
+			&& (gf_list_count(scene->resources)==1)
+			&& (cts_in_ms > obj_time + 10000)
+		) {
+			gf_clock_reset(odm->ck);
+			gf_clock_set_time(odm->ck, cts_in_ms, 1000);
+			return GF_TRUE;
+		}
+
 		gf_sc_sys_frame_pending(scene->compositor, (u32)cts_in_ms, obj_time, from_filter);
 		return GF_FALSE;
 	}

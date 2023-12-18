@@ -653,8 +653,13 @@ int gpac_main(int _argc, char **_argv)
 			} else if (!strcmp(argv[i+1], "core")) {
 				gpac_core_help(argmode, GF_FALSE);
 				gpac_exit(0);
-			} else if (!strcmp(argv[i+1], "modules")) {
-				gpac_modules_help();
+			} else if (!strcmp(argv[i+1], "modules") || !strcmp(argv[i+1], "module")) {
+				if (i+2<argc) {
+					gf_sys_mark_arg_used(i+2, GF_TRUE);
+					gpac_modules_help(argv[i+2]);
+				} else {
+					gpac_modules_help(NULL);
+				}
 				gpac_exit(0);
 			} else if (!strcmp(argv[i+1], "doc")) {
 				gpac_filter_help();
@@ -1320,6 +1325,10 @@ restart:
 		}
 		ERR_EXIT
 	}
+
+	if (gf_opts_get_bool("temp", "use_libcaca"))
+		enable_reports = 0;
+
 	if (enable_reports) {
 		if (enable_reports==2)
 			gf_fs_set_ui_callback(session, gpac_event_proc, session);
@@ -1353,7 +1362,9 @@ restart:
 #endif
 			gf_fs_post_user_task(session, gpac_fsess_task, NULL, "gpac_fsess_task");
 	}
-	if (!enable_prompt) {
+	//always enable signal catch even if prompt
+	//if (!enable_prompt)
+	{
 #ifdef WIN32
 		SetConsoleCtrlHandler((PHANDLER_ROUTINE)gpac_sig_handler, TRUE);
 #else
@@ -1414,7 +1425,7 @@ exit:
 
 	{
 		if (e) {
-			fprintf(stderr, "session error %s\n", gf_error_to_string(e) );
+			fprintf(stderr, "session error: %s\n", gf_error_to_string(e) );
 		} else {
 			e = gf_fs_get_last_connect_error(session);
 			if (e<0) fprintf(stderr, "session last connect error %s\n", gf_error_to_string(e) );
@@ -2001,7 +2012,7 @@ static void gpac_print_report(GF_FilterSession *fsess, Bool is_init, Bool is_fin
 	print_date(gf_net_get_utc());
 	fprintf(stderr, "GPAC Session Status: ");
 	SET_CONSOLE(GF_CONSOLE_RESET);
-	fprintf(stderr, "mem % 10"LLD_SUF" kb CPU % 2d", rti.gpac_memory/1000, rti.process_cpu_time);
+	fprintf(stderr, "mem % 10"LLD_SUF" kb CPU % 2d", rti.gpac_memory/1000, rti.process_cpu_usage);
 	fprintf(stderr, "\n");
 
 	gf_fs_lock_filters(fsess, GF_TRUE);
@@ -2456,8 +2467,10 @@ static void gpac_sig_handler(int sig)
 			signal_catched = GF_TRUE;
 			if (is_inter) {
 				char input;
+				GF_SessionDebugFlag flags=0;
 				in_sig_handler = GF_TRUE;
-				fprintf(stderr, "\nToggle reports (r), or exit with fast (Y), full (f) or no (n) session flush ? \n");
+				fprintf(stderr, "\nToggle reports (r), print state (s for short, e for extended [+ shift: sticky])\n"
+					"\tor exit with fast (Y), full (f) or no (n) session flush ? \n");
 rescan:
 				input = gf_getch();
 				if (!input || input == 0x0A || input == 0x0D) input = 'Y'; // user pressed "return"
@@ -2475,6 +2488,7 @@ rescan:
 				case 0:
 					break;
 				case 'x':
+				case 'X':
 					exit(0);
 					break;
 				case '\n':
@@ -2503,6 +2517,20 @@ rescan:
 					}
 					signal_catched = GF_FALSE;
 					signal_processed = GF_FALSE;
+					break;
+				case 'S':
+					flags = GF_FS_DEBUG_CONTINUOUS;
+				case 's':
+					signal_catched = GF_FALSE;
+					signal_processed = GF_FALSE;
+					gf_fs_print_debug_info(session, flags|GF_FS_DEBUG_TASKS|GF_FS_DEBUG_FILTERS);
+					break;
+				case 'E':
+					flags = GF_FS_DEBUG_CONTINUOUS;
+				case 'e':
+					signal_catched = GF_FALSE;
+					signal_processed = GF_FALSE;
+					gf_fs_print_debug_info(session, flags|GF_FS_DEBUG_ALL);
 					break;
 				default:
 					signal_processed = GF_TRUE;

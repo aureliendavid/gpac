@@ -251,7 +251,7 @@ GF_FilterSession *gf_fs_new_defaults(u32 flags);
 */
 void gf_fs_del(GF_FilterSession *session);
 /*! Loads a given filter by its register name. Filter are created using their register name, with options appended as a list of colon-separated Name=Value pairs.
-Value can be omitted for boolean, defaulting to true (eg :noedit). Using '!' before the name negates the result (eg :!moof_first).
+Value can be omitted for boolean, defaulting to true (eg :allt). Using '!' before the name negates the result (eg :!moof_first).
 Name can be omitted for enumerations (eg :disp=pbo is equivalent to :pbo), provided that filter developers pay attention to not reuse enum names in one filter.
 
 \param session filter session
@@ -475,7 +475,7 @@ void gf_fs_print_non_connected_ex(GF_FilterSession *session, Bool ignore_sinks);
 /*! Prints the list of arguments specified but not used by the filter session using \code LOG_APP@LOG_WARNING \endcode
  \note This is simply a wrapper to \ref gf_fs_enum_unmapped_options
 \param session filter session
-\param ignore_args ignore unused arguments if present in this comma-seperated list - may be NULL
+\param ignore_args ignore unused arguments if present in this comma-separated list - may be NULL
 */
 void gf_fs_print_unused_args(GF_FilterSession *session, const char *ignore_args);
 
@@ -732,6 +732,33 @@ typedef	GF_Err (*gf_fs_gl_activate)(void *udta, Bool do_activate);
  */
 GF_Err gf_fs_set_external_gl_provider(GF_FilterSession *session, gf_fs_gl_activate on_gl_activate, void *udta);
 
+/*! Flags for debug info*/
+typedef enum
+{
+	/*! print filter graph*/
+	GF_FS_DEBUG_GRAPH = 1,
+	/*! print filter stats*/
+	GF_FS_DEBUG_STATS = 1<<1,
+	/*! print tasks present in scheduler*/
+	GF_FS_DEBUG_TASKS = 1<<2,
+	/*! print filter status and task scheduled on filter*/
+	GF_FS_DEBUG_FILTERS = 1<<3,
+	/*! print all info*/
+	GF_FS_DEBUG_ALL = 0x00FFFFFF,
+	/*! enable continuous reporting*/
+	GF_FS_DEBUG_CONTINUOUS = 0x80000000,
+} GF_SessionDebugFlag;
+
+/*! prints session debug info on stderr
+
+ To turn on (resp.off) continous reporting, set (resp. unset) the flag GF_FS_DEBUG_CONTINUOUS. Continuous reporting is done in the main thread using the last flags provided
+
+\param session filter session
+\param dbg_flags set of flags indicating what to print
+ */
+void gf_fs_print_debug_info(GF_FilterSession *session, GF_SessionDebugFlag dbg_flags);
+
+
 /*! @} */
 
 
@@ -754,7 +781,7 @@ Documents the property object used for PID and packets.
 typedef enum
 {
 	/*! not allowed*/
-	GF_PROP_FORBIDEN	=	0,
+	GF_PROP_FORBIDDEN	=	0,
 	/*! signed 32 bit integer*/
 	GF_PROP_SINT		=	1,
 	/*! unsigned 32 bit integer*/
@@ -1145,6 +1172,7 @@ enum
 	GF_PROP_PCK_CUE_START = GF_4CC('P','C','U','S'),
 	GF_PROP_PCK_UTC_TIME = GF_4CC('U','T','C','D'),
 	GF_PROP_PCK_MEDIA_TIME = GF_4CC('M','T','I','M'),
+	GF_PROP_PCK_MPD_SEGSTART = GF_4CC('F','M','S','S'),
 
 	GF_PROP_PID_MAX_FRAME_SIZE = GF_4CC('M','F','R','S'),
 	GF_PROP_PID_AVG_FRAME_SIZE = GF_4CC('A','F','R','S'),
@@ -1187,6 +1215,7 @@ enum
 	GF_PROP_PID_CLAMP_DUR = GF_4CC('D','C','M','D'),
 	GF_PROP_PID_HLS_PLAYLIST = GF_4CC('H','L','V','P'),
 	GF_PROP_PID_HLS_GROUPID = GF_4CC('H','L','G','I'),
+	GF_PROP_PID_HLS_FORCE_INF = GF_4CC('H','L','F','I'),
 	GF_PROP_PID_HLS_EXT_MASTER = GF_4CC('H','L','M','X'),
 	GF_PROP_PID_HLS_EXT_VARIANT = GF_4CC('H','L','V','X'),
 	GF_PROP_PID_DASH_CUE = GF_4CC('D','C','U','E'),
@@ -1239,6 +1268,7 @@ enum
 	GF_PROP_PID_EQR_CLAMP = GF_4CC('P','E','Q','C'),
 	GF_PROP_PID_SPARSE = GF_4CC('P','S','P','A'),
 	GF_PROP_PID_CHARSET = GF_4CC('P','C','H','S'),
+	GF_PROP_PID_FORCED_SUB = GF_4CC('P','F','C','S'),
 
 	GF_PROP_PID_SCENE_NODE = GF_4CC('P','S','N','D'),
 	GF_PROP_PID_ORIG_CRYPT_SCHEME = GF_4CC('P','O','C','S'),
@@ -1247,6 +1277,12 @@ enum
 	GF_PROP_PID_CHAP_TIMES = GF_4CC('C','H','P','T'),
 	GF_PROP_PID_CHAP_NAMES = GF_4CC('C','H','P','N'),
 	GF_PROP_PID_IS_CHAP = GF_4CC('P','C','H','P'),
+	//internal prop indicating the (main) streamtype of a PID before mux, only used for route setup
+	GF_PROP_PID_PREMUX_STREAM_TYPE = GF_4CC('P','P','S','T'),
+
+	GF_PROP_PID_CODEC_MERGEABLE = GF_4CC('P','C','M','B'),
+	GF_PROP_PID_FILE_REL = GF_4CC('F','N','R','L'),
+
 
 	//internal for HLS playlist reference, gives a unique ID identifying media mux, and indicated in packets carrying child playlists
 	GF_PROP_PCK_HLS_REF = GF_4CC('H','P','L','R'),
@@ -1269,7 +1305,8 @@ enum
 	GF_PROP_PID_CLEARKEY_KID = GF_4CC('C','C','K','I'),
 	//internal, indicate DASH segments are generated in sparse mode (from context)
 	GF_PROP_PID_DASH_SPARSE = GF_4CC('D','S','S','G'),
-
+	//internal, indicate DASH dependency group
+	GF_PROP_PID_DASH_DEP_GROUP = GF_4CC('D','G','D','I'),
 
 	//internal property indicating pointer to associated GF_DownloadSession
 	GF_PROP_PID_DOWNLOAD_SESSION = GF_4CC('G','H','T','T'),
@@ -1279,6 +1316,7 @@ enum
 	//PID has no init segment associated (file forward mode of dasher)
 	GF_PROP_PID_NO_INIT = GF_4CC('P','N','I','N'),
 
+	//PID carries a manifest
 	GF_PROP_PID_IS_MANIFEST = GF_4CC('P','H','S','M'),
 
 	GF_PROP_PCK_XPS_MASK = GF_4CC('P','X','P','M'),
@@ -1354,9 +1392,9 @@ const char *gf_props_get_type_name(GF_PropType type);
 */
 const char *gf_props_get_type_desc(GF_PropType type);
 
-/*! Gets the description type for a given  property type name
+/*! Gets the description type for a given property type name
 \param name property type name
-\return property type or GF_PROP_FORBIDEN
+\return property type or GF_PROP_FORBIDDEN
 */
 GF_PropType gf_props_parse_type(const char *name);
 
@@ -1382,7 +1420,7 @@ const char *gf_props_enum_name(u32 type, u32 value);
 
 /*! Get the possible names of an enum type property
 \param type  property type
-\return comma-seperated list of possible values
+\return comma-separated list of possible values
 */
 const char *gf_props_enum_all_names(u32 type);
 
@@ -2116,7 +2154,7 @@ void gf_filter_lock(GF_Filter *filter, Bool do_lock);
 
 
 
-/*! Lock global filter session. This is needed when assigning source IDs after a connect  source or destination to the loaded source to connect in an async way
+/*! Lock global filter session. This is needed when assigning source IDs after a connect source or destination to the loaded source to connect in an async way
 \param filter target filter
 \param do_lock if GF_TRUE, locks the filter session global mutex, otherwise unlocks it
 */
@@ -2127,7 +2165,7 @@ void gf_filter_lock_all(GF_Filter *filter, Bool do_lock);
  This is used by filters loading subchains to enforce that filters from these subchain only connect to each other or the target filter but not other filters outside this chain.
  Filters using this function must setup source IDs on filters of the sunchain(s) they load.
 
- Noye: This has the same effect has setting `:RSID` option on the filter
+ Note: This has the same effect as setting the `:RSID` option on the filter
 
 \param filter target filter
 */
@@ -2312,7 +2350,7 @@ struct __gf_filter_register
 
 	/*! optional - callback for arguments update. If GF_OK is returned, the filter private stack is updated accordingly.
 	If function is NULL, all updatable arguments will be changed in the filter private stack without the filter being notified.
-	If argument is a meta argument, it is the filter responsability to handle the update, as meta arguments do not live on the filter private stack.
+	If argument is a meta argument, it is the filter responsibility to handle the update, as meta arguments do not live on the filter private stack.
 	If the filter is a meta filter and argument is not declared in the argument list, the function is always called.
 
 	\param filter the target filter
@@ -2322,8 +2360,8 @@ struct __gf_filter_register
 	*/
 	GF_Err (*update_arg)(GF_Filter *filter, const char *arg_name, const GF_PropertyValue *new_val);
 
-	/*! optional - process a given event. Retruns TRUE if the event has to be canceled, FALSE otherwise
-		- If a downstream (towards source)  event is not canceled, it will be forwarded to each input PID of the filter.
+	/*! optional - process a given event. Returns TRUE if the event has to be canceled, FALSE otherwise
+		- If a downstream (towards source) event is not canceled, it will be forwarded to each input PID of the filter.
 		- If you need to forward the event only to one input pid, send a copy of the event to the desired input and cancel the event.
 	\param filter the target filter
 	\param evt the event to process
@@ -2331,7 +2369,7 @@ struct __gf_filter_register
 	*/
 	Bool (*process_event)(GF_Filter *filter, const GF_FilterEvent *evt);
 
-	/*! optional - Called whenever an output PID needs format renegotiaition. If not set, a filter chain will be loaded to solve the negotiation
+	/*! optional - Called whenever an output PID needs format renegotiation. If not set, a filter chain will be loaded to solve the negotiation
 
 	\param filter the target filter
 	\param PID the filter output PID being reconfigured
@@ -3758,6 +3796,12 @@ const GF_PropertyValue *gf_filter_pid_get_info_str(GF_FilterPid *PID, const char
 */
 void gf_filter_pid_set_eos(GF_FilterPid *PID);
 
+/*! Signals end of stream on a PID but force stream to be kept alive - used by source filters triggering a pipeline flush, the source filter will remain active after this call
+ The flush signal sets all receiving PIDs into end of stream mode
+\param PID the target filter PID
+*/
+void gf_filter_pid_send_flush(GF_FilterPid *PID);
+
 /*! Checks for end of stream has been signaled a PID input chain.
 This is a recursive call on input chain. The function is typically used to abort buffering or synchronisation init in muxers.
 \param PID the target filter PID
@@ -3777,6 +3821,14 @@ Bool gf_filter_pid_eos_received(GF_FilterPid *PID);
 */
 Bool gf_filter_pid_is_eos(GF_FilterPid *PID);
 
+/*! Checks for flush-only end of stream signaling on a PID. Some filters may request a flush of the pipeline but will send further packets later on. This is signaled by a flush end of stream state
+ Only filters storing the state of the pids internally should need to check this state.
+
+\param PID the target filter PID
+\return GF_TRUE if end of stream is temporary set on that PID (no more packet in queue)
+*/
+Bool gf_filter_pid_is_flush_eos(GF_FilterPid *PID);
+
 /*! Checks if there is a packet ready on an input PID.
 \param PID the target filter PID
 \return GF_TRUE if no packet in buffers
@@ -3795,6 +3847,11 @@ The packet is still present in the PID buffer until explicitly removed by \ref g
 
 The returned packet is only valid for the current filter execution (process callback, task, ...), and may be discarded in-between calls, typically when the session is aborted.
 If a filter needs to keep a packet across calls, it must use \ref gf_filter_pck_ref and \ref gf_filter_pck_unref
+
+If no packet is returned, the pid may be empty, in end of stream (cf \ref gf_filter_pid_is_eos) or in flush (cf \ref gf_filter_pid_is_flush_eos).
+
+The first time this function is called on a PID at a flush point, it will return NULL even if some packets are pending. This allows the calling filter to detect if a flush point is reached and take appropriate actions.
+Subsequent calls will return the pending packet if any.
 
 \param PID the target filter PID
 \return packet or NULL of empty or reconfigure error
@@ -3879,7 +3936,7 @@ Supported KEYWORD (case insensitive):
 - num: replaced by file_number (usually matches GF_PROP_PCK_FILENUM, but this property is not used in the solving mechanism)
 - PID: ID of the source PID
 - URL: URL of source file
-- File: path on disk for source file
+- File: path on disk for source file - if resolved value contains a URL scheme (e.g. foo://), it is ignored
 - p4cc=ABCD: uses PID property with 4CC ABCD
 - pname=VAL: uses PID property with name VAL (either built-in prop name or other peroperty name)
 
@@ -3890,7 +3947,7 @@ Supported KEYWORD (case insensitive):
 \param file_suffix if not null, will be appended after the value of the §File$ keyword if present
 \return error if any
 */
-GF_Err gf_filter_pid_resolve_file_template(GF_FilterPid *PID, char szTemplate[GF_MAX_PATH], char szFinalName[GF_MAX_PATH], u32 file_number, const char *file_suffix);
+GF_Err gf_filter_pid_resolve_file_template(GF_FilterPid *PID, const char szTemplate[GF_MAX_PATH], char szFinalName[GF_MAX_PATH], u32 file_number, const char *file_suffix);
 
 
 /*! Same as \ref  gf_filter_pid_resolve_file_template but overrides file name with given name
@@ -3902,7 +3959,7 @@ GF_Err gf_filter_pid_resolve_file_template(GF_FilterPid *PID, char szTemplate[GF
 \param file_name if not null, will be used instead of PID URL or local path
 \return error if any
 */
-GF_Err gf_filter_pid_resolve_file_template_ex(GF_FilterPid *PID, char szTemplate[GF_MAX_PATH], char szFinalName[GF_MAX_PATH], u32 file_number, const char *file_suffix, const char *file_name);
+GF_Err gf_filter_pid_resolve_file_template_ex(GF_FilterPid *PID, const char szTemplate[GF_MAX_PATH], char szFinalName[GF_MAX_PATH], u32 file_number, const char *file_suffix, const char *file_name);
 
 
 /*! Sets discard mode on or off on an input PID. When discard is on, all input packets for this PID are no longer dispatched.
@@ -4248,7 +4305,7 @@ GF_Err gf_filter_pck_forward(GF_FilterPacket *reference, GF_FilterPid *PID);
 /*! Gets data associated with the packet.
 \param pck the target packet
 \param size set to the packet data size
-\return packet data if any, NULL if empty or if the packet uses a frame interface object. see \ref gf_filter_pck_get_frame_interface
+\return packet data if any, NULL if empty or if the packet uses a frame interface object. See \ref gf_filter_pck_get_frame_interface
 */
 const u8 *gf_filter_pck_get_data(GF_FilterPacket *pck, u32 *size);
 
@@ -4436,14 +4493,17 @@ GF_FilterSAPType gf_filter_pck_get_sap(GF_FilterPacket *pck);
 
 /*! Sets packet video interlacing flag
 \param pck target packet
-\param is_interlaced set to 0 if not interlaced, 1 for top field first/contains only top field, 2 for bottom field first/contains only bottom field.
+\param is_interlaced set to
+	0:  not interlaced
+	1:  top field first or contains only top field if packet not full frame
+	2:  bottom field first or contains only bottom field.
 \return error code if any
 */
 GF_Err gf_filter_pck_set_interlaced(GF_FilterPacket *pck, u32 is_interlaced);
 
 /*! Gets packet video interlacing flag
 \param pck target packet
-\return interlaced flag, set to 0 if not interlaced, 1 for top field first, 2 otherwise.
+\return interlaced flag, see \ref gf_filter_pck_set_interlaced
 */
 u32 gf_filter_pck_get_interlaced(GF_FilterPacket *pck);
 
@@ -4705,7 +4765,7 @@ Bool gf_filter_pck_is_blocking_ref(GF_FilterPacket *pck);
 
 Custom filters are filters created by the app with no associated registry.
 The app is responsible for assigning capabilities to the filter, and setting callback functions.
-Each callback is optionnal, but a custom filter should at least have a process callback, and a configure_pid callback if not a source filter.
+Each callback is optional, but a custom filter should at least have a process callback, and a configure_pid callback if not a source filter.
 
 Custom filters do not have any arguments exposed, and cannot be selected for sink or source filters.
 If your app requires custom I/Os for source or sinks, use \ref GF_FileIO.

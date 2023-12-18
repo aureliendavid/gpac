@@ -29,6 +29,7 @@
 #include <gpac/iso639.h>
 #include <gpac/webvtt.h>
 
+#if !defined(GPAC_DISABLE_MPEG2TS_MUX) || !defined(GPAC_DISABLE_MP4MX)
 
 void mux_assign_mime_file_ext(GF_FilterPid *ipid, GF_FilterPid *opid, const char *file_exts, const char *mime_types, const char *def_ext)
 {
@@ -60,6 +61,8 @@ void mux_assign_mime_file_ext(GF_FilterPid *ipid, GF_FilterPid *opid, const char
 	if (!found)
 		gf_filter_pid_set_property(opid, GF_PROP_PID_MIME, &PROP_STRING("*") );
 }
+#endif
+
 
 #ifndef GPAC_DISABLE_MPEG2TS_MUX
 
@@ -159,6 +162,7 @@ typedef struct
 	u32 pending_packets;
 
 	u32 sync_init_time;
+	GF_Fraction64 dash_seg_start;
 } GF_TSMuxCtx;
 
 typedef struct
@@ -382,6 +386,17 @@ static void tsmux_rewrite_odf(GF_TSMuxCtx *ctx, GF_ESIPacket *es_pck)
 
 }
 
+static void tsmux_check_mpd_start_time(GF_TSMuxCtx *ctx, GF_FilterPacket *pck)
+{
+	const GF_PropertyValue *p = gf_filter_pck_get_property(pck, GF_PROP_PCK_MPD_SEGSTART);
+	if (p) {
+		ctx->dash_seg_start = p->value.lfrac;
+	} else {
+		ctx->dash_seg_start.num = 0;
+		ctx->dash_seg_start.den = 0;
+	}
+}
+
 static GF_Err tsmux_esi_ctrl(GF_ESInterface *ifce, u32 act_type, void *param)
 {
 	u32 cversion;
@@ -410,8 +425,10 @@ static GF_Err tsmux_esi_ctrl(GF_ESInterface *ifce, u32 act_type, void *param)
 					tspid->nb_repeat_last++;
 					tspid->is_repeat = GF_TRUE;
 				} else {
-					tspid->done = GF_TRUE;
-					ifce->caps |= GF_ESI_STREAM_IS_OVER;
+					if (!gf_filter_pid_is_flush_eos(tspid->ipid)) {
+						tspid->done = GF_TRUE;
+						ifce->caps |= GF_ESI_STREAM_IS_OVER;
+					}
 				}
 				if (tspid->ctx->dash_mode)
 					tspid->has_seen_eods = M2TS_EODS_FOUND;
@@ -436,6 +453,7 @@ static GF_Err tsmux_esi_ctrl(GF_ESInterface *ifce, u32 act_type, void *param)
 					tspid->ctx->wait_dash_flush = GF_TRUE;
 				tspid->ctx->dash_seg_num = p->value.uint;
 				tspid->ctx->dash_file_name[0] = 0;
+				tsmux_check_mpd_start_time(tspid->ctx, pck);
 			}
 
 			//segment change is pending, check for filename as well - we don't do that in the previous test
@@ -870,7 +888,7 @@ static Bool tsmux_setup_esi(GF_TSMuxCtx *ctx, GF_M2TS_Mux_Program *prog, M2Pid *
 	else if ((tspid->esi.caps & GF_ESI_FORCE_DOLBY_VISION) != (bckp.caps & GF_ESI_FORCE_DOLBY_VISION))
 		changed = GF_TRUE;
 
-	u32 crc_old = 0, crc_new = 0;;
+	u32 crc_old = 0, crc_new = 0;
 	if (tspid->esi.gpac_meta_dsi) {
 		crc_old = gf_crc_32(tspid->esi.gpac_meta_dsi, tspid->esi.gpac_meta_dsi_size);
 		gf_free(tspid->esi.gpac_meta_dsi);
@@ -1204,7 +1222,7 @@ static GF_Err tsmux_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is_
 		u32 pmt_id = ctx->pmt_id;
 
 		if (!pmt_id) pmt_id = 100;
-		nb_progs = gf_m2ts_mux_program_count(ctx->mux);
+		nb_progs = 1+gf_m2ts_mux_program_count(ctx->mux);
 		if (nb_progs>1) {
 			if (ctx->dash_mode) {
 				GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[M2TSMux] Muxing several programs (%d) in DASH mode is not allowed\n", nb_progs+1));
@@ -1440,7 +1458,8 @@ static void tsmux_send_seg_event(GF_Filter *filter, GF_TSMuxCtx *ctx)
 	}
 	if (!tspid) tspid = gf_list_get(ctx->pids, 0);
 
-	if (ctx->nb_sidx_entries) {
+	//in MP4Box HLS mode, sub_sidx can be 0 (single sidx per segment) but not produced (ctx->idx_file_name is empty)
+	if (ctx->nb_sidx_entries && ctx->idx_file_name[0]) {
 		GF_FilterPacket *idx_pck;
 		u8 *output;
 		Bool large_sidx = GF_FALSE;
@@ -1627,8 +1646,10 @@ static GF_Err tsmux_process(GF_Filter *filter)
 			pck = gf_filter_pid_get_packet(tspid->ipid);
 			if (!pck) return GF_OK;
 			p = gf_filter_pck_get_property(pck, GF_PROP_PCK_FILENUM);
-			if (p)
+			if (p) {
 				tspid->ctx->dash_seg_num = p->value.uint;
+				tsmux_check_mpd_start_time(tspid->ctx, pck);
+			}
 			p = gf_filter_pck_get_property(pck, GF_PROP_PCK_FILENAME);
 			if (p)
 				strcpy(tspid->ctx->dash_file_name, p->value.string);
@@ -1753,6 +1774,8 @@ static GF_Err tsmux_process(GF_Filter *filter)
 			gf_filter_pck_set_property(pck, GF_PROP_PCK_FILENUM, &PROP_UINT(ctx->dash_seg_num) );
 			if (ctx->dash_file_name[0])
 				gf_filter_pck_set_property(pck, GF_PROP_PCK_FILENAME, &PROP_STRING(ctx->dash_file_name) ) ;
+			if (ctx->dash_seg_start.den)
+				gf_filter_pck_set_property(pck, GF_PROP_PCK_MPD_SEGSTART, &PROP_FRAC64(ctx->dash_seg_start) ) ;
 
 			ctx->dash_file_name[0] = 0;
 			ctx->next_is_start = GF_FALSE;
@@ -1780,6 +1803,8 @@ static GF_Err tsmux_process(GF_Filter *filter)
 				gf_filter_pck_set_property(pck, GF_PROP_PCK_FILESUF, &PROP_STRING_NO_COPY(ctx->cur_file_suffix));
 				ctx->cur_file_suffix = NULL;
 			}
+			if (ctx->dash_seg_start.den)
+				gf_filter_pck_set_property(pck, GF_PROP_PCK_MPD_SEGSTART, &PROP_FRAC64(ctx->dash_seg_start) ) ;
 			ctx->notify_filename = GF_FALSE;
 		}
 		gf_filter_pck_send(pck);
@@ -1799,6 +1824,17 @@ static GF_Err tsmux_process(GF_Filter *filter)
 		}
 		if (nb_pck_in_call>100)
 			break;
+	}
+
+	if (ctx->wait_dash_flush || ctx->wait_llhls_flush) {
+		u32 i, done=0, count = gf_list_count(ctx->pids);
+		for (i=0; i<count; i++) {
+			M2Pid *tspid = gf_list_get(ctx->pids, i);
+			if (!tspid->done && tspid->has_seen_eods) done++;
+		}
+		if (done==count) {
+			gf_filter_pid_send_flush(ctx->opid);
+		}
 	}
 
 	if (gf_filter_reporting_enabled(filter)) {

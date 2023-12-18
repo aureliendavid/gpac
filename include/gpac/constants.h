@@ -351,7 +351,7 @@ GF_PixelFormat gf_pixel_fmt_from_qt_type(u32 qt_code);
 */
 u32 gf_pixel_fmt_to_qt_type(GF_PixelFormat pixfmt);
 
-/*! gets uncC configuation (ISO 23001-17)  of pixel format. The configuration is made of the boxes uncC and cmpd in full mode, and uncC only in restricetd mode
+/*! gets uncC configuration (ISO 23001-17)  of pixel format. The configuration is made of the boxes uncC and cmpd in full mode, and uncC only in restricted mode
 \param pixfmt the desired pixel format
 \param profile_mode if 1, sets profile if known. If 2 and profile is known, use reduced version
 \param dsi set to the generated configuration, must be freed by user
@@ -455,6 +455,8 @@ typedef enum
 
 	/*! codecid for HEVC tiles */
 	GF_CODECID_HEVC_TILES = GF_4CC( 'h', 'v', 't', '1' ),
+	/*! codecid for explicitly loading HEVC merger , internal to gpac */
+	GF_CODECID_HEVC_MERGE = GF_4CC( 'h', 'v', 'c', 'm' ),
 
 	/*! codecid for EVRC Voice streams*/
 	GF_CODECID_EVRC	= GF_4CC('s','e','v','c'),
@@ -483,16 +485,18 @@ typedef enum
 	GF_CODECID_DRA = GF_4CC('d','r','a','1'),
 	/*! codecid for ITU G719 audio streams*/
 	GF_CODECID_G719 = GF_4CC('g','7','1','9'),
-	/*! codecid for DTS  Express low bit rate audio*/
-	GF_CODECID_DTS_LBR = GF_4CC('d','t','s','e'),
+	/*! codecid for DTS Express low bit rate audio*/
+	GF_CODECID_DTS_EXPRESS_LBR = GF_4CC('d','t','s','e'),
 	/*! codecid for DTS Coherent Acoustics audio streams*/
 	GF_CODECID_DTS_CA = GF_4CC('d','t','s','c'),
-	/*! codecid for DTS-HD High Resolution audio streams*/
-	GF_CODECID_DTS_HD_HR = GF_4CC('d','t','s','h'),
-	/*! codecid for DTS-HD Master audio streams*/
-	GF_CODECID_DTS_HD_MASTER = GF_4CC('d','t','s','l'),
-	/*! codecid for DTS-X Master audio streams*/
+	/*! codecid for DTS-HD High Resolution and Master audio streams*/
+	GF_CODECID_DTS_HD_HR_MASTER = GF_4CC('d','t','s','h'),
+	/*! codecid for DTS-HD Lossless (no core)*/
+	GF_CODECID_DTS_HD_LOSSLESS = GF_4CC('d','t','s','l'),
+	/*! codecid for DTS-X UHD Profile 2 audio streams*/
 	GF_CODECID_DTS_X = GF_4CC('d','t','s','x'),
+	/*! codecid for DTS-X UHD Profile 3 audio streams*/
+	GF_CODECID_DTS_Y = GF_4CC('d','t','s','y'),
 
 	/*! codecid for DVB EPG*/
 	GF_CODECID_DVB_EIT = GF_4CC('e','i','t',' '),
@@ -1691,6 +1695,9 @@ enum
 	/*! Mesh projection (not supported yet)*/
 	GF_PROJ360_MESH
 };
+
+/*! user data used by GPAC to store SRD info*/
+#define GF_ISOM_UDTA_GPAC_SRD	GF_4CC('G','S','R','D')
 
 /*! @} */
 

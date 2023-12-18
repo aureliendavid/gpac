@@ -45,7 +45,7 @@ typedef struct
 {
 	AVFilterContext *io_filter_ctx;
 	GF_FilterPid *io_pid;
-	u32 timescale, width, height, sr, nb_ch, bps;
+	u32 timescale, width, height, sr, nb_ch, bps, bpp;
 	Bool planar;
 	u32 pfmt; //ffmpeg pixel or audio format
 	u64 ch_layout; //ffmpeg channel layout
@@ -119,6 +119,8 @@ static GF_Err ffavf_setup_input(GF_FFAVFilterCtx *ctx, GF_FFAVPid *avpid)
 			   "time_base=%d/%d:sample_rate=%d:sample_fmt=%s:channel_layout=0x"LLU,
 			   1, avpid->timescale, avpid->sr, av_get_sample_fmt_name(avpid->pfmt), avpid->ch_layout);
 	}
+	//destroy filter (will remove from graph)
+	if (avpid->io_filter_ctx) avfilter_free(avpid->io_filter_ctx);
 	avpid->io_filter_ctx = NULL;
 	ret = avfilter_graph_create_filter(&avpid->io_filter_ctx, avf, pid_name, args, NULL, ctx->filter_graph);
 	if (ret<0) {
@@ -169,6 +171,10 @@ static GF_Err ffavf_setup_outputs(GF_Filter *filter, GF_FFAVFilterCtx *ctx)
 				gf_filter_pid_set_property(opid->io_pid, GF_PROP_PID_NUM_CHANNELS, NULL);
 				gf_filter_pid_set_property(opid->io_pid, GF_PROP_PID_AUDIO_BPS, NULL);
 				gf_filter_pid_set_property(opid->io_pid, GF_PROP_PID_AUDIO_FORMAT, NULL);
+
+				//until configured do not advertize width/height to avoid filters setup down the chain
+				gf_filter_pid_set_property(opid->io_pid, GF_PROP_PID_WIDTH, NULL);
+				gf_filter_pid_set_property(opid->io_pid, GF_PROP_PID_HEIGHT, NULL);
 			} else {
 				gf_filter_pid_set_property(opid->io_pid, GF_PROP_PID_STREAM_TYPE, &PROP_UINT(GF_STREAM_AUDIO));
 				gf_filter_pid_set_property(opid->io_pid, GF_PROP_PID_WIDTH, NULL);
@@ -182,6 +188,10 @@ static GF_Err ffavf_setup_outputs(GF_Filter *filter, GF_FFAVFilterCtx *ctx)
 				gf_filter_pid_set_property(opid->io_pid, GF_PROP_PID_COLR_RANGE, NULL);
 				gf_filter_pid_set_property(opid->io_pid, GF_PROP_PID_COLR_TRANSFER, NULL);
 				gf_filter_pid_set_property(opid->io_pid, GF_PROP_PID_COLR_PRIMARIES, NULL);
+
+				//until configured do not advertize SR/channels to avoid filters setup down the chain
+				gf_filter_pid_set_property(opid->io_pid, GF_PROP_PID_SAMPLE_RATE, NULL);
+				gf_filter_pid_set_property(opid->io_pid, GF_PROP_PID_NUM_CHANNELS, NULL);
 			}
 			gf_filter_pid_set_property(opid->io_pid, GF_PROP_PID_CODECID, &PROP_UINT(GF_CODECID_RAW));
 			gf_filter_pid_set_property(opid->io_pid, GF_PROP_PID_FILE_EXT, NULL);
@@ -304,7 +314,7 @@ static GF_Err ffavf_initialize(GF_Filter *filter)
 			char *sep = strstr(desc, avf->filter->name);
 			if (sep) {
 				u32 slen = (u32) strlen(avf->filter->name);
-				if ((sep[slen]==',') || !sep[slen]) continue;;
+				if ((sep[slen]==',') || !sep[slen]) continue;
 			}
 		}
 		gf_dynstrcat(&desc, avf->filter->name, " ");
@@ -669,6 +679,7 @@ static GF_Err ffavf_process(GF_Filter *filter)
 				opid->tb_num = opid->io_filter_ctx->inputs[0]->time_base.num;
 				opid->stride = 0;
 				opid->stride_uv = 0;
+				opid->bpp = gf_pixel_get_bytes_per_pixel(opid->gf_pfmt);
 				gf_pixel_get_size_info(opid->gf_pfmt, opid->width, opid->height, &opid->out_size, &opid->stride, &opid->stride_uv, NULL, &opid->uv_height);
 				if ((opid->gf_pfmt==GF_PIXEL_YUV444) || (opid->gf_pfmt==GF_PIXEL_YUV444_10)) {
 					opid->uv_width = opid->width;
@@ -685,24 +696,24 @@ static GF_Err ffavf_process(GF_Filter *filter)
 			if (!pck) return GF_OUT_OF_MEM;
 
 			for (j=0; j<opid->height; j++) {
-				memcpy(buffer + j*opid->stride, frame->data[0] + j*frame->linesize[0], opid->width);
+				memcpy(buffer + j*opid->stride, frame->data[0] + j*frame->linesize[0], opid->width*opid->bpp);
 			}
 			if (frame->linesize[1]) {
 				buffer += opid->height*opid->stride;
 				for (j=0; j<opid->uv_height; j++) {
-					memcpy(buffer + j*opid->stride_uv, frame->data[1] + j*frame->linesize[1], opid->uv_width);
+					memcpy(buffer + j*opid->stride_uv, frame->data[1] + j*frame->linesize[1], opid->uv_width*opid->bpp);
 				}
 			}
 			if (frame->linesize[2]) {
 				buffer += opid->uv_height*opid->stride_uv;
 				for (j=0; j<opid->uv_height; j++) {
-					memcpy(buffer + j*opid->stride_uv, frame->data[2] + j*frame->linesize[2], opid->uv_width);
+					memcpy(buffer + j*opid->stride_uv, frame->data[2] + j*frame->linesize[2], opid->uv_width*opid->bpp);
 				}
 			}
 			if (frame->linesize[3]) {
 				buffer += opid->uv_height*opid->stride_uv;
 				for (j=0; j<opid->height; j++) {
-					memcpy(buffer + j*opid->stride, frame->data[3] + j*frame->linesize[3], opid->width);
+					memcpy(buffer + j*opid->stride, frame->data[3] + j*frame->linesize[3], opid->width*opid->bpp);
 				}
 			}
 			if (frame->interlaced_frame)

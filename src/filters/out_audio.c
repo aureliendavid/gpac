@@ -299,7 +299,8 @@ static u32 aout_fill_output(void *ptr, u8 *buffer, u32 buffer_size)
 		GF_FilterPacket *pck = gf_filter_pid_get_packet(ctx->pid);
 		if (!pck) {
 			if (gf_filter_pid_is_eos(ctx->pid)) {
-				ctx->is_eos = GF_TRUE;
+				if (!gf_filter_pid_is_flush_eos(ctx->pid))
+					ctx->is_eos = GF_TRUE;
 			} else if (!is_first_pck) {
 				GF_LOG(GF_LOG_INFO, GF_LOG_MMIO, ("[AudioOut] buffer underflow\n"));
 			}
@@ -702,9 +703,11 @@ static Bool aout_process_event(GF_Filter *filter, const GF_FilterEvent *evt)
 	switch (evt->base.type) {
 	case GF_FEVT_PLAY:
 		if (ctx->audio_out->Play) ctx->audio_out->Play(ctx->audio_out, evt->play.hw_buffer_reset ? 2 : 1);
+		ctx->is_eos=GF_FALSE;
 		break;
 	case GF_FEVT_STOP:
 		if (ctx->audio_out->Play) ctx->audio_out->Play(ctx->audio_out, 0);
+		ctx->is_eos=GF_TRUE;
 		break;
 	default:
 		break;
@@ -736,6 +739,14 @@ GF_Err aout_update_arg(GF_Filter *filter, const char *arg_name, const GF_Propert
 				gf_filter_pid_send_event(ctx->pid, &evt);
 			}
 		}
+	}
+	else if (!strcmp(arg_name, "vol")) {
+		if ((new_val->value.uint<=100) && ctx->audio_out->SetVolume)
+			ctx->audio_out->SetVolume(ctx->audio_out, new_val->value.uint);
+	}
+	else if (!strcmp(arg_name, "pan")) {
+		if ((new_val->value.uint<=100) && ctx->audio_out->SetPan)
+			ctx->audio_out->SetPan(ctx->audio_out, new_val->value.uint);
 	}
 	return GF_OK;
 }

@@ -129,7 +129,8 @@ void chpl_box_del(GF_Box *s)
 /*this is using chpl format according to some NeroRecode samples*/
 GF_Err chpl_box_read(GF_Box *s,GF_BitStream *bs)
 {
-	GF_ChapterEntry *ce;
+	GF_Err e;
+	GF_ChapterEntry *ce=NULL;
 	u32 nb_chaps, len, i, count;
 	GF_ChapterListBox *ptr = (GF_ChapterListBox *)s;
 
@@ -142,14 +143,17 @@ GF_Err chpl_box_read(GF_Box *s,GF_BitStream *bs)
 	while (nb_chaps) {
 		GF_SAFEALLOC(ce, GF_ChapterEntry);
 		if (!ce) return GF_OUT_OF_MEM;
-		ISOM_DECREASE_SIZE(ptr, 9)
+		ISOM_DECREASE_SIZE_GOTO_EXIT(ptr, 9)
 		ce->start_time = gf_bs_read_u64(bs);
 		len = gf_bs_read_u8(bs);
 		if (ptr->size<len) return GF_ISOM_INVALID_FILE;
 		if (len) {
 			ce->name = (char *)gf_malloc(sizeof(char)*(len+1));
-			if (!ce->name) return GF_OUT_OF_MEM;
-			ISOM_DECREASE_SIZE(ptr, len)
+			if (!ce->name) {
+				e = GF_OUT_OF_MEM;
+				goto exit;
+			}
+			ISOM_DECREASE_SIZE_GOTO_EXIT(ptr, len)
 			gf_bs_read_data(bs, ce->name, len);
 			ce->name[len] = 0;
 		} else {
@@ -167,8 +171,12 @@ GF_Err chpl_box_read(GF_Box *s,GF_BitStream *bs)
 		if (ce) gf_list_add(ptr->list, ce);
 		count++;
 		nb_chaps--;
+		ce = NULL;
 	}
 	return GF_OK;
+exit:
+	if (ce) gf_free(ce);
+	return e;
 }
 
 #ifndef GPAC_DISABLE_ISOM_WRITE
@@ -407,12 +415,19 @@ GF_Err ctts_box_read(GF_Box *s, GF_BitStream *bs)
 		ptr->entries[i].sampleCount = gf_bs_read_u32(bs);
 		if (ptr->version)
 			ptr->entries[i].decodingOffset = gf_bs_read_int(bs, 32);
-		else
+		else {
 			ptr->entries[i].decodingOffset = (s32) gf_bs_read_u32(bs);
 
-		if (ptr->max_cts_delta <= ABS(ptr->entries[i].decodingOffset)) {
+			if (ptr->entries[i].decodingOffset <= INT_MIN) {
+				GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[iso file] Invalid decodingOffset (%d) in entry #%i - defaulting to 0.\n", ptr->entries[i].decodingOffset, i));
+				ptr->entries[i].decodingOffset = 0;
+			}
+		}
+
+		if (ptr->entries[i].decodingOffset == INT_MIN) {
+			ptr->max_cts_delta = INT_MAX;
+		} else if (ptr->max_cts_delta <= ABS(ptr->entries[i].decodingOffset)) {
 			ptr->max_cts_delta = ABS(ptr->entries[i].decodingOffset);
-			//ptr->sample_num_max_cts_delta = sampleCount;
 		}
 		sampleCount += ptr->entries[i].sampleCount;
 	}
@@ -2993,6 +3008,137 @@ void mdhd_box_del(GF_Box *s)
 	gf_free(ptr);
 }
 
+// Mapping of QuickTime old language codes
+// https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/QTFFChap4/qtff4.html#//apple_ref/doc/uid/TP40000939-CH206-34320
+// to 3-letter codes (per ISO/IEC 639-2/T, https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes)
+// NOTE that Media Info maps them to 2-letter codes, possibly with region codes https://github.com/MediaArea/MediaInfoLib/blob/72213574cbf2ca01c0fbb97d2239b53891ad7b9d/Source/MediaInfo/Multiple/File_Mpeg4.cpp#L754
+// NOTE that FFMPEG mostly maps to ISO/IEC 639-2/B and sometimes 2-letter code
+// (see https://ffmpeg.org/doxygen/trunk/isom_8c_source.html)
+static const char* qtLanguages[] = {
+	"eng", //  0 English
+	"fra", //  1 French
+	"deu", //  2 German
+	"ita", //  3 Italian
+	"nld", //  4 Dutch
+	"swe", //  5 Swedish
+	"spa", //  6 Spanish
+	"dan", //  7 Danish
+	"por", //  8 Portuguese
+	"nor", //  9 Norwegian
+	"heb", // 10 Hebrew
+	"jpn", // 11 Japanese
+	"ara", // 12 Arabic
+	"fin", // 13 Finnish
+	"ell", // 14 Greek
+	"isl", // 15 Icelandic
+	"mlt", // 16 Maltese
+	"tur", // 17 Turkish
+	"hrv", // 18 Croatian
+	"zho", // 19 Traditional Chinese - general 3-letter code, ignoring the "Traditional" part
+	"urd", // 20 Urdu
+	"hin", // 21 Hindi
+	"tha", // 22 Thai
+	"kor", // 23 Korean
+	"lit", // 24 Lithuanian
+	"pol", // 25 Polish
+	"hun", // 26 Hungarian
+	"est", // 27 Estonian
+	"lav", // 28 Lettish or Latvian
+	"sme", // 29 Saami or Sami
+	"fao", // 30 Faroese
+	"fas", // 31 Farsi
+	"rus", // 32 Russian
+	"zho", // 33 Simplified Chinese - general 3-letter code, ignoring the "Simplified" part
+	"nld", // 34 Flemish - using same code as Dutch
+	"gle", // 35 Irish
+	"sqi", // 36 Albanian
+	"ron", // 37 Romanian
+	"ces", // 38 Czech
+	"slk", // 39 Slovak
+	"slv", // 40 Slovenian
+	"yid", // 41 Yiddish
+	"srp", // 42 Serbian
+	"mkd", // 43 Macedonian
+	"bul", // 44 Bulgarian
+	"ukr", // 45 Ukrainian
+	"bel", // 46 Belarusian
+	"uzb", // 47 Uzbek
+	"kaz", // 48 Kazakh
+	"aze", // 49 Azerbaijani
+	"aze", // 50 AzerbaijanAr (Armenian-Azerbaijani) - using same code as Azerbaijani
+	"hye", // 51 Armenian
+	"kat", // 52 Georgian
+	"ron", // 53 Moldavian
+	"kir", // 54 Kirghiz
+	"tgk", // 55 Tajik
+	"tuk", // 56 Turkmen
+	"mon", // 57 Mongolian
+	"mon", // 58 MongolianCyr - using same code as Mongolian
+	"pus", // 59 Pashto
+	"kur", // 60 Kurdish
+	"kas", // 61 Kashmiri
+	"snd", // 62 Sindhi
+	"bod", // 63 Tibetan
+	"nep", // 64 Nepali
+	"san", // 65 Sanskrit
+	"mar", // 66 Marathi
+	"ben", // 67 Bengali
+	"asm", // 68 Assamese
+	"guj", // 69 Gujarati
+	"pan", // 70 Punjabi
+	"ori", // 71 Oriya
+	"mal", // 72 Malayalam
+	"kan", // 73 Kannada
+	"tam", // 74 Tamil
+	"tel", // 75 Telugu
+	"sin", // 76 Sinhala
+	"mya", // 77 Burmese
+	"khm", // 78 Khmer
+	"lao", // 79 Lao
+	"vie", // 80 Vietnamese
+	"ind", // 81 Indonesian
+	"tgl", // 82 Tagalog
+	"msa", // 83 MalayRoman
+	"msa", // 84 MalayArabic
+	"amh", // 85 Amharic
+	"   ", // 86 Empty
+	"orm", // 87 Oromo
+	"som", // 88 Somali
+	"swa", // 89 Swahili
+	"kin", // 90 Kinyarwanda
+	"run", // 91 Rundi
+	"nya", // 92 Nyanja
+	"mlg", // 93 Malagasy
+	"epo", // 94 Esperanto
+	// Gap 95-127
+	"cym", // 128 Welsh
+	"eus", // 129 Basque
+	"cat", // 130 Catalan
+	"lat", // 131 Latin
+	"que", // 132 Quechua
+	"grn", // 133 Guarani
+	"aym", // 134 Aymara
+	"tat", // 135 Tatar
+	"uig", // 136 Uighur
+	"dzo", // 127 Dzongkha
+	"jav"  // 138 Javanese
+};
+//static const u8 qtLanguagesSize = GF_ARRAY_LENGTH(qtLanguages);
+
+GF_Err set_quicktime_lang(char lang[4], u8 code) {
+	if (code > 138 || (code > 94 && code < 128) || code == 86) {
+		GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[iso file] Invalid QuickTime Language Code %d\n", code));
+		return GF_BAD_PARAM;
+	}
+	if (code > 94)
+		code -=(128-94); // Gap in the list
+	lang[0] = qtLanguages[code][0];
+	lang[1] = qtLanguages[code][1];
+	lang[2] = qtLanguages[code][2];
+	lang[3] = qtLanguages[code][3];
+	return GF_OK;
+}
+
 GF_Err mdhd_box_read(GF_Box *s, GF_BitStream *bs)
 {
 	GF_MediaHeaderBox *ptr = (GF_MediaHeaderBox *)s;
@@ -3026,9 +3172,15 @@ GF_Err mdhd_box_read(GF_Box *s, GF_BitStream *bs)
 	ptr->packedLanguage[2] = gf_bs_read_int(bs, 5);
 	//but before or after compaction ?? We assume before
 	if (ptr->packedLanguage[0] || ptr->packedLanguage[1] || ptr->packedLanguage[2]) {
-		ptr->packedLanguage[0] += 0x60;
-		ptr->packedLanguage[1] += 0x60;
-		ptr->packedLanguage[2] += 0x60;
+		if (ptr->packedLanguage[0] < 0x04) {
+			// QuickTime Language Codes
+			u8 code = (ptr->packedLanguage[0] << 16) | (ptr->packedLanguage[1] << 8) | ptr->packedLanguage[2];
+			set_quicktime_lang(ptr->packedLanguage, code);
+		} else {
+			ptr->packedLanguage[0] += 0x60;
+			ptr->packedLanguage[1] += 0x60;
+			ptr->packedLanguage[2] += 0x60;
+		}
 	} else {
 		ptr->packedLanguage[0] = 'u';
 		ptr->packedLanguage[1] = 'n';
@@ -3651,6 +3803,7 @@ void moof_box_del(GF_Box *s)
 		}
 		gf_list_del(ptr->emsgs);
 	}
+	gf_list_del(ptr->trun_list);
 	gf_free(ptr);
 }
 
@@ -4073,7 +4226,19 @@ GF_Err audio_sample_entry_box_read(GF_Box *s, GF_BitStream *bs)
 		if (GF_4CC((u32)data[i+4], (u8)data[i+5], (u8)data[i+6], (u8)data[i+7]) == GF_ISOM_BOX_TYPE_ESDS) {
 			GF_BitStream *mybs = gf_bs_new(data + i, size - i, GF_BITSTREAM_READ);
 			gf_bs_set_cookie(mybs, GF_ISOM_BS_COOKIE_NO_LOGS);
-			if (ptr->esd) gf_isom_box_del_parent(&ptr->child_boxes, (GF_Box *)ptr->esd);
+			if (ptr->esd) {
+
+				gf_list_del_item(ptr->child_boxes, (GF_Box *)ptr->esd);
+
+				for (u32 i=0; i<gf_list_count(ptr->child_boxes); i++) {
+					GF_Box *inner_box = (GF_Box *)gf_list_get(ptr->child_boxes, i);
+					if (inner_box->child_boxes) {
+						gf_list_del_item(inner_box->child_boxes, (GF_Box *)ptr->esd);
+					}
+				}
+
+				gf_isom_box_del((GF_Box *)ptr->esd);
+			}
 			ptr->esd = NULL;
 			e = gf_isom_box_parse((GF_Box **)&ptr->esd, mybs);
 			gf_bs_del(mybs);
@@ -5973,7 +6138,7 @@ GF_Err stts_box_read(GF_Box *s, GF_BitStream *bs)
 		//for now we disable the check, one opt could be to have the check only for some media types, or only for the first entry
 #if 0
 		else if ((s32) ptr->entries[i].sampleDelta < 0) {
-			GF_LOG(GF_LOG_WARNING, GF_LOG_CONTAINER, ("[iso file] stts entry %d has negative duration %d - forbidden ! Fixing to 1, sync may get lost (consider reimport raw media)\n", i, (s32) ptr->entries[i].sampleDelta ));
+			GF_LOG(GF_LOG_WARNING, GF_LOG_CONTAINER, ("[iso file] stts entry %d has negative duration %d - forbidden ! Fixing to 1, sync may get lost (consider re-importing raw media)\n", i, (s32) ptr->entries[i].sampleDelta ));
 			ptr->entries[i].sampleDelta = 1;
 		}
 #endif
@@ -6968,7 +7133,7 @@ GF_Err trak_box_size(GF_Box *s)
 	if (ptr->sample_encryption && ptr->sample_encryption->load_needed) {
 		if (!ptr->moov || !ptr->moov->mov || !ptr->moov->mov->movieFileMap)
 			return GF_ISOM_INVALID_FILE;
-		GF_Err e = senc_Parse(ptr->moov->mov->movieFileMap->bs, ptr, NULL, ptr->sample_encryption);
+		GF_Err e = senc_Parse(ptr->moov->mov->movieFileMap->bs, ptr, NULL, ptr->sample_encryption, 0);
 		if (e) return e;
 	}
 
@@ -9962,6 +10127,11 @@ void *sgpd_parse_entry(GF_SampleGroupDescriptionBox *p, GF_BitStream *bs, s32 by
 		for (i=0; i<ptr->num_subpic_ref_idx; i++) {
 			ptr->subp_track_ref_idx[i] = gf_bs_read_u16(bs);
 			*total_bytes += 2;
+			if (gf_bs_is_overflow(bs)) {
+				gf_free(ptr->subp_track_ref_idx);
+				gf_free(ptr);
+				return NULL;
+			}
 		}
 		if (ptr->subpic_id_info_flag) {
 			ptr->spinfo.subpic_id_len_minus1 = gf_bs_read_int(bs, 4);
@@ -9995,7 +10165,21 @@ void *sgpd_parse_entry(GF_SampleGroupDescriptionBox *p, GF_BitStream *bs, s32 by
 		for (i=0; i<ptr->nb_entries; i++) {
 			ptr->groupIDs[i] = gf_bs_read_u16(bs);
 			*total_bytes += 2;
+			if (gf_bs_is_overflow(bs)) {
+				gf_free(ptr->groupIDs);
+				gf_free(ptr);
+				return NULL;
+			}
 		}
+		return ptr;
+	}
+	case GF_ISOM_SAMPLE_GROUP_ILCE:
+	{
+		GF_FieldInterlaceType *ptr;
+		GF_SAFEALLOC(ptr, GF_FieldInterlaceType);
+		if (!ptr) return NULL;
+		ptr->ilce_type = gf_bs_read_u8(bs);
+		*total_bytes = 1;
 		return ptr;
 	}
 	case GF_ISOM_SAMPLE_GROUP_ESGH:
@@ -10018,6 +10202,11 @@ void *sgpd_parse_entry(GF_SampleGroupDescriptionBox *p, GF_BitStream *bs, s32 by
 		for (i=0; i<ptr->nb_types; i++) {
 			ptr->group_types[i] = gf_bs_read_u32(bs);
 			*total_bytes += 4;
+			if (gf_bs_is_overflow(bs)) {
+				gf_free(ptr->group_types);
+				gf_free(ptr);
+				return NULL;
+			}
 		}
 		return ptr;
 	}
@@ -10087,6 +10276,10 @@ void sgpd_del_entry(u32 grouping_type, void *entry)
 		gf_free(sulm);
 		return;
 	}
+	case GF_ISOM_SAMPLE_GROUP_ILCE:
+		gf_free(entry);
+		return;
+
 	case GF_ISOM_SAMPLE_GROUP_ESGH:
 	{
 		GF_EssentialSamplegroupEntry *esgh = (GF_EssentialSamplegroupEntry *) entry;
@@ -10192,6 +10385,13 @@ void sgpd_write_entry(u32 grouping_type, void *entry, GF_BitStream *bs)
 		}
 		return;
 	}
+	case GF_ISOM_SAMPLE_GROUP_ILCE:
+	{
+		GF_FieldInterlaceType *ilce = (GF_FieldInterlaceType *) entry;
+		gf_bs_write_u8(bs, ilce->ilce_type);
+		return;
+	}
+
 	case GF_ISOM_SAMPLE_GROUP_ESGH:
 	{
 		u32 i;
@@ -10258,6 +10458,9 @@ static u32 sgpd_size_entry(u32 grouping_type, void *entry)
 		GF_SubpictureLayoutMapEntry *sulm = (GF_SubpictureLayoutMapEntry *) entry;
 		return 6 + 2*sulm->nb_entries;
 	}
+	case GF_ISOM_SAMPLE_GROUP_ILCE:
+		return 1;
+
 	case GF_ISOM_SAMPLE_GROUP_ESGH:
 	{
 		GF_EssentialSamplegroupEntry *esgh = (GF_EssentialSamplegroupEntry *) entry;
@@ -10319,6 +10522,9 @@ GF_Err sgpd_box_read(GF_Box *s, GF_BitStream *bs)
 		if ((p->version>=1) && !size) {
 			size = gf_bs_read_u32(bs);
 			ISOM_DECREASE_SIZE(p, 4);
+		}
+		if (size && size>p->size) {
+			return GF_ISOM_INVALID_FILE;
 		}
 		ptr = sgpd_parse_entry(p, bs, (s32) p->size, size, &parsed_bytes);
 		//don't return an error, just stop parsing so that we skip over the sgpd box
@@ -11486,7 +11692,7 @@ GF_Err extr_box_read(GF_Box *s, GF_BitStream *bs)
 	GF_Err e;
 	GF_ExtraDataBox *ptr = (GF_ExtraDataBox *)s;
 
-	e = gf_isom_box_parse((GF_Box**) &ptr->feci, bs);
+	e = gf_isom_box_parse_ex((GF_Box**) &ptr->feci, bs, GF_ISOM_BOX_TYPE_EXTR, GF_FALSE, ptr->size);
 	if (e) return e;
 	if (!ptr->feci || ptr->feci->size > ptr->size) return GF_ISOM_INVALID_MEDIA;
 	ptr->data_length = (u32) (ptr->size - ptr->feci->size);
@@ -12515,7 +12721,14 @@ GF_Err chnl_box_read(GF_Box *s,GF_BitStream *bs)
 	GF_ChannelLayoutBox *ptr = (GF_ChannelLayoutBox *) s;
 
 	ISOM_DECREASE_SIZE(s, 1)
-	ptr->layout.stream_structure = gf_bs_read_u8(bs);
+	if (ptr->version==0) {
+		ptr->layout.stream_structure = gf_bs_read_u8(bs);
+	} else {
+		ptr->layout.stream_structure = gf_bs_read_int(bs, 4);
+		ptr->layout.format_ordering = gf_bs_read_int(bs, 4);
+		ISOM_DECREASE_SIZE(s, 1)
+		ptr->layout.base_channel_count = gf_bs_read_u8(bs);
+	}
 	if (ptr->layout.stream_structure & 1) {
 		ISOM_DECREASE_SIZE(s, 1)
 		ptr->layout.definedLayout = gf_bs_read_u8(bs);
@@ -12523,7 +12736,14 @@ GF_Err chnl_box_read(GF_Box *s,GF_BitStream *bs)
 			u32 remain = (u32) ptr->size;
 			if (ptr->layout.stream_structure & 2) remain--;
 			ptr->layout.channels_count = 0;
+			u32 nb_channels = 0;
+			if (ptr->version) {
+				ISOM_DECREASE_SIZE(s, 1)
+				nb_channels = gf_bs_read_u8(bs);
+			}
 			while (remain) {
+				if (ptr->layout.channels_count==64) return GF_ISOM_INVALID_FILE;
+
 				ISOM_DECREASE_SIZE(s, 1)
 				ptr->layout.layouts[ptr->layout.channels_count].position = gf_bs_read_u8(bs);
 				remain--;
@@ -12533,13 +12753,31 @@ GF_Err chnl_box_read(GF_Box *s,GF_BitStream *bs)
 					ptr->layout.layouts[ptr->layout.channels_count].elevation = gf_bs_read_int(bs, 8);
 					remain-=3;
 				}
+				ptr->layout.channels_count++;
+				if (ptr->version) {
+					nb_channels--;
+					if (!nb_channels) break;
+				}
 			}
 		} else {
-			ISOM_DECREASE_SIZE(s, 8)
-			ptr->layout.omittedChannelsMap = gf_bs_read_u64(bs);
+			if (ptr->version==0) {
+				ISOM_DECREASE_SIZE(s, 8)
+				ptr->layout.omittedChannelsMap = gf_bs_read_u64(bs);
+				ptr->layout.omitted_channels_present = 1;
+				ptr->layout.channel_order_definition = 0;
+			} else {
+				ISOM_DECREASE_SIZE(s, 1)
+				gf_bs_read_int(bs, 4);
+				ptr->layout.channel_order_definition = gf_bs_read_int(bs, 3);
+				ptr->layout.omitted_channels_present = gf_bs_read_int(bs, 1);
+				if (ptr->layout.omitted_channels_present) {
+					ISOM_DECREASE_SIZE(s, 8)
+					ptr->layout.omittedChannelsMap = gf_bs_read_u64(bs);
+				}
+			}
 		}
 	}
-	if (ptr->layout.stream_structure & 2) {
+	if ((ptr->version==0) && (ptr->layout.stream_structure & 2)) {
 		ISOM_DECREASE_SIZE(s, 1)
 		ptr->layout.object_count = gf_bs_read_u8(bs);
 	}
@@ -12562,11 +12800,20 @@ GF_Err chnl_box_write(GF_Box *s, GF_BitStream *bs)
 	e = gf_isom_full_box_write(s, bs);
 	if (e) return e;
 
-	gf_bs_write_u8(bs, ptr->layout.stream_structure);
+	if (ptr->version==0) {
+		gf_bs_write_u8(bs, ptr->layout.stream_structure);
+	} else {
+		gf_bs_write_int(bs, ptr->layout.stream_structure, 4);
+		gf_bs_write_int(bs, ptr->layout.format_ordering, 4);
+		gf_bs_write_u8(bs, ptr->layout.base_channel_count);
+	}
 	if (ptr->layout.stream_structure & 1) {
 		gf_bs_write_u8(bs, ptr->layout.definedLayout);
 		if (ptr->layout.definedLayout==0) {
 			u32 i;
+			if (ptr->version==1) {
+				gf_bs_write_u8(bs, ptr->layout.channels_count);
+			}
 			for (i=0; i<ptr->layout.channels_count; i++) {
 				gf_bs_write_u8(bs, ptr->layout.layouts[i].position);
 				if (ptr->layout.layouts[i].position==126) {
@@ -12575,10 +12822,18 @@ GF_Err chnl_box_write(GF_Box *s, GF_BitStream *bs)
 				}
 			}
 		} else {
-			gf_bs_write_u64(bs, ptr->layout.omittedChannelsMap);
+			if (ptr->version==1) {
+				gf_bs_write_int(bs, 0, 4);
+				gf_bs_write_int(bs, ptr->layout.channel_order_definition, 3);
+				gf_bs_write_int(bs, ptr->layout.omitted_channels_present, 1);
+				if (ptr->layout.omitted_channels_present)
+					gf_bs_write_u64(bs, ptr->layout.omittedChannelsMap);
+			} else {
+				gf_bs_write_u64(bs, ptr->layout.omittedChannelsMap);
+			}
 		}
 	}
-	if (ptr->layout.stream_structure & 2) {
+	if ((ptr->version==0) && (ptr->layout.stream_structure & 2)) {
 		gf_bs_write_u8(bs, ptr->layout.object_count);
 	}
 	return GF_OK;
@@ -12588,20 +12843,28 @@ GF_Err chnl_box_size(GF_Box *s)
 {
 	GF_ChannelLayoutBox *ptr = (GF_ChannelLayoutBox *) s;
 	s->size += 1;
+	if (ptr->version==1) s->size++;
 	if (ptr->layout.stream_structure & 1) {
 		s->size += 1;
 		if (ptr->layout.definedLayout==0) {
 			u32 i;
+			if (ptr->version==1) s->size++;
 			for (i=0; i<ptr->layout.channels_count; i++) {
 				s->size+=1;
 				if (ptr->layout.layouts[i].position==126)
 					s->size+=3;
 			}
 		} else {
-			s->size += 8;
+			if (ptr->version==1) {
+				s->size += 1;
+				if (ptr->layout.omitted_channels_present)
+					s->size += 8;
+			} else {
+				s->size += 8;
+			}
 		}
 	}
-	if (ptr->layout.stream_structure & 2) {
+	if ((ptr->version==0) && (ptr->layout.stream_structure & 2)) {
 		s->size += 1;
 	}
 	return GF_OK;
@@ -13018,6 +13281,9 @@ GF_Err xtra_box_read(GF_Box *s, GF_BitStream *bs)
 			tag_size-=2;
 			prop_type = gf_bs_read_u16(bs);
 			prop_size -= 6;
+			if (ptr->size < prop_size && data) {
+				gf_free(data);
+			}
 			ISOM_DECREASE_SIZE_NO_ERR(ptr, prop_size)
 			//add 3 extra bytes for UTF16 case string dump (3 because we need 0-aligned short value)
 			data2 = gf_malloc(sizeof(char) * (prop_size+3));
@@ -13308,6 +13574,36 @@ GF_Err proj_type_box_size(GF_Box *s)
 	else
 		s->size += 8;
 
+	return GF_OK;
+}
+
+#endif /*GPAC_DISABLE_ISOM_WRITE*/
+
+
+GF_Box *empty_box_new()
+{
+	ISOM_DECL_BOX_ALLOC(GF_Box, GF_QT_BOX_TYPE_FRCD);
+	return (GF_Box *) tmp;
+}
+
+void empty_box_del(GF_Box *s)
+{
+	gf_free(s);
+}
+
+GF_Err empty_box_read(GF_Box *s, GF_BitStream *bs)
+{
+	return GF_OK;
+}
+
+#ifndef GPAC_DISABLE_ISOM_WRITE
+GF_Err empty_box_write(GF_Box *s, GF_BitStream *bs)
+{
+	return gf_isom_box_write_header(s, bs);
+}
+
+GF_Err empty_box_size(GF_Box *s)
+{
 	return GF_OK;
 }
 

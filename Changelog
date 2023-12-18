@@ -18,10 +18,13 @@
 - QT cmov support (reading and writing)
 - QT lpcm support
 - Support for big-endian PCM formats
-- Support for uncv (raw video in mp4 and heir)
+- Support for uncv (raw video in mp4 and heif)
+- Support for forced subtitles
+- Support for HEVC bitstreams merging in dash (for multi-res tile adaptation)
  
 ## Filters
 - Async HTTP request in all filters
+- JS/Python/NodeJS bindings for httpout server
 - Fixed cors and mime types in httpout for wasm and sharedArrayuffer support
 - Allow compilation without threads
 - Allow compilation without network
@@ -33,7 +36,10 @@
 - Zero-copy for mp4dmx and fragmented mp4mx
 - Various speed optimizations (filter session, isomedia lib, disk io, xml)
 - Allow running the session without mutexes
-
+- Closed Caption decoding filter (CEA708)
+- MPEG-H decoder using IIS mpeghdec
+- Templating for property assignment 
+- Conditional filter replacement to identify based on codecID 
 
 ## MP4Box
 - add track reordering option
@@ -42,6 +48,8 @@
 - FFMPEG 6 support
 - Added features for configure (vout, aout, fonts, doc, evg)
 - Allow specifying network interface by name or IP instead of IP only
+- UDP/TCP recording to GPAC gpc files
+- UDP/TCP capture playback and filtering from pcap, pcapng and gpc files
 
 
 # 19/12/2022: GPAC 2.2
@@ -390,8 +398,8 @@ It also adds several small features:
  - The counter source from the DASH sequences added to the public content.
  - HLS and DASH playback minor fixes.
  - Cleanup of DASH client logs.
- - Added support for DASH SRD in 360 for independent videos videos (NxM partial spheres) [more](https://gpac.wp.imt.fr/2016/05/25/srd/)
- - Added support for DASH SRD in 360 for HEV Ctiled videos (NxM tiles on one sphere) - [checkout tuto](https://gpac.wp.imt.fr/2017/02/01/hevc-tile-based-adaptation-guide/)
+ - Added support for DASH SRD in 360 for independent videos videos (NxM partial spheres) [more](https://gpac.io/2016/05/25/srd/)
+ - Added support for DASH SRD in 360 for HEV Ctiled videos (NxM tiles on one sphere) - [checkout tuto](https://gpac.io/2017/02/01/hevc-tile-based-adaptation-guide/)
  - Apple VideoToolBox hardware decoding support for OSX and iOS for AVC|H264.
  - Android hardware decoding hardware acceleration for AVC|H264 (HEVC on its way).
  - Android build is based on Android Studio.

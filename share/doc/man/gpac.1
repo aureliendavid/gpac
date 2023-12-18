@@ -194,6 +194,8 @@ Note: The @ character can be used in place of the * character. String parameter 
 .br
 * modules: print available modules
 .br
+* module NAME: print info and options of module NAME
+.br
 * creds: print credential help
 .br
 * filters: print name of all available filters
@@ -530,7 +532,7 @@ The .I creds option allows inspecting or modifying the users and groups informat
 .br
 * `+NAME`: adds user NAME
 .br
-* `+NAME:I1=V1[,I2=V2]`: sets info I1 with value V1 to user NAME. the info name password resets password without prompt.
+* `+NAME:I1=V1[,I2=V2]`: sets info I1 with value V1 to user NAME. The info name password resets password without prompt.
 .br
 * `-NAME`: removes user NAME
 .br
@@ -554,7 +556,7 @@ Passwords are not stored, only a SHA256 hash is stored.
 .br
 Servers using authentication rules can use a configuration file instead of a directory name.
 .br
-This configuration file is organized in sections, each section name descibing a directory.
+This configuration file is organized in sections, each section name describing a directory.
 .br
 Example
 .br
@@ -850,7 +852,7 @@ startup file of compositor in GUI mode
 .TP
 .B \-docs-dir (string)
 .br
-default documents directoty (for GUI on iOS and Android)
+default documents directory (for GUI on iOS and Android)
 .br
 .TP
 .B \-last-dir (string)
@@ -865,7 +867,7 @@ disable poll and use select for socket groups
 .TP
 .B \-no-tls-rcfg
 .br
-disble automatic TCP to TLS reconfiguration
+disable automatic TCP to TLS reconfiguration
 .br
 .TP
 .B \-no-fd
@@ -876,6 +878,59 @@ use buffered IO instead of file descriptor for read/write - this can speed up op
 .B \-no-mx
 .br
 disable all mutexes, threads and semaphores (do not use if unsure about threading used)
+.br
+.TP
+.B \-netcap-dst (string)
+.br
+output packets to indicated file
+.br
+.TP
+.B \-netcap-src (string)
+.br
+read packets from indicated file, as produced by -netcap-dst or a pcap or pcapng file
+.br
+.TP
+.B \-netcap-nrt
+.br
+ignore real-time regulation when reading packet from capture file
+.br
+.TP
+.B \-netcap-loop (int)
+.br
+set number of loops of capture file, -1 means forever
+.br
+.TP
+.B \-net-filter (string)
+.br
+set packet filtering rules (live or from file). Value is a list of {OPT,OPT2...} with OPT in:
+.br
+* m=N: set rule mode - N can be r for reception only (default), w for send only or rw for both
+.br
+* s=N: set packet start range to N
+.br
+* e=N: set packet end range to N (only used for r and f rules)
+.br
+* n=N: set number of packets to drop to N, 0 or 1 means single packet
+.br
+* r=N: random drop one packet every N
+.br
+* f=N: drop first packet every N
+.br
+* p=P: local port number to filter, if not set the rule applies to all packets
+.br
+* o=N: patch packet instead of droping (always true for TCP), replacing byte at offset N (0 is first byte, <0 for random)
+.br
+* v=N: set patch byte value to N (hexa) or negative value for random (default)
+.br
+
+.br
+Example
+.br
+{p=1234,s=100,n=20}{r=200,s=500,o=10,v=FE}
+.br
+
+.br
+This will drop packets 100 to 119 on port 1234 and patch one random packet every 200 starting from packet 500, setting byte 10 to FE
 .br
 .TP
 .B \-cache (string)
@@ -930,7 +985,7 @@ time in milliseconds to wait for HTTP/RTSP connect before error
 .TP
 .B \-req-timeout (int, default: 10000)
 .br
-time in milliseconds to wait on HTTP/RTSP request before error
+time in milliseconds to wait on HTTP/RTSP request before error (0 disables timeout)
 .br
 .TP
 .B \-no-timeout
@@ -1099,37 +1154,6 @@ default buffer size in microseconds for decoder input pids
 default buffer size in frames when timing is not available
 .br
 .TP
-.B \-switch-vres
-.br
-select smallest video resolution larger than scene size, otherwise use current video resolution
-.br
-.TP
-.B \-hwvmem (Enum, default: auto)
-.br
-specify (2D rendering only) memory type of main video backbuffer. Depending on the scene type, this may drastically change the playback speed
-.br
-* always: always on hardware
-.br
-* never: always on system memory
-.br
-* auto: selected by GPAC based on content type (graphics or video)
-.br
-.TP
-.B \-pref-yuv4cc (string)
-.br
-set preferred YUV 4CC for overlays (used by DirectX only)
-.br
-.TP
-.B \-offscreen-yuv
-.br
-indicate if offscreen yuv->rgb is enabled. can be set to false to force disabling
-.br
-.TP
-.B \-overlay-color-key (string)
-.br
-color to use for overlay keying, hex format
-.br
-.TP
 .B \-gl-bits-comp (int, default: 8)
 .br
 number of bits per color component in OpenGL
@@ -1145,16 +1169,6 @@ number of bits for depth buffer in OpenGL
 enable OpenGL double buffering
 .br
 .TP
-.B \-sdl-defer
-.br
-use defer rendering for SDL
-.br
-.TP
-.B \-no-colorkey
-.br
-disable color keying at the video output level
-.br
-.TP
 .B \-glfbo-txid (int)
 .br
 set output texture ID when using glfbo output. The OpenGL context shall be initialized and gf_term_process shall be called with the OpenGL context active
@@ -1165,34 +1179,9 @@ set output texture ID when using glfbo output. The OpenGL context shall be initi
 indicate the name of the video output module to use (see gpac -h modules). The reserved name glfbo is used in player mode to draw in the OpenGL texture identified by .I glfbo-txid.  In this mode, the application is responsible for sending event to the compositor
 .br
 .TP
-.B \-dfb-sys (string, default: x11)
-.br
-system DirectFB (x11, sdl, vnc, fbdev, osx ordevmem)
-.br
-.TP
-.B \-dfb-flip (string, default: waitsync)
-.br
-vsync mode for DirectFB (waitsync, wait, sync or swap)
-.br
-.TP
 .B \-audio-output (string)
 .br
 indicate the name of the audio output module to use
-.br
-.TP
-.B \-alsa-devname (string)
-.br
-set ALSA dev name
-.br
-.TP
-.B \-force-alsarate (int)
-.br
-force ALSA and OSS output sample rate
-.br
-.TP
-.B \-ds-disable-notif
-.br
-disable DirectSound audio buffer notifications when supported
 .br
 .TP
 .B \-font-reader (string)
@@ -1296,6 +1285,11 @@ hack for old vvdec+libavcodec supporting only annexB format
 .B \-heif-hevc-urn
 .br
 use HEVC URN for alpha and depth in HEIF instead of MPEG-B URN (HEIF first edition)
+.br
+.TP
+.B \-boxdir (string)
+.br
+use box definitions in the given directory for XML dump
 .br
 .SH libgpac logs options:
 .LP
@@ -1425,6 +1419,11 @@ This moves all log to info level, dash to debug level and disable color logs
 .br
 use new line at each progress messages
 .br
+.TP
+.B \-log-dual,-ld
+.br
+output to both file and stderr
+.br
 .SH Overview
 .LP
 .br
@@ -1492,7 +1491,7 @@ Note: The special characters in property formats (0x,/,-,+I,-I,x) cannot be conf
 .br
 Each filter is declared by its name, with optional filter arguments appended as a list of colon-separated name=value pairs. Additional syntax is provided for:
 .br
-* boolean: value can be omitted, defaulting to true (e.g. :noedit). Using ! before the name negates the result (e.g. :!moof_first)
+* boolean: value can be omitted, defaulting to true (e.g. :allt). Using ! before the name negates the result (e.g. :!moof_first)
 .br
 * enumerations: name can be omitted, e.g. :disp=pbo is equivalent to :pbo.
 .br
@@ -1639,8 +1638,6 @@ gpac -i file.mp4 reframer:raw=av -o null
 
 .br
 This will force decoding media from file.mp4 and trash (send to null) the result (doing a decoder benchmark for example).
-.br
-
 .br
 .SS Escaping option separators
 .br
@@ -2175,7 +2172,7 @@ Templating can be useful when encoding several qualities in one pass.
 .br
 Example
 .br
-gpac -i dump.yuv:size=640x360 vcrop:wnd=0x0x320x180 c=avc:b=1M @2 c=avc:b=750k -o dump_$CropOrigin$x$Width$x$Height$.264:clone
+gpac -i dump.yuv:size=640x360 vcrop:wnd=0x0x320x180 c=avc:b=1M @2 c=avc:b=750k -o dump_$CropOrigin$x$Width$x$Height$.264
 .br
 
 .br
@@ -2196,11 +2193,9 @@ In this case, only one item (likely the first declared in the file) will connect
 .br
 Other items will not be connected since the destination only accepts one input PID.
 .br
-There is a special option clone allowing filters to be cloned with the same arguments. The cloned filters have the same ID as the original one.
-.br
 Example
 .br
-gpac -i img.heif -o dump_$ItemID$.jpg:clone
+gpac -i img.heif -o dump_$ItemID$.jpg
 .br
 
 .br
@@ -2208,7 +2203,7 @@ In this case, the destination will be cloned for each item, and all will be expo
 .br
 Example
 .br
-gpac -i vid.mpd c=avc:FID=1:clone -o transcode.mpd:SID=1
+gpac -i vid.mpd c=avc:FID=1 -o transcode.mpd:SID=1
 .br
 
 .br
@@ -2354,6 +2349,32 @@ gpac -i source.mp4:#MyProp=(Width+1280)HD
 .br
 This will assign property MyProp to HD for PIDs with property Width greater than 1280.
 .br
+
+.br
+The property value can use templates with the following keywords:
+.br
+* $GINC(init[,inc]) or @GINC(...): replaced by integer for each new output PID of the filter (see specific filter options for details on syntax)
+.br
+* PROP (enclosed between `$` or `@`): replaced by serialized value of property PROP (name or 4CC) of the PID or with empty string if no such property
+.br
+Example
+.br
+gpac -i source.ts:#ASID=$PID$
+.br
+
+.br
+This will assign DASH AdaptationSet ID to the PID ID value.
+.br
+Example
+.br
+gpac -i source.ts:#RepresentationID=$ServiceID$
+.br
+
+.br
+This will assign DASH Representation ID to the PID ServiceID value.
+.br
+
+.br
 .SH Using option files
 .LP
 .br
@@ -2378,6 +2399,43 @@ gpac -i source.mp4:myopts.txt:foo=bar -o dst
 
 .br
 Any filter loaded between source.mp4 and dst will inherit both myopts.txt and foo options and will resolve options and PID properties given in myopts.txt.
+.br
+
+.br
+.SH Ignoring filters at run-time
+.LP
+.br
+The special option ccp can be used to replace filters with an identity filter at run-time based on the input codec ID.
+.br
+The option is a list of codec IDs to check. For encoder filters, an empty list reuses the encoder codec type.
+.br
+When the PID codec ID matches one of the specified codec, the filter is replaced with a reframer filter with single PID input and same name and ID.
+.br
+Example
+.br
+-i src c=avc:b=1m:ccp -o mux
+.br
+
+.br
+This will replace the encoder filter with a reframer if the input PID is in AVC|H264 format, or uses the encoder for other visual PIDs.
+.br
+Example
+.br
+-i src c=avc:b=1m:ccp=avc,hevc -o mux
+.br
+
+.br
+This will replace the encoder filter with a reframer if the input PID is in AVC|H264 or HEVC format, or uses the encoder for other visual PIDs.
+.br
+Example
+.br
+-i src cecrypt:cfile=drm.xml:ccp=aac -o mux
+.br
+
+.br
+This will replace the encryptor filter with a reframer if the input PID is in AAC format, or uses the encryptor for other PIDs.
+.br
+
 .br
 .SH Specific filter options
 .LP
@@ -2442,7 +2500,7 @@ As seen previously, the following options may be set on any filter, but are not 
 .br
 * FBD: decode buffer time in microseconds (unsigned int value)
 .br
-* clone: filter cloning flag (no value)
+* clone: explicitly enable/disable filter cloning flag (no value)
 .br
 * nomux: enable/disable direct file copy (no value)
 .br
@@ -2453,6 +2511,8 @@ As seen previously, the following options may be set on any filter, but are not 
 * gfopt: following options are not tracked (no value)
 .br
 * gpac: argument separator for URLs (no value)
+.br
+* ccp: filter replacement control (string list value)
 .br
 
 .br
@@ -3583,6 +3643,11 @@ Name of the HLS variant playlist for this media
 Name of HLS Group of a stream
 .br
 .TP
+.B HLSForce (HLFI,str,D )
+.br
+Force writing EXT-X-STREAM-INF if stream is in a rendition group, value is the name of associated groups (can be empty)
+.br
+.TP
 .B HLSMExt (HLMX,strl,D )
 .br
 List of extensions to add to the master playlist for this PID
@@ -3863,9 +3928,17 @@ Original crypto scheme on a decrypted PID
 Time shift in number of segments for HAS streams, only set by dashin and dasher filters
 .br
 .TP
-.B IsManifest (PHSM,bool,D )
+.B IsManifest (PHSM,uint,D )
 .br
 PID is a HAS manifest
+.br
+* 0: not a manifest
+.br
+* 1: DASH manifest
+.br
+* 2: HLS manifest
+.br
+* 3: GHI(X) manifest
 .br
 .TP
 .B Sparse (PSPA,bool,D )
@@ -3876,6 +3949,17 @@ PID has potentially empty times between packets
 .B CharSet (PCHS,str,D )
 .br
 Character set for input text PID
+.br
+.TP
+.B ForcedSub (PFCS,uint,D )
+.br
+PID or Packet is forced sub
+.br
+0: not forced
+.br
+1: forced frame
+.br
+2: all frames are forced (PID only)
 .br
 .TP
 .B ChapTimes (CHPT,uintl,D )
@@ -4612,24 +4696,34 @@ DRA Audio
 G719 Audio
 .br
 .TP
-.B dstca
+.B dstc
 .br
-DTS Coherent Acoustics Audio
+DTS Coherent Acoustics and Digital Surround Audio
 .br
 .TP
 .B dtsh
 .br
-DTS-HD High Resolution Audio
+DTS-HD High Resolution Audio and DTS-Master Audio
 .br
 .TP
-.B dstm
+.B dstl
 .br
-DTS-HD Master Audio
+DTS-HD Substream containing only XLLAudio
 .br
 .TP
-.B dtsl
+.B dtse
 .br
 DTS Express low bit rate Audio
+.br
+.TP
+.B dtsx
+.br
+DTS-X UHD Audio Profile 2
+.br
+.TP
+.B dtsy
+.br
+DTS-X UHD Audio Profile 3
 .br
 .TP
 .B opus
@@ -5035,7 +5129,7 @@ For bug reports, feature requests, more information and source code, visit https
 .br
 build: 2.3-DEV
 .br
-Copyright: (c) 2000-2023 Telecom Paris distributed under LGPL v2.1+ - http://gpac.io
+Copyright: (c) 2000-2023 Telecom Paris distributed under LGPL v2.1+ - https://gpac.io
 .br
 .SH SEE ALSO
 .LP

@@ -1284,9 +1284,9 @@ u8 key_info_get_iv_size(const u8 *key_info, u32 key_info_size, u32 idx, u8 *cons
 #ifndef GPAC_DISABLE_ISOM
 
 #ifndef	GPAC_DISABLE_ISOM_FRAGMENTS
-GF_Err senc_Parse(GF_BitStream *bs, GF_TrackBox *trak, GF_TrackFragmentBox *traf, GF_SampleEncryptionBox *senc)
+GF_Err senc_Parse(GF_BitStream *bs, GF_TrackBox *trak, GF_TrackFragmentBox *traf, GF_SampleEncryptionBox *senc, u32 max_nb_samples)
 #else
-GF_Err senc_Parse(GF_BitStream *bs, GF_TrackBox *trak, void *traf, GF_SampleEncryptionBox *senc)
+GF_Err senc_Parse(GF_BitStream *bs, GF_TrackBox *trak, void *traf, GF_SampleEncryptionBox *senc, u32 max_nb_samples)
 #endif
 {
 	GF_Err e;
@@ -1319,6 +1319,19 @@ GF_Err senc_Parse(GF_BitStream *bs, GF_TrackBox *trak, void *traf, GF_SampleEncr
 	if (senc->flags & 2) subs_size = 8;
 
 	if (senc_size<4) return GF_BAD_PARAM;
+	if (!max_nb_samples) {
+#ifndef	GPAC_DISABLE_ISOM_FRAGMENTS
+		if (traf) {
+			i=0;
+			GF_TrackFragmentRunBox *trun;
+			while ((trun = gf_list_enum(traf->TrackRuns, &i))) {
+				max_nb_samples += trun->nb_samples;
+			}
+		} else
+#endif
+		if (trak->Media->information->sampleTable->SampleSize)
+			max_nb_samples = trak->Media->information->sampleTable->SampleSize->sampleCount;
+	}
 
 	sample_number = 1;
 #ifndef	GPAC_DISABLE_ISOM_FRAGMENTS
@@ -1355,6 +1368,9 @@ GF_Err senc_Parse(GF_BitStream *bs, GF_TrackBox *trak, void *traf, GF_SampleEncr
 		//u32 nb_keys = 0;
 		u32 nb_bytes_subsample = 6;
 		u32 nb_subs_bits = 16;
+
+		if (!max_nb_samples)
+			break;
 
 		GF_SAFEALLOC(sai, GF_CENCSampleAuxInfo);
 		if (!sai) {
@@ -1477,6 +1493,8 @@ GF_Err senc_Parse(GF_BitStream *bs, GF_TrackBox *trak, void *traf, GF_SampleEncr
 			sai->key_info_size = key_info_size;
 		}
 		gf_list_add(senc->samp_aux_info, sai);
+
+		max_nb_samples--;
 	}
 	gf_bs_seek(bs, pos);
 	if (parse_failed) {
@@ -1739,12 +1757,14 @@ GF_Err aeib_box_read(GF_Box *s, GF_BitStream *bs)
 	GF_AdobeEncryptionInfoBox *ptr = (GF_AdobeEncryptionInfoBox*)s;
 	u32 len;
 
+	ISOM_DECREASE_SIZE(ptr, 1);
 	len = (u32) ptr->size - 1;
 	if (len) {
 		ptr->enc_algo = (char *)gf_malloc(len*sizeof(char));
 		if (!ptr->enc_algo) return GF_OUT_OF_MEM;
 		gf_bs_read_data(bs, ptr->enc_algo, len);
 	}
+	ISOM_DECREASE_SIZE(ptr, 1);
 	ptr->key_length = gf_bs_read_u8(bs);
 	ptr->size = 0;
 	return GF_OK;

@@ -101,7 +101,7 @@ GF_PropertyValue gf_props_parse_value(u32 type, const char *name, const char *va
 	unit_sep = NULL;
 	if (value) {
 		u32 len = (u32) strlen(value);
-		unit_sep = len ? strrchr("kKgGmMsS", value[len-1]) : NULL;
+		unit_sep = len ? strchr("SsMmGgKk", value[len-1]) : NULL;
 		if (unit_sep) {
 			u8 unit_char = unit_sep[0];
 			if ((unit_char=='k') || (unit_char=='K')) unit = 1000;
@@ -463,13 +463,13 @@ GF_PropertyValue gf_props_parse_value(u32 type, const char *name, const char *va
 				p.value.data.size = gf_base64_decode((u8 *)b64, size, p.value.data.ptr, size);
 				if (!p.value.data.size) {
 					GF_LOG(GF_LOG_ERROR, GF_LOG_FILTER, ("Failed to decode base64 value %s\n", value, name));
-					p.type=GF_PROP_FORBIDEN;
+					p.type=GF_PROP_FORBIDDEN;
 				}
 				p.value.data.ptr[p.value.data.size] = 0;
 			} else {
 				GF_LOG(GF_LOG_ERROR, GF_LOG_FILTER, ("Failed to allocate memory for decoding base64 value %s\n", value, name));
 				p.value.data.size = 0;
-				p.type=GF_PROP_FORBIDEN;
+				p.type=GF_PROP_FORBIDDEN;
 			}
 		} else {
 			p.value.data.size = (u32) strlen(value);
@@ -596,7 +596,7 @@ GF_PropertyValue gf_props_parse_value(u32 type, const char *name, const char *va
 		}
 	}
 		break;
-	case GF_PROP_FORBIDEN:
+	case GF_PROP_FORBIDDEN:
 	default:
 		if (gf_props_type_is_enum(type)) {
 			p.type = type;
@@ -604,7 +604,7 @@ GF_PropertyValue gf_props_parse_value(u32 type, const char *name, const char *va
 			break;
 		}
 		GF_LOG(GF_LOG_ERROR, GF_LOG_FILTER, ("Forbidden property type %d for arg %s - ignoring\n", type, name));
-		p.type=GF_PROP_FORBIDEN;
+		p.type=GF_PROP_FORBIDDEN;
 		break;
 	}
 //	if (unit_sep) unit_sep[0] = unit_char;
@@ -800,7 +800,7 @@ GF_PropertyMap * gf_props_new(GF_Filter *filter)
 	if (!map) {
 		GF_SAFEALLOC(map, GF_PropertyMap);
 		if (!map) return NULL;
-		
+
 		map->session = filter->session;
 #if GF_PROPS_HASHTABLE_SIZE
 #else
@@ -812,6 +812,7 @@ GF_PropertyMap * gf_props_new(GF_Filter *filter)
 	return map;
 }
 
+GF_EXPORT
 void gf_props_reset_single(GF_PropertyValue *p)
 {
 	if (p->type==GF_PROP_STRING) {
@@ -878,16 +879,12 @@ void gf_props_del_property(GF_PropertyEntry *it)
 		it->prop.value.data.size = 0;
 		if (it->alloc_size) {
 			assert(it->prop.type==GF_PROP_DATA);
-			if (it->session->prop_maps_entry_data_alloc_reservoir) {
-				gf_fq_add(it->session->prop_maps_entry_data_alloc_reservoir, it);
-			} else {
+			if (gf_fq_res_add(it->session->prop_maps_entry_data_alloc_reservoir, it)) {
 				if (it->prop.value.data.ptr) gf_free(it->prop.value.data.ptr);
 				gf_free(it);
 			}
 		} else {
-			if (it->session->prop_maps_entry_reservoir) {
-				gf_fq_add(it->session->prop_maps_entry_reservoir, it);
-			} else {
+			if (gf_fq_res_add(it->session->prop_maps_entry_reservoir, it)) {
 				gf_free(it);
 			}
 		}
@@ -916,9 +913,7 @@ void gf_props_reset(GF_PropertyMap *prop)
 				gf_props_del_property((GF_PropertyEntry *) gf_list_pop_back(l) );
 			}
 			prop->hash_table[i] = NULL;
-			if (prop->session->prop_maps_list_reservoir) {
-				gf_fq_add(prop->session->prop_maps_list_reservoir, l);
-			} else {
+			if (gf_fq_res_add(prop->session->prop_maps_list_reservoir, l)) {
 				gf_list_del(l);
 			}
 		}
@@ -939,9 +934,7 @@ void gf_props_del(GF_PropertyMap *map)
 	gf_props_reset(map);
 	map->reference_count = 0;
 	map->timescale = 0;
-	if (map->session && map->session->prop_maps_reservoir) {
-		gf_fq_add(map->session->prop_maps_reservoir, map);
-	} else {
+	if (!map->session || gf_fq_res_add(map->session->prop_maps_reservoir, map)) {
 		gf_list_del(map->properties);
 		gf_free(map);
 	}
@@ -1247,7 +1240,7 @@ const GF_PropertyValue *gf_props_enum_property(GF_PropertyMap *props, u32 *io_id
 	u32 i, nb_items = 0;
 #endif
 	u32 idx, count;
-	
+
 	const GF_PropertyEntry *pe;
 	if (!io_idx) return NULL;
 
@@ -1366,7 +1359,7 @@ GF_PropType gf_props_parse_type(const char *name)
 		if (!strcmp(PropTypes[i].name, name)) return PropTypes[i].type;
 	}
 	GF_LOG(GF_LOG_ERROR, GF_LOG_FILTER, ("Unknown property type %s\n", name));
-	return GF_PROP_FORBIDEN;
+	return GF_PROP_FORBIDDEN;
 }
 
 #ifndef GPAC_DISABLE_DOC
@@ -1571,6 +1564,7 @@ GF_BuiltInProperty GF_BuiltInProps [] =
 	DEC_PROP_F( GF_PROP_PID_CLAMP_DUR, "ClampDur", "Max media duration to process from PID in DASH mode", GF_PROP_FRACTION64, GF_PROP_FLAG_GSF_REM),
 	DEC_PROP_F( GF_PROP_PID_HLS_PLAYLIST, "HLSPL", "Name of the HLS variant playlist for this media", GF_PROP_STRING, GF_PROP_FLAG_GSF_REM),
 	DEC_PROP_F( GF_PROP_PID_HLS_GROUPID, "HLSGroup", "Name of HLS Group of a stream", GF_PROP_STRING, GF_PROP_FLAG_GSF_REM),
+	DEC_PROP_F( GF_PROP_PID_HLS_FORCE_INF, "HLSForce", "Force writing EXT-X-STREAM-INF if stream is in a rendition group, value is the name of associated groups (can be empty)", GF_PROP_STRING, GF_PROP_FLAG_GSF_REM),
 	DEC_PROP_F( GF_PROP_PID_HLS_EXT_MASTER, "HLSMExt", "List of extensions to add to the master playlist for this PID", GF_PROP_STRING_LIST, GF_PROP_FLAG_GSF_REM),
 	DEC_PROP_F( GF_PROP_PID_HLS_EXT_VARIANT, "HLSVExt", "List of extensions to add to the variant playlist for this PID", GF_PROP_STRING_LIST, GF_PROP_FLAG_GSF_REM),
 	DEC_PROP_F( GF_PROP_PID_DASH_CUE, "DCue", "Name of a cue list file for this PID - see dasher help", GF_PROP_STRING, GF_PROP_FLAG_GSF_REM),
@@ -1639,9 +1633,17 @@ GF_BuiltInProperty GF_BuiltInProps [] =
 	DEC_PROP( GF_PROP_PID_SCENE_NODE, "SceneNode", "PID is a scene node decoder (AFX BitWrapper in BIFS)", GF_PROP_BOOL),
 	DEC_PROP( GF_PROP_PID_ORIG_CRYPT_SCHEME, "OrigCryptoScheme", "Original crypto scheme on a decrypted PID", GF_PROP_4CC),
 	DEC_PROP_F( GF_PROP_PID_TIMESHIFT_SEGS, "TSBSegs", "Time shift in number of segments for HAS streams, only set by dashin and dasher filters", GF_PROP_UINT, GF_PROP_FLAG_GSF_REM),
-	DEC_PROP_F( GF_PROP_PID_IS_MANIFEST, "IsManifest", "PID is a HAS manifest", GF_PROP_BOOL, GF_PROP_FLAG_GSF_REM),
+	DEC_PROP_F( GF_PROP_PID_IS_MANIFEST, "IsManifest", "PID is a HAS manifest\n"
+	"- 0: not a manifest\n"
+	"- 1: DASH manifest\n"
+	"- 2: HLS manifest\n"
+	"- 3: GHI(X) manifest", GF_PROP_UINT, GF_PROP_FLAG_GSF_REM),
 	DEC_PROP_F( GF_PROP_PID_SPARSE, "Sparse", "PID has potentially empty times between packets", GF_PROP_BOOL, GF_PROP_FLAG_GSF_REM),
 	DEC_PROP_F( GF_PROP_PID_CHARSET, "CharSet", "Character set for input text PID", GF_PROP_STRING, GF_PROP_FLAG_GSF_REM),
+	DEC_PROP_F( GF_PROP_PID_FORCED_SUB, "ForcedSub", "PID or Packet is forced sub\n"
+	"0: not forced\n"
+	"1: forced frame\n"
+	"2: all frames are forced (PID only)", GF_PROP_UINT, GF_PROP_FLAG_GSF_REM),
 
 	DEC_PROP_F( GF_PROP_PID_CHAP_TIMES, "ChapTimes", "Chapter start times", GF_PROP_UINT_LIST, GF_PROP_FLAG_GSF_REM),
 	DEC_PROP_F( GF_PROP_PID_CHAP_NAMES, "ChapNames", "Chapter names", GF_PROP_STRING_LIST, GF_PROP_FLAG_GSF_REM),
@@ -1664,20 +1666,30 @@ static u32 gf_num_props = sizeof(GF_BuiltInProps) / sizeof(GF_BuiltInProperty);
 GF_EXPORT
 u32 gf_props_get_id(const char *name)
 {
-	u32 i, len;
+	u32 i, len, prop_id=0;
 	if (!name) return 0;
 	len = (u32) strlen(name);
+	if (len==4) {
+		prop_id = GF_4CC(name[0], name[1], name[2], name[3]);
+	} else if ((len==3) && !strcmp(name, "PID")) {
+		return GF_PROP_PID_ID;
+	}
+
 	for (i=0; i<gf_num_props; i++) {
-		if (GF_BuiltInProps[i].name) {
+		GF_BuiltInProperty *prop = &GF_BuiltInProps[i];
+		if (prop_id && (prop->type==prop_id))
+			return prop->type;
+
+		if (prop->name) {
 			u32 j;
 			for (j=0; j<=len; j++) {
-				char c = GF_BuiltInProps[i].name[j];
+				char c = prop->name[j];
 				if (!c) break;
 				if (c != name[j])
 					break;
 			}
-			if ((j==len) && !GF_BuiltInProps[i].name[j])
-				return GF_BuiltInProps[i].type;
+			if ((j==len) && !prop->name[j])
+				return prop->type;
 		}
 	}
 	return 0;
@@ -1717,7 +1729,7 @@ u32 gf_props_4cc_get_type(u32 prop_4cc)
 	for (i=0; i<gf_num_props; i++) {
 		if (GF_BuiltInProps[i].type==prop_4cc) return GF_BuiltInProps[i].data_type;
 	}
-	return GF_PROP_FORBIDEN;
+	return GF_PROP_FORBIDDEN;
 }
 
 Bool gf_props_4cc_check_props()
@@ -1736,7 +1748,7 @@ Bool gf_props_4cc_check_props()
 }
 
 GF_EXPORT
-const char *gf_props_dump_val(const GF_PropertyValue *att, char dump[GF_PROP_DUMP_ARG_SIZE], u32 dump_data_flags, const char *min_max_enum)
+const char *gf_props_dump_val(const GF_PropertyValue *att, char dump[GF_PROP_DUMP_ARG_SIZE], GF_PropDumpDataMode dump_data_flags, const char *min_max_enum)
 {
 	switch (att->type) {
 	case GF_PROP_NAME:
@@ -1907,8 +1919,8 @@ const char *gf_props_dump_val(const GF_PropertyValue *att, char dump[GF_PROP_DUM
 		}
 		return dump;
 	}
-	case GF_PROP_FORBIDEN:
-		sprintf(dump, "forbiden");
+	case GF_PROP_FORBIDDEN:
+		sprintf(dump, "forbidden");
 		break;
 	case GF_PROP_LAST_DEFINED:
 		sprintf(dump, "lastDefined");
@@ -1923,7 +1935,7 @@ const char *gf_props_dump_val(const GF_PropertyValue *att, char dump[GF_PROP_DUM
 
 
 GF_EXPORT
-const char *gf_props_dump(u32 p4cc, const GF_PropertyValue *att, char dump[GF_PROP_DUMP_ARG_SIZE], u32 dump_data_mode)
+const char *gf_props_dump(u32 p4cc, const GF_PropertyValue *att, char dump[GF_PROP_DUMP_ARG_SIZE], GF_PropDumpDataMode dump_data_mode)
 {
 	switch (p4cc) {
 	case GF_PROP_PID_STREAM_TYPE:
@@ -2013,4 +2025,3 @@ GF_Err gf_prop_matrix_decompose(const GF_PropertyValue *p, u32 *flip_mode, u32 *
 	}
 	return GF_OK;
 }
-

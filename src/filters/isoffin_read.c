@@ -25,10 +25,17 @@
 
 #include "isoffin.h"
 
-#ifndef GPAC_DISABLE_ISOM
+#if !defined(GPAC_DISABLE_ISOM) && !defined(GPAC_DISABLE_MP4DMX)
 
 #include <gpac/crypt_tools.h>
 #include <gpac/media_tools.h>
+
+enum
+{
+	EDITS_AUTO=0,
+	EDITS_NO,
+	EDITS_STRICT
+};
 
 ISOMChannel *isor_get_channel(ISOMReader *reader, GF_FilterPid *pid)
 {
@@ -725,7 +732,9 @@ ISOMChannel *isor_create_channel(ISOMReader *read, GF_FilterPid *pid, u32 track,
 			ch->nalu_extract_mode = GF_ISOM_NALU_EXTRACT_INBAND_PS_FLAG /*| GF_ISOM_NALU_EXTRACT_ANNEXB_FLAG*/;
 		break;
 	}
-	if (!read->noedit) {
+	if (read->edits==EDITS_NO) {
+		ch->has_edit_list = 0;
+	} else if (read->edits==EDITS_AUTO) {
 		ch->ts_offset = 0;
 		ch->has_edit_list = gf_isom_get_edit_list_type(ch->owner->mov, ch->track, &ch->ts_offset) ? 1 : 0;
 		if (!ch->has_edit_list && ch->ts_offset) {
@@ -733,8 +742,12 @@ ISOMChannel *isor_create_channel(ISOMReader *read, GF_FilterPid *pid, u32 track,
 			//if <0 this is a skip, we signal negative delay
 			gf_filter_pid_set_property(pid, GF_PROP_PID_DELAY, &PROP_LONGSINT( ch->ts_offset) );
 		}
-	} else
-		ch->has_edit_list = 0;
+	} else {
+		if (gf_isom_get_edits_count(ch->owner->mov, ch->track))
+			ch->has_edit_list = 1;
+		else
+			ch->has_edit_list = 0;
+	}
 
 	ch->has_rap = (gf_isom_has_sync_points(ch->owner->mov, ch->track)==1) ? 1 : 0;
 	gf_filter_pid_set_property(pid, GF_PROP_PID_HAS_SYNC, &PROP_BOOL(ch->has_rap) );
@@ -1191,7 +1204,7 @@ static void isoffin_push_buffer(GF_Filter *filter, ISOMReader *read, const u8 *p
 
 	if (read->mem_load_mode==1) {
 		u32 box_type;
-		e = gf_isom_open_progressive_ex(read->mem_url, 0, 0, GF_FALSE, &read->mov, &bytes_missing, &box_type);
+		e = gf_isom_open_progressive_ex(read->mem_url, 0, 0, read->sigfrag, &read->mov, &bytes_missing, &box_type);
 
 		if (e && (e != GF_ISOM_INCOMPLETE_FILE)) {
 			gf_filter_setup_failure(filter, e);
@@ -1223,7 +1236,10 @@ static void isoffin_push_buffer(GF_Filter *filter, ISOMReader *read, const u8 *p
 	}
 	//refresh file
 #ifndef GPAC_DISABLE_ISOM_FRAGMENTS
-	gf_isom_refresh_fragmented(read->mov, &bytes_missing, read->mem_url);
+	e = gf_isom_refresh_fragmented(read->mov, &bytes_missing, read->mem_url);
+	if (e && (e!=GF_ISOM_INCOMPLETE_FILE)) {
+		GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[IsoMedia] Failed to refresh fragmented file after buffer push: %s\n", gf_error_to_string(e)));
+	}
 #endif
 	if ((read->mem_load_mode==2) && bytes_missing)
 		read->force_fetch = GF_TRUE;
@@ -1237,7 +1253,7 @@ static void isoffin_purge_mem(ISOMReader *read, u64 min_offset)
 	u32 nb_bytes_to_purge;
 	u64 bytes_missing;
 
-	//purge every
+	//purge every mstore_purge bytes
 	if (read->mstore_purge && (min_offset - read->last_min_offset < read->mstore_purge))
 		return;
 
@@ -1246,6 +1262,8 @@ static void isoffin_purge_mem(ISOMReader *read, u64 min_offset)
 		//bytes (we would trash the top-level box header)
 		gf_isom_get_current_top_box_offset(read->mov, &top_offset);
 		if (top_offset<min_offset) {
+			//force loading more data - we usually get here when mdat is not completely loaded
+			read->force_fetch = GF_TRUE;
 			return;
 		}
 	}
@@ -1255,7 +1273,10 @@ static void isoffin_purge_mem(ISOMReader *read, u64 min_offset)
 	//min_offset is given in absolute file position
 	nb_bytes_to_purge = (u32) (min_offset - read->bytes_removed);
 	assert(nb_bytes_to_purge<=read->mem_blob.size);
-
+	if (!nb_bytes_to_purge) {
+		read->force_fetch = GF_TRUE;
+		return;
+	}
 	memmove(read->mem_blob.data, read->mem_blob.data+nb_bytes_to_purge, read->mem_blob.size - nb_bytes_to_purge);
 	read->mem_blob.size -= nb_bytes_to_purge;
 	read->bytes_removed += nb_bytes_to_purge;
@@ -1297,6 +1318,7 @@ static GF_Err isoffin_process(GF_Filter *filter)
 	u32 i, count = gf_list_count(read->channels);
 	Bool is_active = GF_FALSE;
 	Bool in_is_eos = GF_FALSE;
+	Bool in_is_flush = GF_FALSE;
 	Bool check_forced_end = GF_FALSE;
 	Bool has_new_data = GF_FALSE;
 	u64 min_offset_plus_one = 0;
@@ -1313,7 +1335,7 @@ static GF_Err isoffin_process(GF_Filter *filter)
 			if (read->moov_not_loaded) return GF_OK;
 		}
 		if (read->mem_load_mode==2) {
-			if (!read->force_fetch && read->mem_blob.size > read->mstore_size) {
+			if (!read->force_fetch && (read->mem_blob.size > read->mstore_size)) {
 				fetch_input = GF_FALSE;
 			}
 			read->force_fetch = GF_FALSE;
@@ -1349,8 +1371,12 @@ static GF_Err isoffin_process(GF_Filter *filter)
 				return read->in_error;
 		}
 		if (gf_filter_pid_is_eos(read->pid)) {
-			read->input_loaded = GF_TRUE;
-			in_is_eos = GF_TRUE;
+			if (!gf_filter_pid_is_flush_eos(read->pid)) {
+				read->input_loaded = GF_TRUE;
+				in_is_eos = GF_TRUE;
+			} else {
+				in_is_flush = GF_TRUE;
+			}
 		}
 		if (read->input_is_stop) {
 			read->input_loaded = GF_TRUE;
@@ -1451,7 +1477,7 @@ static GF_Err isoffin_process(GF_Filter *filter)
 
 		while (nb_pck) {
 			ch->sample_data_offset = 0;
-			if (!read->full_segment_flush && gf_filter_pid_would_block(ch->pid) )
+			if (!in_is_flush && !read->full_segment_flush && gf_filter_pid_would_block(ch->pid) )
 				break;
 
 			if (ch->item_id) {
@@ -1502,7 +1528,11 @@ static GF_Err isoffin_process(GF_Filter *filter)
 					ch->static_sample->alloc_size=0;
 				}
 				else if (read->nodata) {
-					pck = gf_filter_pck_new_shared(ch->pid, NULL, ch->sample->dataLength, NULL);
+					if (read->nodata==1)
+						pck = gf_filter_pck_new_shared(ch->pid, NULL, ch->sample->dataLength, NULL);
+					else
+						pck = gf_filter_pck_new_alloc(ch->pid, ch->sample->dataLength, &data);
+
 					if (!pck) return GF_OUT_OF_MEM;
 				} else {
 					pck = gf_filter_pck_new_alloc(ch->pid, ch->sample->dataLength, &data);
@@ -1596,6 +1626,7 @@ static GF_Err isoffin_process(GF_Filter *filter)
 					}
 				}
 				ch->eos_sent = 0;
+				ch->nb_empty_retry = 0;
 
 				//this might not be the true end of stream
 				if ((ch->streamType==GF_STREAM_AUDIO) && (ch->sample_num == gf_isom_get_sample_count(read->mov, ch->track))) {
@@ -1616,9 +1647,13 @@ static GF_Err isoffin_process(GF_Filter *filter)
 				isor_reader_release_sample(ch);
 
 				ch->last_valid_sample_data_offset = ch->sample_data_offset;
-				nb_pck--;
+				if (!in_is_flush)
+					nb_pck--;
 			} else if (ch->last_state==GF_EOS) {
-				if (ch->playing == 2) {
+				if (in_is_flush) {
+					gf_filter_pid_send_flush(ch->pid);
+				}
+				else if (ch->playing == 2) {
 					if (in_is_eos) {
 						ch->playing = 0;
 					} else {
@@ -1626,6 +1661,7 @@ static GF_Err isoffin_process(GF_Filter *filter)
 						check_forced_end = GF_TRUE;
 					}
 				}
+				ch->nb_empty_retry++;
 				if (in_is_eos && !ch->eos_sent) {
 					void *tfrf;
 					const void *gf_isom_get_tfrf(GF_ISOFile *movie, u32 trackNumber);
@@ -1646,6 +1682,7 @@ static GF_Err isoffin_process(GF_Filter *filter)
 				}
 				break;
 			} else if (ch->last_state==GF_ISOM_INVALID_FILE) {
+				ch->nb_empty_retry++;
 				if (!ch->eos_sent) {
 					ch->eos_sent = 1;
 					read->eos_signaled = GF_TRUE;
@@ -1657,11 +1694,19 @@ static GF_Err isoffin_process(GF_Filter *filter)
 					gf_filter_ask_rt_reschedule(filter, 1);
 
 				read->force_fetch = GF_TRUE;
+				ch->nb_empty_retry++;
 				break;
 			}
 		}
-		if (!min_offset_plus_one || (min_offset_plus_one - 1 > ch->last_valid_sample_data_offset))
+		//if no sample fetched for 100 calls, consider no sample for this track and don't use it for memory purge
+		//this is typically needed when some tracks are declared in fragmented mode but not present in the stream (at all or for a long time):
+		//for these tracks, min_offset_plus_one is always 1 (no samples) or a much smaller value than for active tracks
+		// hence forever growing mem storage until stuck at max size...
+		if ((ch->nb_empty_retry<100)
+			&& (!min_offset_plus_one || (min_offset_plus_one - 1 > ch->last_valid_sample_data_offset))
+		) {
 			min_offset_plus_one = 1 + ch->last_valid_sample_data_offset;
+		}
 	}
 	if (read->mem_load_mode && min_offset_plus_one) {
 		isoffin_purge_mem(read, min_offset_plus_one-1);
@@ -1675,12 +1720,10 @@ static GF_Err isoffin_process(GF_Filter *filter)
 		gf_filter_pid_send_event(read->pid, &evt);
 	}
 
-
 	if (!is_active) {
 		return GF_EOS;
 	}
-	//if (in_is_eos)
-//	gf_filter_ask_rt_reschedule(filter, 1);
+
 	return GF_OK;
 
 }
@@ -1700,7 +1743,10 @@ static const GF_FilterArgs ISOFFInArgs[] =
 {
 	{ OFFS(src), "local file name of source content (only used when explicitly loading the filter)", GF_PROP_NAME, NULL, NULL, GF_FS_ARG_HINT_EXPERT},
 	{ OFFS(allt), "load all tracks even if unknown media type", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_ADVANCED},
-	{ OFFS(noedit), "do not use edit lists", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_ADVANCED},
+	{ OFFS(edits), "do not use edit lists\n"
+		"- auto: track delay and no edit list when possible\n"
+		"- no: ignore edit list\n"
+		"- strict: use edit list even if only signaling a delay", GF_PROP_UINT, "auto", "auto|no|strict", GF_FS_ARG_HINT_ADVANCED},
 	{ OFFS(itt), "convert all items of root meta into a single PID", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_ADVANCED},
 	{ OFFS(itemid), "keep item IDs in PID properties", GF_PROP_BOOL, "true", NULL, GF_FS_ARG_HINT_ADVANCED},
 	{ OFFS(smode), "load mode for scalable/tile tracks\n"
@@ -1728,9 +1774,12 @@ static const GF_FilterArgs ISOFFInArgs[] =
 	{ OFFS(xps_check), "parameter sets extraction mode from AVC/HEVC/VVC samples\n"
 	"- keep: do not inspect sample (assumes input file is compliant when generating DASH/HLS/CMAF)\n"
 	"- rem: removes all inband xPS and notify configuration changes accordingly\n"
-	"- auto: resolves to `keep` for `smode=splix` (dasher mode), `rem` otherwise"
+	"- auto: resolves to `keep` for `smode=splitx` (dasher mode), `rem` otherwise"
 	, GF_PROP_UINT, "auto", "auto|keep|rem", GF_FS_ARG_HINT_EXPERT},
-	{ OFFS(nodata), "do not load sample data", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_EXPERT},
+	{ OFFS(nodata), "control sample data loading\n"
+	"- no: regular load\n"
+	"- yes: skip data loading\n"
+	"- fake: allocate sample but no data copy", GF_PROP_UINT, "no", "no|yes|fake", GF_FS_ARG_HINT_EXPERT},
 	{ OFFS(lightp), "load minimal set of properties", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_EXPERT},
 	{ OFFS(initseg), "local init segment name when input is a single ISOBMFF segment", GF_PROP_STRING, NULL, NULL, GF_FS_ARG_HINT_EXPERT},
 	{0}
@@ -1795,15 +1844,14 @@ GF_FilterRegister ISOFFInRegister = {
 	.probe_data = isoffin_probe_data
 };
 
-
-#endif /*GPAC_DISABLE_ISOM*/
-
 const GF_FilterRegister *mp4dmx_register(GF_FilterSession *session)
 {
-#ifdef GPAC_DISABLE_ISOM
-	return NULL;
-#else
 	return &ISOFFInRegister;
-#endif /*GPAC_DISABLE_ISOM*/
 }
+#else
+const GF_FilterRegister *mp4dmx_register(GF_FilterSession *session)
+{
+	return NULL;
+}
+#endif // !defined(GPAC_DISABLE_ISOM) && !defined(GPAC_DISABLE_MP4DMX)
 

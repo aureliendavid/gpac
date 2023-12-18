@@ -218,7 +218,7 @@ Double interleaving_time, split_duration, split_start, dash_duration, dash_subdu
 
 Bool arg_parse_res, dash_duration_strict, dvbhdemux, keep_sys_tracks, align_cat;
 Bool do_hint, do_save, full_interleave, do_frag, hint_interleave, dump_rtp, regular_iod, remove_sys_tracks, remove_hint, remove_root_od;
-Bool print_sdp, open_edit, dump_cr, force_ocr, encode, do_scene_log, dump_srt, dump_ttxt, do_saf, dump_m2ts, dump_cart, dump_chunk, dump_check_xml;
+Bool print_sdp, open_edit, dump_cr, force_ocr, encode, do_scene_log, dump_srt, dump_ttxt, do_saf, dump_m2ts, dump_cart, dump_chunk, dump_check_xml, fuzz_chk;
 Bool do_hash, verbose, force_cat, pack_wgt, single_group, clean_groups, dash_live, no_fragments_defaults, single_traf_per_moof, tfdt_per_traf;
 Bool hls_clock, do_mpd_rip, merge_vtt_cues, get_nb_tracks, no_inplace, merge_last_seg, freeze_box_order, no_odf_conf;
 Bool insert_utc, chunk_mode, HintCopy, hint_no_offset, do_bin_xml, frag_real_time, force_co64, live_scene, use_mfra, dump_iod, samplegroups_in_traf;
@@ -279,7 +279,7 @@ static void init_global_vars()
 	dash_duration_strict = dvbhdemux = keep_sys_tracks = do_hint = do_save = full_interleave = do_frag = hint_interleave = GF_FALSE;
 	dump_rtp = regular_iod = remove_sys_tracks = remove_hint = remove_root_od = print_sdp = open_edit = GF_FALSE;
 	dump_cr = force_ocr = encode = do_scene_log = dump_srt = dump_ttxt = do_saf = dump_m2ts = dump_cart = dump_chunk = GF_FALSE;
-	dump_check_xml = do_hash = verbose = force_cat = pack_wgt = single_group = clean_groups = dash_live = no_fragments_defaults = GF_FALSE;
+	dump_check_xml = do_hash = verbose = force_cat = pack_wgt = single_group = clean_groups = dash_live = no_fragments_defaults = fuzz_chk = GF_FALSE;
 	single_traf_per_moof = tfdt_per_traf = hls_clock = do_mpd_rip = merge_vtt_cues = get_nb_tracks = GF_FALSE;
 	no_inplace = merge_last_seg = freeze_box_order = no_odf_conf = GF_FALSE;
 	insert_utc = chunk_mode = HintCopy = hint_no_offset = do_bin_xml = frag_real_time = force_co64 = live_scene = GF_FALSE;
@@ -564,7 +564,7 @@ MP4BoxArg m4b_gen_args[] =
 	MP4BOX_ARG("group-rem-track", "remove given track from its group", GF_ARG_INT, GF_ARG_HINT_ADVANCED, parse_tsel_args, TSEL_ACTION_REMOVE_TSEL, ARG_IS_FUN),
 	MP4BOX_ARG("group-rem", "remove the track's group", GF_ARG_INT, GF_ARG_HINT_ADVANCED, parse_tsel_args, TSEL_ACTION_REMOVE_ALL_TSEL_IN_GROUP, ARG_IS_FUN),
 	MP4BOX_ARG("group-clean", "remove all group information from all tracks", GF_ARG_BOOL, GF_ARG_HINT_ADVANCED, &clean_groups, 0, ARG_OPEN_EDIT),
-	MP4BOX_ARG_S("ref", "tkID:XXXX:refID", "add a reference of type 4CC from track ID to track refID", GF_ARG_HINT_ADVANCED, parse_track_action, TRACK_ACTION_REFERENCE, ARG_IS_FUN),
+	MP4BOX_ARG_S("ref", "tkID:R4CC:refID", "add a reference of type R4CC from track ID to track refID (remove track reference if refID is 0)", GF_ARG_HINT_ADVANCED, parse_track_action, TRACK_ACTION_REFERENCE, ARG_IS_FUN),
 	MP4BOX_ARG("keep-utc", "keep UTC timing in the file after edit", GF_ARG_BOOL, GF_ARG_HINT_ADVANCED, &keep_utc, 0, 0),
 	MP4BOX_ARG_S("udta", "tkID:[OPTS]", "set udta for given track or movie if tkID is 0. OPTS is a colon separated list of:\n"
 	        "- type=CODE: 4CC code of the UDTA (not needed for `box=` option)\n"
@@ -616,7 +616,7 @@ void PrintGeneralUsage()
 		"- `audioN`, `videoN`, `textN`: target is the `N`th `audio`, `video` or `text` track, with `N=1` being the first track of desired type\n"
 		"  \n"
 		"Option values:\n"
-		"Unless specified otherwise, a track operation option of type `integer` expects a track identifer value following it.\n"
+		"Unless specified otherwise, a track operation option of type `integer` expects a track identifier value following it.\n"
 		"An option of type `boolean` expects no following value.\n"
 		"  \n"
 	);
@@ -683,7 +683,7 @@ static void PrintSplitUsage()
 		"  \n"
 		"The default output storage mode is to full interleave and will require a temp file for each output. This behavior can be modified using `-flat`, `-newfs`, `-inter` and `-frag`.\n"
 		"The output file name(s) can be specified using `-out` and templates (e.g. `-out split$num%%04d$.mp4` produces split0001.mp4, split0002.mp4, ...).\n"
-		"Multiple time ranges can be specified as a comma-seperated list for `-splitx`, `-splitz` and `-splitg`.\n"
+		"Multiple time ranges can be specified as a comma-separated list for `-splitx`, `-splitz` and `-splitg`.\n"
 		"  \n"
 	);
 
@@ -955,7 +955,7 @@ static MP4BoxArg m4b_imp_fileopt_args [] = {
 	GF_DEF_ARG("dlba", NULL, "`S` force DolbyAtmos mode for EAC3. Value can be\n"
 		"- no: disable Atmos signaling\n"
 		"- auto: use Atmos signaling from first sample\n"
-		"- N: force Atmos signaling using complexibility type index N", NULL, NULL, GF_ARG_STRING, 0),
+		"- N: force Atmos signaling using compatibility type index N", NULL, NULL, GF_ARG_STRING, 0),
 	GF_DEF_ARG("font", NULL, "specify font name for text import (default `Serif`)", NULL, NULL, GF_ARG_STRING, 0),
 	GF_DEF_ARG("size", NULL, "specify font size for text import (default `18`)", NULL, NULL, GF_ARG_INT, 0),
 	GF_DEF_ARG("text_layout", NULL, "specify the track text layout as WxHxXxY\n"
@@ -1010,7 +1010,7 @@ static MP4BoxArg m4b_imp_fileopt_args [] = {
 		"  - other value will try to set track ID to this value if no other track with same ID is present"
 		"", NULL, NULL, GF_ARG_INT, 0),
 	GF_DEF_ARG("tkgp", NULL, "`S` assign track group to track. Value is formatted as `TYPE,N` with TYPE the track group type (4CC) and N the track group ID. A negative ID removes from track group ID -N", NULL, NULL, GF_ARG_STRING, 0),
-	GF_DEF_ARG("tkidx", NULL, "`S` set track position in tracklist, 1 being first track in file", NULL, NULL, GF_ARG_STRING, 0),
+	GF_DEF_ARG("tkidx", NULL, "`S` set track position in track list, 1 being first track in file", NULL, NULL, GF_ARG_STRING, 0),
 	GF_DEF_ARG("stats", "fstat", "`C` print filter session stats after import", NULL, NULL, GF_ARG_BOOL, 0),
 	GF_DEF_ARG("graph", "fgraph", "`C` print filter session graph after import", NULL, NULL, GF_ARG_BOOL, 0),
 	{"sopt:[OPTS]", NULL, "set `OPTS` as additional arguments to source filter. `OPTS` can be any usual filter argument, see [filter doc `gpac -h doc`](Filters)"},
@@ -1324,6 +1324,7 @@ MP4BoxArg m4b_dump_args[] =
  	MP4BOX_ARG("wget", "fetch resource from http(s) URL", GF_ARG_STRING, GF_FS_ARG_HINT_EXPERT, &do_wget, 0, 0),
  	MP4BOX_ARG("dm2ts", "dump timing of an input MPEG-2 TS stream sample timing", GF_ARG_BOOL, 0, &dump_m2ts, 0, 0),
  	MP4BOX_ARG("check-xml", "check XML output format for -dnal*, -diso* and -dxml options", GF_ARG_BOOL, 0, &dump_check_xml, 0, 0),
+ 	MP4BOX_ARG("fuzz-chk", "open file without probing and exit (for fuzz tests)", GF_ARG_BOOL, GF_FS_ARG_HINT_EXPERT, &fuzz_chk, 0, 0),
  	{0}
 };
 
@@ -1528,7 +1529,7 @@ void PrintTags()
 	"- `tag_name` starts with `QT/`\n"
 	"- or `tag_name` is not recognized and longer than 4 characters\n"
 	"  \n"
-	"The `tag_name` can optionnally be prefixed with `HDLR@`, indicating the tag namespace 4CC, the default namespace being `mdta`.\n"
+	"The `tag_name` can optionally be prefixed with `HDLR@`, indicating the tag namespace 4CC, the default namespace being `mdta`.\n"
 	"The `tag_value` can be prefixed with:\n"
 	"- S: force string encoding (must be placed first) instead of parsing the tag value\n"
 	"- b: use 8-bit encoding for signed or unsigned int\n"
@@ -1666,6 +1667,11 @@ void PrintUsage()
 		i++;
 		gf_sys_print_arg(helpout, help_flags, arg, "mp4box-general");
 	}
+	gf_sys_format_help(helpout, help_flags, "\nReturn codes are 0 for no error, 1 for error"
+#ifdef GPAC_MEMORY_TRACKING
+		" and 2 for memory leak detection when -mem-track is used"
+#endif
+		"\n");
 }
 
 /*
@@ -2351,11 +2357,11 @@ GF_DashSegmenterInput *set_dash_input(GF_DashSegmenterInput *dash_inputs, char *
 					nb_descs = &di->nb_as_descs;
 					descs = &di->as_descs;
 					opt_offset = 8;
-				} else if (!strnicmp(opts, "desc_as_c=", 8)) {
+				} else if (!strnicmp(opts, "desc_as_c=", 10)) {
 					nb_descs = &di->nb_as_c_descs;
 					descs = &di->as_c_descs;
 					opt_offset = 10;
-				} else if (!strnicmp(opts, "desc_rep=", 8)) {
+				} else if (!strnicmp(opts, "desc_rep=", 9)) {
 					nb_descs = &di->nb_rep_descs;
 					descs = &di->rep_descs;
 					opt_offset = 9;
@@ -2508,7 +2514,8 @@ static Bool create_new_track_action(char *arg_val, u32 act_type, u32 dump_type)
 		ext[0] = '=';
 		if (!stricmp(ext + 1, "none")) {
 			memset(tka->mx, 0, sizeof(s32)*9);
-			tka->mx[0] = tka->mx[4] = tka->mx[8] = 1;
+			tka->mx[0] = tka->mx[4] = 0x00010000;
+			tka->mx[8] = 0x40000000;
 		} else {
 			s32 res;
 			if (strstr(ext+1, "0x")) {
@@ -5594,7 +5601,10 @@ static GF_Err do_track_act()
 			}
 			break;
 		case TRACK_ACTION_REFERENCE:
-			e = gf_isom_set_track_reference(file, track, GF_4CC(tka->lang[0], tka->lang[1], tka->lang[2], tka->lang[3]), newTrackID);
+			if (newTrackID)
+				e = gf_isom_set_track_reference(file, track, GF_4CC(tka->lang[0], tka->lang[1], tka->lang[2], tka->lang[3]), newTrackID);
+			else
+				e = gf_isom_remove_track_reference(file, track, GF_4CC(tka->lang[0], tka->lang[1], tka->lang[2], tka->lang[3]) );
 			do_save = GF_TRUE;
 			break;
 		case TRACK_ACTION_REM_NON_RAP:
@@ -6106,6 +6116,16 @@ int mp4box_main(int argc, char **argv)
 	if (mem_track)
 		gf_log_set_tool_level(GF_LOG_MEMORY, level);
 #endif
+
+	if (fuzz_chk) {
+		file = gf_isom_open(inName, GF_ISOM_OPEN_READ_DUMP, NULL);
+		if (file) gf_isom_close(file);
+		file = gf_isom_open(inName, GF_ISOM_OPEN_READ, NULL);
+		if (file) gf_isom_close(file);
+		file = gf_isom_open(inName, GF_ISOM_OPEN_KEEP_FRAGMENTS, NULL);
+		if (file) gf_isom_close(file);
+		return 0;
+	}
 
 	e = gf_sys_set_args(argc, (const char **) argv);
 	if (e) {

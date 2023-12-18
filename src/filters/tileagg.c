@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2017-2022
+ *			Copyright (c) Telecom ParisTech 2017-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / tile aggregrator filter
@@ -29,6 +29,7 @@
 #include <gpac/constants.h>
 #include <gpac/media_tools.h>
 
+#ifndef GPAC_DISABLE_TILEAGG
 
 typedef struct
 {
@@ -46,7 +47,7 @@ typedef struct
 	GF_FilterPid *opid;
 	GF_FilterPid *base_ipid;
 	u32 nalu_size_length;
-	u32 base_id;
+	u32 base_id, dash_grp_id;
 	GF_List *ipids;
 
 	GF_BitStream *bs_r;
@@ -71,6 +72,7 @@ typedef struct
 static GF_Err tileagg_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is_remove)
 {
 	u32 codec_id=0;
+	u32 dash_grp_id=0;
 	const GF_PropertyValue *p;
 	GF_TileAggInput *pctx;
 
@@ -99,6 +101,9 @@ static GF_Err tileagg_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool i
 	if (codec_id==GF_CODECID_HEVC) is_base_codec_type = GF_TRUE;
 	else if (codec_id==GF_CODECID_VVC) is_base_codec_type = GF_TRUE;
 
+	p = gf_filter_pid_get_property(pid, GF_PROP_PID_DASH_DEP_GROUP);
+	if (p) dash_grp_id = p->value.uint;
+
 	//a single base is allowed per instance
 	if (is_base_codec_type && ctx->base_ipid && (ctx->base_ipid != pid))
 		return GF_REQUIRES_NEW_INSTANCE;
@@ -109,6 +114,9 @@ static GF_Err tileagg_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool i
 		if (!p) TILEAGG_CFG_ERR("missing PID ID")
 
 		if (ctx->base_id != p->value.uint)
+			return GF_REQUIRES_NEW_INSTANCE;
+
+		if (ctx->dash_grp_id != dash_grp_id)
 			return GF_REQUIRES_NEW_INSTANCE;
 
 		ctx->base_ipid = pid;
@@ -122,6 +130,9 @@ static GF_Err tileagg_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool i
 		if (!p) TILEAGG_CFG_ERR("missing PID DependencyID")
 
 		if (ctx->base_id != p->value.uint)
+			return GF_REQUIRES_NEW_INSTANCE;
+
+		if (ctx->dash_grp_id != dash_grp_id)
 			return GF_REQUIRES_NEW_INSTANCE;
 	}
 
@@ -170,6 +181,7 @@ static GF_Err tileagg_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool i
 		p = gf_filter_pid_get_property(pid, GF_PROP_PID_ID);
 		if (!p) TILEAGG_CFG_ERR("missing PID ID, base PID assigned")
 		ctx->base_id = p->value.uint;
+		ctx->dash_grp_id = dash_grp_id;
 
 	} else {
 		u32 base_id;
@@ -182,6 +194,7 @@ static GF_Err tileagg_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool i
 
 		if (!ctx->base_ipid) {
 			ctx->base_id = base_id;
+			ctx->dash_grp_id = dash_grp_id;
 		}
 		//we already checked the same base ID is used
 	}
@@ -482,13 +495,16 @@ static Bool tileagg_process_event(GF_Filter *filter, const GF_FilterEvent *evt)
 		return GF_FALSE;
 	case GF_FEVT_STOP:
 	{
+		ctx->is_playing = GF_FALSE;
+		if (evt->play.initial_broadcast_play==2)
+			return GF_FALSE;
+
 		u32 i, count = gf_filter_get_ipid_count(filter);
 		for (i=0; i<count; i++) {
 			GF_FilterPid *pid = gf_filter_get_ipid(filter, i);
 			gf_filter_pid_set_discard(pid, GF_FALSE);
 		}
 	}
-		ctx->is_playing = GF_FALSE;
 		return GF_FALSE;
 	case GF_FEVT_PLAY_HINT:
 		if (evt->play.forced_dash_segment_switch) {
@@ -573,5 +589,11 @@ const GF_FilterRegister *tileagg_register(GF_FilterSession *session)
 {
 	return &TileAggRegister;
 }
+#else
+const GF_FilterRegister *tileagg_register(GF_FilterSession *session)
+{
+	return NULL;
+}
+#endif //#ifndef GPAC_DISABLE_TILEAGG
 
 

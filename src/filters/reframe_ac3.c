@@ -27,7 +27,7 @@
 #include <gpac/constants.h>
 #include <gpac/filters.h>
 
-#ifndef GPAC_DISABLE_AV_PARSERS
+#if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_RFAC3)
 
 typedef struct
 {
@@ -342,7 +342,7 @@ GF_Err ac3dmx_process(GF_Filter *filter)
 	u8 *start;
 	u32 pck_size, remain, prev_pck_size;
 	u64 cts;
-	
+
 restart:
 	cts = GF_FILTER_NO_TS;
 
@@ -450,6 +450,9 @@ restart:
 			}
 			ac3dmx_check_pid(filter, ctx);
 		}
+		//may happen with very-short streams
+		if (!ctx->sample_rate)
+			ac3dmx_check_pid(filter, ctx);
 
 		if (!ctx->is_playing) {
 			ctx->resume_from = 1 + ctx->ac3_buffer_size - remain;
@@ -477,12 +480,11 @@ restart:
 			cts = GF_FILTER_NO_TS;
 		}
 
-		if (!ctx->in_seek) {
+		if (!ctx->in_seek && remain >= sync_pos + ctx->hdr.framesize) {
 			dst_pck = gf_filter_pck_new_alloc(ctx->opid, ctx->hdr.framesize, &output);
 			if (!dst_pck) return GF_OUT_OF_MEM;
-			
-			if (ctx->src_pck) gf_filter_pck_merge_properties(ctx->src_pck, dst_pck);
 
+			if (ctx->src_pck) gf_filter_pck_merge_properties(ctx->src_pck, dst_pck);
 			memcpy(output, sync, ctx->hdr.framesize);
 			gf_filter_pck_set_dts(dst_pck, ctx->cts);
 			gf_filter_pck_set_cts(dst_pck, ctx->cts);
@@ -677,11 +679,9 @@ const GF_FilterRegister *rfac3_register(GF_FilterSession *session)
 {
 	return &AC3DmxRegister;
 }
-
 #else
-
 const GF_FilterRegister *rfac3_register(GF_FilterSession *session)
 {
 	return NULL;
 }
-#endif // GPAC_DISABLE_AV_PARSERS
+#endif // !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_RFAC3)

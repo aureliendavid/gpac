@@ -128,6 +128,7 @@ static GF_Err ffmx_init_mux(GF_Filter *filter, GF_FFMuxCtx *ctx)
 	assert(ctx->status==FFMX_STATE_AVIO_OPEN);
 
 	ctx->status = FFMX_STATE_HDR_DONE;
+	ctx->probe_init = 0;
 
 	AVDictionary *options = NULL;
 	av_dict_copy(&options, ctx->options, 0);
@@ -544,7 +545,7 @@ static GF_Err ffmx_close_seg(GF_Filter *filter, GF_FFMuxCtx *ctx, Bool send_evt_
 		evt.seg_size.is_init = 0;
 	}
 	evt.seg_size.media_range_start = ctx->offset_at_seg_start;
-#if LIBAVFORMAT_VERSION_MAJOR < 60
+#if LIBAVFORMAT_VERSION_MAJOR < 59
 	evt.seg_size.media_range_end = ctx->muxer->pb ? (ctx->muxer->pb->written-1) : 0;
 #else
 	evt.seg_size.media_range_end = ctx->muxer->pb ? (ctx->muxer->pb->bytes_written-1) : 0;
@@ -760,7 +761,7 @@ static GF_Err ffmx_process(GF_Filter *filter)
 			AVPacket *pkt;
 			GF_FilterPacket *ipck = gf_filter_pid_get_packet(ipid);
 			if (!ipck) {
-				if (gf_filter_pid_is_eos(ipid)) {
+				if (gf_filter_pid_is_eos(ipid) && !gf_filter_pid_is_flush_eos(ipid)) {
 					nb_done++;
 				}
 				break;
@@ -1307,7 +1308,7 @@ static GF_Err ffmx_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is_r
 		AVContentLightMetadata *data = av_malloc(sizeof(AVContentLightMetadata));
 		if (data) {
 			data->MaxCLL = gf_bs_read_u16(bs);
-			data->MaxFALL = gf_bs_read_u16(bs);;
+			data->MaxFALL = gf_bs_read_u16(bs);
 			av_stream_add_side_data(st->stream, AV_PKT_DATA_CONTENT_LIGHT_LEVEL, (u8*) data, sizeof(AVContentLightMetadata));
 		}
 		gf_bs_del(bs);
@@ -1367,10 +1368,16 @@ static GF_Err ffmx_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool is_r
 #endif
 
 	p = gf_filter_pid_get_property(pid, GF_PROP_PID_DASH_MODE);
-	if (p && (p->value.uint==1)) {
-		ctx->dash_mode = GF_TRUE;
+	if (p) {
+		if (p->value.uint==2) {
+			GF_LOG(GF_LOG_ERROR, GF_LOG_CONTAINER, ("[FFMux] DASH/M3U8 muxing in single file is not supported\n"));
+			return GF_NOT_SUPPORTED;
+		}
+		if (p->value.uint==1) {
+			ctx->dash_mode = GF_TRUE;
+			ctx->ileave.num = 0;
+		}
 	}
-
 
 	gf_filter_pid_set_framing_mode(pid, GF_TRUE);
 	return GF_OK;
@@ -1458,7 +1465,7 @@ static const GF_FilterCapability FFMuxCaps[] =
 	CAP_UINT(GF_CAPS_INPUT, GF_PROP_PID_CODECID, GF_CODECID_SIMPLE_TEXT),
 	CAP_UINT(GF_CAPS_INPUT, GF_PROP_PID_CODECID, GF_CODECID_SUBS_TEXT),
 	{0},
-	//these  ones are framed (DVB subs, simple text)
+	//these ones are framed (DVB subs, simple text)
 	CAP_UINT(GF_CAPS_INPUT, GF_PROP_PID_STREAM_TYPE, GF_STREAM_TEXT),
 	CAP_BOOL(GF_CAPS_INPUT_EXCLUDED, GF_PROP_PID_UNFRAMED, GF_TRUE),
 	CAP_UINT(GF_CAPS_INPUT, GF_PROP_PID_CODECID, GF_CODECID_SIMPLE_TEXT),

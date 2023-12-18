@@ -105,6 +105,9 @@ static void swf_init_decompress(SWFReader *read)
 		return;
 	}
 	dst_size = read->length;
+	if (dst_size < 8) {
+		return;
+	}
 	src = gf_malloc(sizeof(char)*size);
 	dst = gf_malloc(sizeof(char)*dst_size);
 	memset(dst, 0, sizeof(char)*8);
@@ -182,37 +185,17 @@ static void swf_get_rec(SWFReader *read, SWFRec *rc)
 
 static u32 swf_get_32(SWFReader *read)
 {
-	u32 val, res;
-	val = swf_read_int(read, 32);
-	res = (val&0xFF);
-	res <<=8;
-	res |= ((val>>8)&0xFF);
-	res<<=8;
-	res |= ((val>>16)&0xFF);
-	res<<=8;
-	res|= ((val>>24)&0xFF);
-	return res;
+	return gf_bs_read_u32_le(read->bs);
 }
 
 static u16 swf_get_16(SWFReader *read)
 {
-	u16 val, res;
-	val = swf_read_int(read, 16);
-	res = (val&0xFF);
-	res <<=8;
-	res |= ((val>>8)&0xFF);
-	return res;
+	return gf_bs_read_u16_le(read->bs);
 }
 
 static s16 swf_get_s16(SWFReader *read)
 {
-	s16 val;
-	u8 v1;
-	v1 = swf_read_int(read, 8);
-	val = swf_read_sint(read, 8);
-	val = (val<<8)&0xFF00;
-	val |= (v1&0xFF);
-	return val;
+	return (s16) gf_bs_read_u16_le(read->bs);
 }
 
 static u32 swf_get_color(SWFReader *read)
@@ -339,6 +322,7 @@ static char *swf_get_string(SWFReader *read)
 	while (1) {
 		if (i>=read->size) {
 			read->ioerr = GF_NON_COMPLIANT_BITSTREAM;
+			name[read->size-1] = 0;
 			break;
 		}
 		name[i] = swf_read_int(read, 8);
@@ -1438,7 +1422,7 @@ static GF_Err swf_def_font(SWFReader *read, u32 revision)
 	ft->glyphs = gf_list_new();
 	ft->fontID = swf_get_16(read);
 	e = GF_OK;
-
+	gf_list_add(read->fonts, ft);
 
 	if (revision==0) {
 		start = swf_get_file_pos(read);
@@ -1446,7 +1430,7 @@ static GF_Err swf_def_font(SWFReader *read, u32 revision)
 		count = swf_get_16(read);
 		ft->nbGlyphs = count / 2;
 		offset_table = (u32*)gf_malloc(sizeof(u32) * ft->nbGlyphs);
-		offset_table[0] = 0;
+		if (ft->nbGlyphs) offset_table[0] = 0;
 		for (i=1; i<ft->nbGlyphs; i++) offset_table[i] = swf_get_16(read);
 
 		for (i=0; i<ft->nbGlyphs; i++) {
@@ -1538,8 +1522,6 @@ static GF_Err swf_def_font(SWFReader *read, u32 revision)
 			}
 		}
 	}
-
-	gf_list_add(read->fonts, ft);
 	return GF_OK;
 }
 
@@ -1773,13 +1755,6 @@ static GF_Err swf_def_sprite(SWFReader *read)
 	read->display_list = gf_list_new();
 
 	e = read->define_sprite(read, frame_count);
-	if (e) return e;
-
-	/*close sprite soundStream*/
-	swf_delete_sound_stream(read);
-	/*restore sound stream*/
-	read->sound_stream = snd;
-	read->max_depth = prev_depth;
 
 	while (gf_list_count(read->display_list)) {
 		DispShape *s = (DispShape *)gf_list_get(read->display_list, 0);
@@ -1788,6 +1763,13 @@ static GF_Err swf_def_sprite(SWFReader *read)
 	}
 	gf_list_del(read->display_list);
 	read->display_list = prev_dlist;
+
+	if (e) return e;
+
+	/*close sprite soundStream*/
+	/*restore sound stream*/
+	read->sound_stream = snd;
+	read->max_depth = prev_depth;
 
 	read->current_frame = prev_frame;
 	read->current_sprite_id = prev_sprite;
@@ -2101,7 +2083,7 @@ static GF_Err swf_def_bits_jpeg(SWFReader *read, u32 version)
 	if (version!=3)
 		file = gf_fopen(szName, "wb");
 
-	if (version==1 && read->jpeg_hdr_size) {
+	if (version==1 && read->jpeg_hdr_size >= 2) {
 		/*remove JPEG EOI*/
 		if (gf_fwrite(read->jpeg_hdr, read->jpeg_hdr_size-2, file)!=read->jpeg_hdr_size-2)
 			return GF_IO_ERR;
@@ -2147,6 +2129,7 @@ static GF_Err swf_def_bits_jpeg(SWFReader *read, u32 version)
 		char *dst, *raw;
 		u32 codecid;
 		u32 osize, w, h, j, pf;
+		uLongf destLen;
 		GF_BitStream *bs;
 
 		/*decompress jpeg*/
@@ -2172,9 +2155,10 @@ static GF_Err swf_def_bits_jpeg(SWFReader *read, u32 version)
 
 		osize = w*h;
 		dst = gf_malloc(sizeof(char)*osize);
-		uncompress((Bytef *) dst, (uLongf *) &osize, buf, AlphaPlaneSize);
+		destLen = (uLongf)osize;
+		uncompress((Bytef *) dst, &destLen, buf, AlphaPlaneSize);
 		/*write alpha channel*/
-		for (j=0; j<osize; j++) {
+		for (j=0; j<(u32)destLen; j++) {
 			raw[4*j + 3] = dst[j];
 		}
 		gf_free(dst);
@@ -2188,7 +2172,7 @@ static GF_Err swf_def_bits_jpeg(SWFReader *read, u32 version)
 
 		osize = w*h*4;
 		buf = gf_realloc(buf, sizeof(char)*osize);
-		gf_img_png_enc(raw, w, h, h*4, GF_PIXEL_RGBA, (char *)buf, &osize);
+		gf_img_png_enc(raw, w, h, w*4, GF_PIXEL_RGBA, (char *)buf, &osize);
 
 		file = gf_fopen(szName, "wb");
 		if (gf_fwrite(buf, osize, file)!=osize) e = GF_IO_ERR;
@@ -2642,6 +2626,7 @@ GF_Err gf_swf_read_header(SWFReader *read)
 	read->frame_rate = swf_get_16(read)>>8;
 	read->frame_count = swf_get_16(read);
 	GF_LOG(GF_LOG_INFO, GF_LOG_PARSER, ("SWF Import - Scene Size %gx%g - %d frames @ %d FPS\n", read->width, read->height, read->frame_count, read->frame_rate));
+	if (!read->frame_rate) read->frame_rate = 1;
 	return GF_OK;
 }
 
@@ -2670,6 +2655,11 @@ GF_Err gf_sm_load_init_swf(GF_SceneLoader *load)
 #endif
 
 	read = gf_swf_reader_new(load->localPath, load->fileName);
+	if (!read) {
+		GF_LOG(GF_LOG_ERROR, GF_LOG_PARSER, ("SWF Loader - Error opening file %s\n", load->fileName));
+		e = GF_IO_ERR;
+		goto exit;
+	}
 	read->load = load;
 	read->flags = load->swf_import_flags;
 	read->flat_limit = FLT2FIX(load->swf_flatten_limit);

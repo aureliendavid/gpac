@@ -462,8 +462,14 @@ restart:
 		if (!ctx->strbuf_size) return GF_OK;
 	}
 
-	if (!ctx->nb_playing)
+	if (!ctx->nb_playing) {
+		if (ctx->stop_seen) {
+			for (i=0; i<ctx->nb_streams; i++) {
+				if (ctx->pids_ctx[i].pid) gf_filter_pid_set_eos(ctx->pids_ctx[i].pid);
+			}
+		}
 		return GF_EOS;
+	}
 
 	if (ctx->raw_pck_out)
 		return GF_EOS;
@@ -1029,10 +1035,6 @@ GF_Err ffdmx_init_common(GF_Filter *filter, GF_FFDemuxCtx *ctx, u32 grab_type)
 		gf_filter_pid_set_property(pid, GF_PROP_PID_ID, &PROP_UINT( (stream->id ? stream->id : i+1)) );
 		gf_filter_pid_set_name(pid, szName);
 
-#if (LIBAVFORMAT_VERSION_MAJOR >= 59)
-		ffmpeg_codec_par_to_gpac(stream->codecpar, pid, 0);
-#endif
-
 		if (ctx->raw_data && ctx->sclock) {
 			gf_filter_pid_set_property(pid, GF_PROP_PID_TIMESCALE, &PROP_UINT(1000000) );
 		} else {
@@ -1142,6 +1144,15 @@ GF_Err ffdmx_init_common(GF_Filter *filter, GF_FFDemuxCtx *ctx, u32 grab_type)
 		if (codec_height)
 			gf_filter_pid_set_property(pid, GF_PROP_PID_HEIGHT, &PROP_UINT( codec_height ) );
 
+
+#if (LIBAVFORMAT_VERSION_MAJOR >= 59)
+		ffmpeg_codec_par_to_gpac(stream->codecpar, pid, 0);
+		if (gpac_codec_id!=GF_CODECID_RAW) {
+			gf_filter_pid_set_property(pid, GF_PROP_PID_PIXFMT, NULL);
+			gf_filter_pid_set_property(pid, GF_PROP_PID_AUDIO_FORMAT, NULL);
+		}
+#endif
+
 		if (codec_width && codec_height) {
 			if (codec_framerate.num && codec_framerate.den) {
 				gf_media_get_reduced_frame_rate(&codec_framerate.num, &codec_framerate.den);
@@ -1226,7 +1237,7 @@ GF_Err ffdmx_init_common(GF_Filter *filter, GF_FFDemuxCtx *ctx, u32 grab_type)
 		gf_filter_pid_set_property(pid, GF_PROP_PID_MUX_INDEX, &PROP_UINT(i+1));
 
 		for (j=0; j<(u32) stream->nb_side_data; j++) {
-			ffdmx_parse_side_data(&stream->side_data[i], pid);
+			ffdmx_parse_side_data(&stream->side_data[j], pid);
 		}
 
 		if (ctx->demuxer->nb_chapters) {
@@ -1652,7 +1663,7 @@ static GF_FilterProbeScore ffdmx_probe_url(const char *url, const char *mime)
 	return GF_FPROBE_MAYBE_SUPPORTED;
 }
 
-
+extern Bool ff_probe_mode;
 static const char *ffdmx_probe_data(const u8 *data, u32 size, GF_FilterProbeScore *score)
 {
 	int ffscore;
@@ -1664,6 +1675,7 @@ static const char *ffdmx_probe_data(const u8 *data, u32 size, GF_FilterProbeScor
 #endif
 
 	memset(&pb, 0, sizeof(AVProbeData));
+	ff_probe_mode=GF_TRUE;
 	//not setting this crashes some probers in ffmpeg
 	pb.filename = "";
 	if (size <= AVPROBE_PADDING_SIZE) {
@@ -1684,6 +1696,7 @@ static const char *ffdmx_probe_data(const u8 *data, u32 size, GF_FilterProbeScor
 		if (!probe_fmt) probe_fmt = av_probe_input_format3(&pb, GF_FALSE, &ffscore);
 		if (ffscore<=AVPROBE_SCORE_RETRY/2) probe_fmt=NULL;
 	}
+	ff_probe_mode=GF_FALSE;
 
 	if (!probe_fmt) return NULL;
 	if (probe_fmt->mime_type) {
@@ -1785,7 +1798,16 @@ static const GF_FilterArgs FFDemuxPidArgs[] =
 	{0}
 };
 
+static void ffdmxpid_finalize(GF_Filter *filter)
+{
+	GF_FFDemuxCtx *ctx = gf_filter_get_udta(filter);
+	if (ctx->src) {
+		gf_free((char *)ctx->src);
+		ctx->src = NULL;
+	}
+	ffdmx_finalize(filter);
 
+}
 const GF_FilterRegister FFDemuxPidRegister = {
 	.name = "ffdmxpid",
 	.version=LIBAVFORMAT_IDENT,
@@ -1794,7 +1816,7 @@ const GF_FilterRegister FFDemuxPidRegister = {
 	.private_size = sizeof(GF_FFDemuxCtx),
 	SETCAPS(FFPidDmxCaps),
 	.initialize = ffdmx_initialize,
-	.finalize = ffdmx_finalize,
+	.finalize = ffdmxpid_finalize,
 	.configure_pid = ffdmx_configure_pid,
 	.process = ffdmx_process,
 	.update_arg = ffdmx_update_arg,

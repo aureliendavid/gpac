@@ -27,7 +27,7 @@
 #include <gpac/constants.h>
 #include <gpac/filters.h>
 
-#if !defined(GPAC_DISABLE_AV_PARSERS)
+#if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_RFMHAS)
 
 
 static u32 USACSampleRates[] = {96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350, 0, 0,
@@ -542,7 +542,7 @@ GF_Err mhas_dmx_process(GF_Filter *filter)
 			remain=0;
 			break;
 		}
-		if ((hdr_start[1]==0x01) && (hdr_start[2]==0xA5)) {
+		if ( (u32)(hdr_start-start)+3 <= remain  && (hdr_start[1]==0x01) && (hdr_start[2]==0xA5)) {
 			GF_LOG(GF_LOG_DEBUG, GF_LOG_MEDIA, ("[MHASDmx] Sync found !\n"));
 			ctx->nosync = GF_FALSE;
 			break;
@@ -638,10 +638,11 @@ GF_Err mhas_dmx_process(GF_Filter *filter)
 				numSpeakers = (s32) gf_mpegh_escaped_value(ctx->bs, 5, 8, 16) + 1;
 				//TODO ...
 			}
+			if (sr) {
+				mhas_dmx_check_pid(filter, ctx, pl, sr, frame_len, CICPspeakerLayoutIdx, numSpeakers, start + pay_start, (u32) mhas_size);
 
-			mhas_dmx_check_pid(filter, ctx, pl, sr, frame_len, CICPspeakerLayoutIdx, numSpeakers, start + pay_start, (u32) mhas_size);
-
-			has_cfg = GF_TRUE;
+				has_cfg = GF_TRUE;
+			}
 		}
 		//audio truncation
 		else if (mhas_type==17) {
@@ -917,11 +918,9 @@ const GF_FilterRegister *rfmhas_register(GF_FilterSession *session)
 {
 	return &MHASDmxRegister;
 }
-
 #else
-
 const GF_FilterRegister *rfmhas_register(GF_FilterSession *session)
 {
 	return NULL;
 }
-#endif //#if !defined(GPAC_DISABLE_AV_PARSERS)
+#endif //#if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_RFMHAS)

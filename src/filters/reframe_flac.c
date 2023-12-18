@@ -27,6 +27,7 @@
 #include <gpac/constants.h>
 #include <gpac/filters.h>
 
+#ifndef GPAC_DISABLE_RFFLAC
 typedef struct
 {
 	u64 pos;
@@ -843,7 +844,7 @@ GF_FilterRegister FLACDmxRegister = {
 	GF_FS_SET_HELP("This filter parses FLAC files/data and outputs corresponding audio PID and frames.\n"
 	"\n"
 	"By default the reframer will only check CRC footer of frames if a change in sample rate or channel mapping is detected.\n"
-	"This should accomodate for most configurations, but CRC check can be enforced using [-docrc]().\n"
+	"This should accommodate for most configurations, but CRC check can be enforced using [-docrc]().\n"
 	"")
 	.private_size = sizeof(GF_FLACDmxCtx),
 	.args = FLACDmxArgs,
@@ -871,3 +872,10 @@ const GF_FilterRegister *rfflac_register(GF_FilterSession *session)
 
 	return &FLACDmxRegister;
 }
+#else
+const GF_FilterRegister *rfflac_register(GF_FilterSession *session)
+{
+	return NULL;
+}
+#endif // GPAC_DISABLE_RFFLAC
+

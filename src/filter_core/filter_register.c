@@ -190,6 +190,8 @@ REG_DEC(unframer)
 REG_DEC(writeuf)
 REG_DEC(ghidmx)
 REG_DEC(evgs)
+REG_DEC(ccdec)
+REG_DEC(mpeghdec)
 
 typedef const GF_FilterRegister *(*filter_reg_fun)(GF_FilterSession *session);
 
@@ -322,6 +324,7 @@ BuiltinReg BuiltinFilters [] = {
 	REG_IT(rfsrt),
 	REG_IT(ttml2vtt),
 	REG_IT(ttml2srt),
+	REG_IT(mpeghdec),
 
 	REG_IT(ffdmx),
 	REG_IT(ffdmxpid),
@@ -331,7 +334,6 @@ BuiltinReg BuiltinFilters [] = {
 	REG_IT(ffenc),
 	REG_IT(ffmx),
 	REG_IT(ffavf),
-	REG_IT(ffbsf),
 	REG_IT(ffbsf),
 
 	REG_IT(jsf),
@@ -346,6 +348,7 @@ BuiltinReg BuiltinFilters [] = {
 	REG_IT(uncvdec),
 	REG_IT(ghidmx),
 	REG_IT(evgs),
+	REG_IT(ccdec),
 
 #if defined(GPAC_CONFIG_EMSCRIPTEN)
 	REG_IT(wcdec),
@@ -396,6 +399,7 @@ void gf_fs_reg_all(GF_FilterSession *fsess, GF_FilterSession *a_sess)
 		if (!freg) continue;
 		assert( !strcmp(freg->name, BuiltinFilters[i].name));
 		gf_fs_add_filter_register(fsess, freg);
+
 	}
 
 	//load external modules
@@ -431,10 +435,12 @@ void gf_fs_reg_all(GF_FilterSession *fsess, GF_FilterSession *a_sess)
 GF_EXPORT
 void gf_fs_register_test_filters(GF_FilterSession *fsess)
 {
+#ifndef GPAC_DISABLE_UNITS
 	gf_fs_add_filter_register(fsess, ut_source_register(NULL) );
 	gf_fs_add_filter_register(fsess, ut_filter_register(NULL) );
 	gf_fs_add_filter_register(fsess, ut_sink_register(NULL) );
 	gf_fs_add_filter_register(fsess, ut_sink2_register(NULL) );
+#endif
 }
 
 

@@ -66,6 +66,7 @@ A module cannot provide several interfaces of the same type. Each module must ex
  */
 
 #include <gpac/config_file.h>
+#include <gpac/main.h>
 
 /*!
 \brief common module interface
@@ -78,7 +79,9 @@ This is the module interface declaration macro. It must be placed first in an in
 	const char *module_name;		\
 	const char *author_name;		\
 	void *HPLUG;					\
- 
+	GF_GPACArg *args; 				\
+	char *description;				\
+
 /*!
 \brief Base Interface
  *
@@ -116,7 +119,7 @@ GF_BaseInterface *MyDecoderInterfaceLoad() {
 	_ifce->InterfaceType = _ifce_type;	\
 	_ifce->module_name = _ifce_name ? _ifce_name : "unknown";	\
 	_ifce->author_name = _ifce_author ? _ifce_author : "gpac distribution";	\
-	
+
 /*!
 \brief static module declaration
  \hideinitializer
@@ -163,7 +166,7 @@ Module interface function export. Modules that can be compiled in libgpac rather
 		reg->ShutdownInterface = ShutdownInterface;	\
 		return reg;\
 	}	\
- 
+
 #else
 #define GPAC_MODULE_STATIC_DECLARATION(__name)
 #endif
@@ -244,9 +247,10 @@ GF_BaseInterface *gf_modules_load(u32 index, u32 InterfaceFamily);
 Loads an interface in the desired module
 \param mod_name the name of the module (shared library file) or of the interface as declared when registered.
 \param InterfaceFamily type of the interface to load
+\param rebrowse_all if GF_TRUE, locate an interface for this type if not found by name
 \return the interface object if found and loaded, NULL otherwise.
  */
-GF_BaseInterface *gf_modules_load_by_name(const char *mod_name, u32 InterfaceFamily);
+GF_BaseInterface *gf_modules_load_by_name(const char *mod_name, u32 InterfaceFamily, Bool rebrowse_all);
 
 /*!
 \brief interface shutdown
@@ -280,6 +284,36 @@ Loads a filter module (not using GF_BaseInterface) from its index. Returns NULL 
 \return the loaded filter register, or NULL if not found
 */
 void *gf_modules_load_filter(u32 index, void *fsess);
+
+/*!
+\brief query module option
+
+Loads a key from config in the module options.
+\param ifce the module instance to query
+\param key the key to query
+\return the key value or null
+*/
+const char *gf_module_get_key(GF_BaseInterface *ifce, char *key);
+
+/*!
+\brief query module option as boolean
+
+Loads a boolean key from config in the module options.
+\param ifce the module instance to query
+\param key_name the key to query
+\return GF_TRUE if key is found and equals yes, true or 1, GF_FALSE otherwise
+*/
+Bool gf_module_get_bool(GF_BaseInterface *ifce, char *key_name);
+
+/*!
+\brief query module option as int
+
+Loads an integer key from config in the module options.
+\param ifce the module instance to query
+\param key_name the key to query
+\return integer value of key, 0 if not found
+*/
+Bool gf_module_get_int(GF_BaseInterface *ifce, char *key_name);
 
 /*! @} */
 

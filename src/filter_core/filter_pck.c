@@ -673,9 +673,7 @@ void gf_filter_packet_destroy(GF_FilterPacket *pck)
 	}
 	/*this is a property reference packet, its destruction may happen at ANY time*/
 	if (is_ref_props_packet) {
-		if (pck->session->pcks_refprops_reservoir) {
-			gf_fq_add(pck->session->pcks_refprops_reservoir, pck);
-		} else {
+		if (gf_fq_res_add(pck->session->pcks_refprops_reservoir, pck)) {
 			gf_free(pck);
 		}
 	} else if (is_filter_destroyed) {
@@ -686,15 +684,11 @@ void gf_filter_packet_destroy(GF_FilterPacket *pck)
 		gf_free(pck);
 	}
 	else if (pck->filter_owns_mem ) {
-		if (pid->filter && pid->filter->pcks_shared_reservoir) {
-			gf_fq_add(pid->filter->pcks_shared_reservoir, pck);
-		} else {
+		if (!pid->filter || gf_fq_res_add(pid->filter->pcks_shared_reservoir, pck)) {
 			gf_free(pck);
 		}
 	} else {
-		if (pid->filter && pid->filter->pcks_alloc_reservoir) {
-			gf_fq_add(pid->filter->pcks_alloc_reservoir, pck);
-		} else {
+		if (!pid->filter || gf_fq_res_add(pid->filter->pcks_alloc_reservoir, pck)) {
 			if (pck->data) gf_free(pck->data);
 			gf_free(pck);
 		}
@@ -793,9 +787,7 @@ Bool gf_filter_aggregate_packets(GF_FilterPidInst *dst)
 			pcki->pck = NULL;
 			pcki->pid = NULL;
 
-			if (pck->pid->filter->pcks_inst_reservoir) {
-				gf_fq_add(pck->pid->filter->pcks_inst_reservoir, pcki);
-			} else {
+			if (gf_fq_res_add(pck->pid->filter->pcks_inst_reservoir, pcki)) {
 				gf_free(pcki);
 			}
 		} else {
@@ -910,6 +902,7 @@ GF_Err gf_filter_pck_send_internal(GF_FilterPacket *pck, Bool from_filter)
 		//reset eos only if not a command and not a clock signaling
 		else if (pid->has_seen_eos && !is_cmd && !cktype) {
 			pid->has_seen_eos = GF_FALSE;
+			pid->eos_keepalive = GF_FALSE;
 		}
 
 
@@ -1313,6 +1306,13 @@ GF_Err gf_filter_pck_send_internal(GF_FilterPacket *pck, Bool from_filter)
 			post_task = GF_TRUE;
 		}
 		if (post_task) {
+			if (!is_cmd_pck) {
+				if (dst->is_end_of_stream) {
+					dst->is_end_of_stream = GF_FALSE;
+					dst->filter->in_eos_resume = GF_TRUE;
+				}
+				pid->filter->in_eos_resume = GF_FALSE;
+			}
 
 			//make sure we lock the tasks mutex before getting the packet count, otherwise we might end up with a wrong number of packets
 			//if one thread consumes one packet while the dispatching thread  (the caller here) is still upddating the state for that pid
@@ -1383,6 +1383,7 @@ GF_Err gf_filter_pck_ref(GF_FilterPacket **pck)
 	safe_int_inc(& (*pck)->reference_count);
 	//keep track of number of ref packets for this pid at filter level
 	safe_int_inc(& (*pck)->pid->filter->nb_ref_packets);
+	(*pck)->pid->filter->ref_bytes += (*pck)->data_length;
 	return GF_OK;
 }
 
@@ -1395,6 +1396,7 @@ GF_FilterPacket *gf_filter_pck_ref_ex(GF_FilterPacket *pck)
 	safe_int_inc(& ref_pck->reference_count);
 	//keep track of number of ref packets for this pid at filter level
 	safe_int_inc(& ref_pck->pid->filter->nb_ref_packets);
+	ref_pck->pid->filter->ref_bytes += ref_pck->data_length;
 	return ref_pck;
 }
 
@@ -1449,6 +1451,7 @@ void gf_filter_pck_unref(GF_FilterPacket *pck)
 	if (! (pck->info.flags & GF_PCKF_PROPS_REFERENCE)) {
 		assert(pck->pid->filter->nb_ref_packets);
 		safe_int_dec(&pck->pid->filter->nb_ref_packets);
+		pck->pid->filter->ref_bytes -= pck->data_length;
 	}
 	if (safe_int_dec(&pck->reference_count) == 0) {
 		gf_filter_packet_destroy(pck);
@@ -1893,7 +1896,7 @@ void gf_filter_pck_check_realloc(GF_FilterPacket *pck, u8 *data, u32 size)
 {
 	if (PCK_IS_INPUT(pck)) return;
 	if (((u8*)pck->data != data)
-		//in case realloc returned the same adress !!
+		//in case realloc returned the same address !!
 		|| (size > pck->data_length)
 	) {
 		pck->alloc_size = pck->data_length = size;

@@ -333,6 +333,14 @@ static GF_Err routeout_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool 
 		else if (!rpid->manifest_type) {
 			p = gf_filter_pid_get_property(rpid->pid, GF_PROP_PID_TEMPLATE);
 			if (p && p->value.string) {
+				char *sep1 = strstr(p->value.string, "$Number");
+				char *sep2 = strstr(p->value.string, "$Time");
+				if (sep1 && sep2) {
+					GF_LOG(GF_LOG_ERROR, GF_LOG_ROUTE, ("[ROUTE] DASH Template is %s but ROUTE cannot use both Time and Number !\n", p->value.string));
+					rpid->route->is_done = GF_TRUE;
+					return GF_BAD_PARAM;
+				}
+
 				if (!rpid->template || strcmp(rpid->template, p->value.string)) {
 					if (rpid->template) gf_free(rpid->template);
 					rpid->template = gf_strdup(p->value.string);
@@ -369,22 +377,11 @@ static GF_Err routeout_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool 
 	}
 
 	manifest_type = 0;
-	p = gf_filter_pid_get_property(pid, GF_PROP_PID_MIME);
-	if (p && p->value.string) {
-		if (strstr(p->value.string, "dash")) manifest_type = 1;
-		else if (strstr(p->value.string, "mpd")) manifest_type = 1;
-		else if (strstr(p->value.string, "mpegurl")) manifest_type = 2;
-	}
-	if (!manifest_type) {
-		p = gf_filter_pid_get_property(pid, GF_PROP_PID_FILE_EXT);
-		if (p && p->value.string) {
-			if (strstr(p->value.string, "mpd")) manifest_type = 1;
-			else if (strstr(p->value.string, "m3u8")) manifest_type = 2;
-			else if (strstr(p->value.string, "3gm")) manifest_type = 1;
-		}
-	}
+	p = gf_filter_pid_get_property(pid, GF_PROP_PID_IS_MANIFEST);
+	if (p) manifest_type = p->value.uint;
+
 	if (manifest_type) {
-		p = gf_filter_pid_get_property(pid, GF_PROP_PID_ORIG_STREAM_TYPE);
+		p = gf_filter_pid_get_property(pid, GF_PROP_PID_PREMUX_STREAM_TYPE);
 		if (!p || (p->value.uint!=GF_STREAM_FILE)) {
 			GF_LOG(GF_LOG_WARNING, GF_LOG_ROUTE, ("[ROUTE] Manifest file detected but no dashin filter, file will be uploaded as is !\n"));
 			manifest_type = 0;
@@ -455,7 +452,7 @@ static GF_Err routeout_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool 
 	if (p) rpid->bitrate = p->value.uint * (100+ctx->brinc) / 100;
 
 	rpid->stream_type = 0;
-	p = gf_filter_pid_get_property(rpid->pid, GF_PROP_PID_ORIG_STREAM_TYPE);
+	p = gf_filter_pid_get_property(rpid->pid, GF_PROP_PID_PREMUX_STREAM_TYPE);
 	if (!p) {
 		if (!rpid->manifest_type) {
 			rpid->raw_file = GF_TRUE;
@@ -475,9 +472,16 @@ static GF_Err routeout_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool 
 
 	if (!rpid->manifest_type && !rpid->raw_file) {
 		p = gf_filter_pid_get_property(rpid->pid, GF_PROP_PID_TEMPLATE);
-		if (p && p->value.string) rpid->template = gf_strdup(p->value.string);
-
-		else {
+		if (p && p->value.string) {
+			char *sep1 = strstr(p->value.string, "$Number");
+			char *sep2 = strstr(p->value.string, "$Time");
+			if (sep1 && sep2) {
+				GF_LOG(GF_LOG_ERROR, GF_LOG_ROUTE, ("[ROUTE] DASH Template is %s but ROUTE cannot use both Time and Number !\n", p->value.string));
+				gf_filter_abort(filter);
+				return GF_BAD_PARAM;
+			}
+			rpid->template = gf_strdup(p->value.string);
+		} else {
 			GF_LOG(GF_LOG_WARNING, GF_LOG_ROUTE, ("[ROUTE] Segment file PID detected but no template assigned, assuming raw file upload!\n"));
 			rpid->raw_file = GF_TRUE;
 		}
@@ -511,7 +515,7 @@ static GF_Err routeout_configure_pid(GF_Filter *filter, GF_FilterPid *pid, Bool 
 				ROUTEPid *apid = gf_list_get(rserv->pids, i);
 				if (apid->manifest_type) continue;
 				if (apid == rpid) continue;
-				p = gf_filter_pid_get_property(rpid->pid, GF_PROP_PID_ORIG_STREAM_TYPE);
+				p = gf_filter_pid_get_property(rpid->pid, GF_PROP_PID_PREMUX_STREAM_TYPE);
 				if (!p) continue;
 				astreamtype = p->value.uint;
 				if (astreamtype==rpid->stream_type) {
@@ -764,13 +768,15 @@ static GF_Err routeout_check_service_updates(GF_ROUTEOutCtx *ctx, ROUTEService *
 			GF_FilterPacket *pck = gf_filter_pid_get_packet(rpid->pid);
 			if (!pck) break;
 
+			file_name = ctx->dst;
 			p = gf_filter_pck_get_property(pck, GF_PROP_PCK_FILENAME);
-			if (!p) p = gf_filter_pid_get_property(rpid->pid, GF_PROP_PID_URL);
-
-			if (p)
+			if (p) {
 				file_name = p->value.string;
-			else
-				file_name = ctx->dst;
+			} else {
+				p = gf_filter_pid_get_property(rpid->pid, GF_PROP_PID_URL);
+				if (p)
+					file_name = gf_file_basename(p->value.string);
+			}
 
 			if (file_name) {
 				proto = strstr(file_name, "://");
@@ -884,7 +890,7 @@ static GF_Err routeout_check_service_updates(GF_ROUTEOutCtx *ctx, ROUTEService *
 
 	//not ready, waiting for manifest
 	if (!serv->manifest && !nb_raw_files) {
-		return GF_OK;
+		return GF_NOT_READY;
 	}
 	//already setup and no changes
 	else if (!serv->wait_for_inputs) {
@@ -1049,7 +1055,8 @@ static GF_Err routeout_check_service_updates(GF_ROUTEOutCtx *ctx, ROUTEService *
 		char szIP[GF_MAX_IP_NAME_LEN];
 		src_ip = ctx->ifce;
 		if (!src_ip) {
-			gf_sk_get_local_ip(rlct->sock, szIP);
+			if (gf_sk_get_local_ip(rlct->sock, szIP) != GF_OK)
+				strcpy(szIP, "127.0.0.1");
 			src_ip = szIP;
 		}
 
@@ -1090,14 +1097,25 @@ static GF_Err routeout_check_service_updates(GF_ROUTEOutCtx *ctx, ROUTEService *
 
 			p = gf_filter_pid_get_property(rpid->pid, GF_PROP_PID_TEMPLATE);
 			if (p) {
-				char *sep;
+				char *sep, *sep2, *key = "$Number";
 				strcpy(temp, p->value.string);
 				sep = strstr(temp, "$Number");
+				sep2 = strstr(temp, "$Time");
+				if (sep && sep2) {
+					gf_free(payload_text);
+					GF_LOG(GF_LOG_ERROR, GF_LOG_ROUTE, ("[ROUTE] DASH Template is %s but ROUTE cannot use both Time and Number !\n", p->value.string));
+					serv->is_done = GF_TRUE;
+					return GF_SERVICE_ERROR;
+				}
+				if (!sep) {
+					sep = sep2;
+					key = "$Time";
+				}
 				if (sep) {
 					sep[0] = 0;
 					strcat(temp, "$TOI");
-					sep = strstr(p->value.string, "$Number");
-					strcat(temp, sep + 7);
+					sep = strstr(p->value.string, key);
+					strcat(temp, sep + strlen(key));
 				}
 			}
 
@@ -1222,7 +1240,7 @@ static GF_Err routeout_check_service_updates(GF_ROUTEOutCtx *ctx, ROUTEService *
 	if (serv->stsid_bundle) gf_free(serv->stsid_bundle);
 	serv->stsid_bundle = (u8 *) payload_text;
 	serv->stsid_bundle_size = 1 + (u32) strlen(payload_text);
-	gf_gz_compress_payload(&serv->stsid_bundle, serv->stsid_bundle_size, &serv->stsid_bundle_size);
+	gf_gz_compress_payload_ex(&serv->stsid_bundle, serv->stsid_bundle_size, &serv->stsid_bundle_size, 0, GF_FALSE, NULL, GF_TRUE);
 
 	serv->stsid_bundle_toi = 0x80000000; //compressed
 	if (manifest_updated) serv->stsid_bundle_toi |= (1<<18);
@@ -1350,7 +1368,7 @@ retry:
 
 	rpid->current_pck = gf_filter_pid_get_packet(rpid->pid);
 	if (!rpid->current_pck) {
-		if (gf_filter_pid_is_eos(rpid->pid)) {
+		if (gf_filter_pid_is_eos(rpid->pid) && !gf_filter_pid_is_flush_eos(rpid->pid) ) {
 #if 0
 			if (gf_filter_reporting_enabled(filter)) {
 				char szStatus[1024];
@@ -1373,7 +1391,8 @@ retry:
 				} else {
 					evt.seg_size.is_init = 0;
 					evt.seg_size.media_range_start = rpid->offset_at_seg_start;
-					evt.seg_size.media_range_end = rpid->res_size - 1;
+					//end range excludes last byte, except if 0 size (some text segments)
+					evt.seg_size.media_range_end = rpid->res_size ? (rpid->res_size - 1) : 0;
 					gf_filter_pid_send_event(rpid->pid, &evt);
 				}
 			}
@@ -1383,6 +1402,13 @@ retry:
 		}
 		return;
 	}
+	//skip eods packets
+	if (rpid->route->dash_mode && gf_filter_pck_get_property(rpid->current_pck, GF_PROP_PCK_EODS)) {
+		gf_filter_pid_drop_packet(rpid->pid);
+		rpid->current_pck = NULL;
+		goto retry;
+	}
+
 	gf_filter_pck_ref(&rpid->current_pck);
 	gf_filter_pid_drop_packet(rpid->pid);
 
@@ -1466,7 +1492,8 @@ retry:
 			} else {
 				evt.seg_size.is_init = 0;
 				evt.seg_size.media_range_start = rpid->offset_at_seg_start;
-				evt.seg_size.media_range_end = rpid->res_size - 1;
+				//end range excludes last byte, except if 0 size (some text segments)
+				evt.seg_size.media_range_end = rpid->res_size ? (rpid->res_size - 1) : 0;
 				rpid->offset_at_seg_start = evt.seg_size.media_range_end;
 				gf_filter_pid_send_event(rpid->pid, &evt);
 			}
@@ -1525,12 +1552,22 @@ retry:
 		rpid->seg_name = gf_strdup(rpid->seg_name);
 
 		//file num increased per packet, open new file
-		p = gf_filter_pck_get_property(rpid->current_pck, GF_PROP_PCK_FILENUM);
-		if (p)
-			rpid->current_toi = p->value.uint;
-		else {
-			GF_LOG(GF_LOG_ERROR, GF_LOG_ROUTE, ("[ROUTE] Missing filenum on segment %s, something is wrong in demux chain - assuming +1 increase\n", rpid->seg_name));
-			rpid->current_toi ++;
+		p = gf_filter_pck_get_property(rpid->current_pck, GF_PROP_PCK_MPD_SEGSTART);
+		if (p) {
+			if (p->value.lfrac.num >= ROUTE_INIT_TOI) {
+				GF_LOG(GF_LOG_ERROR, GF_LOG_ROUTE, ("[ROUTE] MPD Time "LLU" greater than 32 bits, session no longer valid, aborting\n", p->value.lfrac.num));
+				rpid->route->is_done = GF_TRUE;
+				gf_filter_pid_set_discard(rpid->pid, GF_TRUE);
+			}
+			rpid->current_toi = p->value.lfrac.num;
+		} else {
+			p = gf_filter_pck_get_property(rpid->current_pck, GF_PROP_PCK_FILENUM);
+			if (p)
+				rpid->current_toi = p->value.uint;
+			else {
+				GF_LOG(GF_LOG_ERROR, GF_LOG_ROUTE, ("[ROUTE] Missing filenum on segment %s, something is wrong in source chain - assuming +1 increase\n", rpid->seg_name));
+				rpid->current_toi ++;
+			}
 		}
 		rpid->frag_idx = 0;
 		rpid->full_frame_size = end ? rpid->pck_size : 0;
@@ -1613,7 +1650,7 @@ retry:
 		rpid->current_dur_us = pck_dur;
 		if (!rpid->current_dur_us) {
 			rpid->current_dur_us = rpid->timescale;
-			GF_LOG(GF_LOG_ERROR, GF_LOG_ROUTE, ("[ROUTE] Missing duration on segment %s, something is wrong in demux chain, will not be able to regulate correctly\n", rpid->seg_name));
+			GF_LOG(GF_LOG_ERROR, GF_LOG_ROUTE, ("[ROUTE] Missing duration on segment %s, something is wrong in source chain, will not be able to regulate correctly\n", rpid->seg_name));
 		}
 		rpid->current_dur_us = gf_timestamp_rescale(rpid->current_dur_us, rpid->timescale, 1000000);
 	} else if (start && end) {
@@ -1633,10 +1670,12 @@ static GF_Err routeout_process_service(GF_ROUTEOutCtx *ctx, ROUTEService *serv)
 	GF_Err e;
 
 	e = routeout_check_service_updates(ctx, serv);
+	if (e==GF_NOT_READY)
+		return GF_OK;
 
 	if (serv->stsid_bundle) {
 		u64 diff = ctx->clock - serv->last_stsid_clock;
-		if (diff >= ctx->carousel) {
+		if (!serv->last_stsid_clock || (diff >= ctx->carousel)) {
 			routeout_service_send_bundle(ctx, serv);
 			serv->last_stsid_clock = ctx->clock;
 		} else {
@@ -1676,7 +1715,7 @@ next_packet:
 			u32 offset;
 			routeout_fetch_packet(ctx, rpid);
 			if (!rpid->current_pck) {
-				if (gf_filter_pid_is_eos(rpid->pid))
+				if (gf_filter_pid_is_eos(rpid->pid) && !gf_filter_pid_is_flush_eos(rpid->pid))
 					nb_done++;
 				continue;
 			}
@@ -1869,9 +1908,9 @@ static void routeout_send_lls(GF_ROUTEOutCtx *ctx)
 
 	if (!ctx->bytes_sent) ctx->clock_stats = ctx->clock;
 
-	//we send 2 LLS tables, SysTime and SLT
+	//ATSC3 we send 2 LLS tables, SysTime and SLT
 
-	//SysTime
+	//ATSC3 SysTime
 	if (!ctx->lls_time_table) {
 		gf_dynstrcat(&payload_text, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<SystemTime currentUtcOffset=\"", NULL);
 		sprintf(tmp, "%d", GF_TAI_UTC_OFFSET);
@@ -1894,7 +1933,7 @@ static void routeout_send_lls(GF_ROUTEOutCtx *ctx)
 		comp_size = 2*len;
 		payload = gf_malloc(sizeof(char)*(comp_size+4));
 		pay_start = payload + 4;
-		gf_gz_compress_payload_ex((u8 **) &payload_text, len, &comp_size, 0, GF_FALSE, &pay_start, GF_FALSE);
+		gf_gz_compress_payload_ex((u8 **) &payload_text, len, &comp_size, 0, GF_FALSE, &pay_start, GF_TRUE);
 		gf_free(payload_text);
 		payload_text = NULL;
 
@@ -1913,25 +1952,24 @@ static void routeout_send_lls(GF_ROUTEOutCtx *ctx)
 	gf_sk_send(ctx->sock_atsc_lls, ctx->lls_time_table, ctx->lls_time_table_len);
 	ctx->bytes_sent += ctx->lls_time_table_len;
 
-	//SLT
+	//ATSC3 SLT
 	if (!ctx->lls_slt_table) {
 		count = gf_list_count(ctx->services);
-		snprintf(tmp, 1000, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<SLT bsid=\"%d\">\n", ctx->bsid);
+		snprintf(tmp, 1000, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<SLT xmlns=\"tag:atsc.org,2016:XMLSchemas/ATSC3/Delivery/SLT/1.0/\" bsid=\"%d\">\n", ctx->bsid);
 		gf_dynstrcat(&payload_text, tmp, NULL);
 		for (i=0; i<count; i++) {
 			const GF_PropertyValue *p;
-			const char *src_ip, *service_name;
+			const char *src_ip, *service_name, *hidden, *hideInESG, *configuration;
 			char szIP[GF_MAX_IP_NAME_LEN];
 			ROUTEPid *rpid;
 			ROUTEService *serv = gf_list_get(ctx->services, i);
+
 			u32 sid = serv->service_id;
 			if (!sid) sid = 1;
-			u32 minor = sid % 1000;
-			if (!minor) minor = 1;
-			u32 major = GF_4CC('G', 'P', 'A', 'C')  % 1000;
 
 			rpid = gf_list_get(serv->pids, 0);
-			p = gf_filter_pid_get_property_str(rpid->pid, "ShortServiceName");
+
+			p = gf_filter_pid_get_property_str(rpid->pid, "ATSC3ShortServiceName");
 			if (!p)
 				p = gf_filter_pid_get_property(rpid->pid, GF_PROP_PID_SERVICE_NAME);
 			service_name = (p && p->value.string) ? p->value.string : "GPAC";
@@ -1940,13 +1978,37 @@ static void routeout_send_lls(GF_ROUTEOutCtx *ctx)
 			strncpy(szIP, service_name, len);
 			szIP[len] = 0;
 
+			// ATSC 3.0 major channel number starts at 2. This really should be set rather than using the default.
+			u32 major = 2;
+			p = gf_filter_pid_get_property_str(rpid->pid, "ATSC3MajorChannel");
+			if (p && p->value.string) major = atoi(p->value.string);
+
+			// ATSC 3.0 minor channel number starts at 1.
+			u32 minor = 1;
+			p = gf_filter_pid_get_property_str(rpid->pid, "ATSC3MinorChannel");
+			if (p && p->value.string) minor = atoi(p->value.string);
+
+			u32 service_cat = 1;
+			p = gf_filter_pid_get_property_str(rpid->pid, "ATSC3ServiceCat");
+			if (p && p->value.string) service_cat = atoi(p->value.string);
+
+			p = gf_filter_pid_get_property_str(rpid->pid, "ATSC3hidden");
+			hidden = (p && p->value.string) ? p->value.string : "false";
+
+			p = gf_filter_pid_get_property_str(rpid->pid, "ATSC3hideInGuide");
+			hideInESG = (p && p->value.string) ? p->value.string : "false";
+
+			p = gf_filter_pid_get_property_str(rpid->pid, "ATSC3configuration");
+			configuration = (p && p->value.string) ? p->value.string : "Broadcast";
+
 			snprintf(tmp, 2000,
-				" <Service serviceId=\"%d\" sltSvcSeqNum=\"0 \" serviceCategory=\"1\" globalServiceID=\"urn:atsc:gpac:%d:%d\" majorChannelNo=\"%d\" minorChannelNo=\"%d\" shortServiceName=\"%s\">\n", sid, ctx->bsid, sid, major, minor, szIP);
+				" <Service serviceId=\"%d\" globalServiceID=\"urn:atsc:gpac:%d:%d\" sltSvcSeqNum=\"0\" protected=\"false\" majorChannelNo=\"%d\" minorChannelNo=\"%d\" serviceCategory=\"%d\" shortServiceName=\"%s\" hidden=\"%s\" hideInGuide=\"%s\" broadbandAccessRequired=\"false\" configuration=\"%s\"> \n", sid, ctx->bsid, sid, major, minor, service_cat, szIP, hidden, hideInESG, configuration);
 			gf_dynstrcat(&payload_text, tmp, NULL);
 
 			src_ip = ctx->ifce;
 			if (!src_ip) {
-				gf_sk_get_local_ip(serv->rlct_base->sock, szIP);
+				if (gf_sk_get_local_ip(serv->rlct_base->sock, szIP)!=GF_OK)
+					strcpy(szIP, "127.0.0.1");
 				src_ip = szIP;
 			}
 			int res = snprintf(tmp, 1000, "  <BroadcastSvcSignaling slsProtocol=\"1\" slsDestinationIpAddress=\"%s\" slsDestinationUdpPort=\"%d\" slsSourceIpAddress=\"%s\"/>\n"
@@ -1964,7 +2026,7 @@ static void routeout_send_lls(GF_ROUTEOutCtx *ctx)
 		comp_size = 2*len;
 		payload = gf_malloc(sizeof(char)*(comp_size+4));
 		pay_start = payload + 4;
-		gf_gz_compress_payload_ex((u8 **) &payload_text, len, &comp_size, 0, GF_FALSE, &pay_start, GF_FALSE);
+		gf_gz_compress_payload_ex((u8 **) &payload_text, len, &comp_size, 0, GF_FALSE, &pay_start, GF_TRUE);
 		gf_free(payload_text);
 		payload_text = NULL;
 
@@ -2172,7 +2234,14 @@ GF_FilterRegister ROUTEOutRegister = {
 		"By default, a single multicast IP is used for route sessions, each service will be assigned a different port.\n"
 		"The filter will look for `ROUTEIP` and `ROUTEPort` properties on the incoming PID. If not found, the default [-ip]() and [-port]() will be used.\n"
 		"\n"
-		"The ATSC short service name can be set using PID property `ShortServiceName`. If not found, `ServiceName` is checked, otherwise default to `GPAC`.\n"
+		"ATSC 3.0 attributes set by using the following PID properties:\n"
+		"- ATSC3ShortServiceName: set the short service name, maxiumu of 7 characters.  If not found, `ServiceName` is checked, otherwise default to `GPAC`.\n"
+		"- ATSC3MajorChannel: set major channel number of service. Default to 2.  This really should be set and should not use the default.\n"
+		"- ATSC3MinorChannel: set minor channel number of service. Default of 1.\n"
+		"- ATSC3ServiceCat: set service category, default to 1 if not found. 1=Linear a/v service. 2=Linear audio only service. 3=App-based service. 4=ESg service. 5=EA service. 6=DRM service.\n"
+		"- ATSC3hidden: set if service is hidden.  Boolean true or false. Default of false.\n"
+		"- ATSC3hideInGuide: set if service is hidden in ESG.  Boolean true or false. Default of false.\n"
+		"- ATSC3configuration: set service configuration.  Choices are Broadcast or Broadband.  Default of Broadcast\n"
 		"\n"
 		"# ROUTE mode\n"
 		"In this mode, only a single service can be distributed by the ROUTE session.\n"

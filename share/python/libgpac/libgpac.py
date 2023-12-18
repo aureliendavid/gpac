@@ -242,7 +242,7 @@ except OSError:
 
 #change this to reflect API we encapsulate. An incomatibility in either of these will throw a warning
 GF_ABI_MAJOR=12
-GF_ABI_MINOR=11
+GF_ABI_MINOR=12
 
 gpac_abi_major=_libgpac.gf_gpac_abi_major()
 gpac_abi_minor=_libgpac.gf_gpac_abi_minor()
@@ -960,8 +960,8 @@ GF_FS_FLAG_NO_IMPLICIT=1<<11
 
 
 ##\hideinitializer
-#see \ref GF_PROP_FORBIDEN
-GF_PROP_FORBIDEN=0
+#see \ref GF_PROP_FORBIDDEN
+GF_PROP_FORBIDDEN=0
 ##\hideinitializer
 #see \ref GF_PROP_SINT
 GF_PROP_SINT=1
@@ -1787,6 +1787,158 @@ _libgpac.gf_filter_get_info_str.restype = POINTER(PropertyValue)
 
 _libgpac.gf_filter_require_source_id.argtypes = [_gf_filter]
 
+_libgpac.gf_httpout_send_request.argtypes = [c_void_p, py_object, c_uint, c_char_p, c_uint, POINTER(POINTER(c_char)), c_void_p, c_void_p, c_void_p, c_void_p]
+
+@CFUNCTYPE(c_uint, c_void_p, c_ulonglong, c_ulonglong)
+def httpout_cbk_throttle(cbk, done, total):
+    obj = cast(cbk, py_object).value
+    return obj.throttle(done, total)
+
+@CFUNCTYPE(c_int, c_void_p, POINTER(c_ubyte), c_uint)
+def httpout_cbk_read(cbk, buf, size):
+    obj = cast(cbk, py_object).value
+    if numpy_support:
+        ar_data = np.ctypeslib.as_array(buf, shape=(size,))
+        ar_data.flags.writeable=True
+        return obj.read(ar_data, size)
+    return obj.read(buf, size)
+
+@CFUNCTYPE(c_uint, c_void_p, POINTER(c_ubyte), c_uint)
+def httpout_cbk_write(cbk, buf, size):
+    obj = cast(cbk, py_object).value
+    if buf==None:
+        obj.write(None, 0)
+    else:
+        if numpy_support:
+            ar_data = np.ctypeslib.as_array(buf, shape=(size,))
+            ar_data.flags.writeable=False
+            obj.write(ar_data, size)
+        else:
+            obj.write(buf, size)
+    return 0
+
+@CFUNCTYPE(None, c_void_p, c_int)
+def httpout_cbk_close(cbk, err):
+    obj = cast(cbk, py_object).value
+    obj._root.gc_exclude.remove(obj)
+    if not obj._skip_close:
+        obj.close(err)
+    return 0
+
+## \endcond
+
+##
+#  \defgroup pyhttpout_grp HTTP server bindings
+#  \ingroup pyapi_grp
+#  \brief Python API for libgpac httpout module.
+#
+# HTTP server requests can be monitored and/or handled in Python. This is achieved by calling \ref Filter.bind on the httpout filter using an object deriving from HTTPOutRequest.
+#
+# The requests can either be handled by GPAC as usual, or by the python script.
+# @{
+
+## HTTP request handler object
+class HTTPOutRequest:
+    ## Constructor
+    def __init__(self):
+        ## \cond private
+        self._session=None
+        self._skip_close=0
+        ## \endcond
+
+        ## reply code
+        ## A reply code of 0 means httpout will serve the resource as usual
+        self.reply=0
+
+        ## reply body
+        ## - if reply is 0, this can be set to a file path to serve. If not set, usual URL resolving of httpout is done
+        ## - if reply is not 0, this can be set to a string containing the body. To deliver a binary file or a large file, use read function
+        self.body=None
+
+        ## list of headers to add
+        ## even values are header names, odd values are header values
+        self.headers_out=[]
+
+    ## throttle the connection - if not overriden by subclass, not used
+    #\param done amount of bytes of ressource sent
+    #\param total total size of ressource
+    #\return a timeout in microseconds, or 0 to process immediately
+    def throttle(self, done, total):
+        return 0
+
+    ## read data for the request - if not overriden by subclass, not used
+    #\param buf NP array (or c_ubyte pointer if no numpy support) to write data to
+    #\param size size of array to fill
+    #\return amount of bytes read, negative value means no data available yet, 0 means end of file
+    def read(self, buf, size):
+        return 0
+
+    ## write data for the request (PUT/POST) - if not overriden by subclass, not used
+    #\param buf NP array (or c_ubyte pointer if no numpy support) containing data from client
+    #\param size number of valid bytes in the array
+    #\return
+    def write(self, buf, size):
+        pass
+
+    ## close callback for the request - if not overriden by subclass, not used
+    #\param reason GPAC error code of the end of session
+    #\return
+    def close(self, reason):
+        pass
+
+    ## callback for the request - this shoulld be overriden by subclass, default behaviour being to delegate to GPAC
+    #\param method HTTP method used, as string
+    #\param url URL of the HTTP request
+    #\param auth_code Authentication reply code - requests are pre-identified using GPAC credentials: a value of 401 indicates no identification, 200 indicates identification OK, 403 indicates failure
+    #\param headers list of headers of input request, even values are header names, odd values are header values
+    #\return
+    def on_request(self, method, url, auth_code, headers):
+        self.send()
+
+    ## Send the reply to the client. This can be called aither upon \ref on_request or later (asynchronously)
+    #\return
+    def send(self):
+        hdrs = None
+        nb_hdrs=len(self.headers_out)
+        if nb_hdrs:
+            hdrs = (POINTER(c_char)*nb_hdrs)()
+            i=0
+            for str in self.headers_out:
+                hdrs[i] = create_string_buffer(str.encode('utf-8'))
+                i+=1
+        body = None;
+        if self.body:
+            body = self.body.encode('utf-8')
+        ret = _libgpac.gf_httpout_send_request(self._session, py_object(self), self.reply, body, nb_hdrs, hdrs,
+            None if type(self).throttle == HTTPOutRequest.throttle else httpout_cbk_throttle,
+            None if type(self).read == HTTPOutRequest.read else httpout_cbk_read,
+            None if type(self).write == HTTPOutRequest.write else httpout_cbk_write,
+            httpout_cbk_close
+        )
+        ## \cond private
+        self._skip_close = True if type(self).close == HTTPOutRequest.close else False;
+        ## \endcond
+
+## @}
+
+## \cond private
+
+_libgpac.gf_filter_bind_httpout_callbacks.argtypes = [_gf_filter, py_object, c_void_p]
+@CFUNCTYPE(c_int, c_void_p, c_void_p, c_char_p, c_char_p, c_uint, c_uint, POINTER(c_char_p))
+def httpout_on_request(cbk, sess, method, url, auth_code, nb_hdrs, hdrs):
+    obj = cast(cbk, py_object).value
+    _ck = obj.__class__
+    req = _ck()
+    req._session = sess
+    req._root = obj
+    obj.gc_exclude.append(req)
+    headers=[]
+    for i in range(nb_hdrs):
+        headers.append(hdrs[i].decode('utf-8'))
+    req.on_request(method.decode('utf-8'), url.decode('utf-8'), auth_code, headers);
+    return 0
+
+
 _libgpac.gf_filter_bind_dash_algo_callbacks.argtypes = [_gf_filter, py_object, c_void_p, c_void_p, c_void_p, c_void_p]
 @CFUNCTYPE(c_int, c_void_p, c_uint)
 def dash_period_reset(cbk, reset_type):
@@ -1851,13 +2003,14 @@ _libgpac.gf_list_get.restype = c_void_p
 ##
 #  \defgroup pydash_grp DASH custom algorithm
 #  \ingroup pyapi_grp
-#  \brief Python API for libgpac.
+#  \brief Python API for libgpac DASH client.
 #
+# DASH client logic can be controlled in Python. This is achieved by calling \ref Filter.bind on the dashin filter using an object deriving from DASHCustomAlgorithm.
 # @{
 
 ## DASH media quality information (Representation info)
 class DASHQualityInfo:
-    ## \cond priv
+    ## \cond private
     def __init__(self, qinfon):
     ## \endcond
         ## bandwidth in bits per second
@@ -1892,7 +2045,7 @@ class DASHQualityInfo:
         self.avg_duration = qinfon.avg_duration
         ## list of segment sizes for VoD cases, None otherwise or if unknown
         self.sizes = None
-        ## \cond priv
+        ## \cond private
         if qinfon.sizes == None:
             return
         count = _libgpac.gf_list_count(qinfon.sizes)
@@ -1904,7 +2057,7 @@ class DASHQualityInfo:
 
 ##DASH Spatial Relation Descriptor object, used for tiling
 class DASHSRD:
-    ## \cond priv
+    ## \cond private
     def __init__(self, id, x, y, w, h, fw, fh):
     ## \endcond
         ## ID of SRD source - all SRD with same source describe the same video composition, possibly with different grid sizes
@@ -1922,7 +2075,7 @@ class DASHSRD:
         ## total height of SRD descriptor for this tile
         self.fh = fh
 
-##\cond priv
+##\cond private
 def make_srd(dashptr, groupidx):
     srd_id=c_uint(0)
     srd_x=c_uint(0)
@@ -1940,7 +2093,7 @@ def make_srd(dashptr, groupidx):
 
 ## DASH group object
 class DASHGroup:
-    ## \cond priv
+    ## \cond private
     def __init__(self, ptr_dash, groupidx):
     ## \endcond
         ## Index of group, as used in callbacks
@@ -1951,7 +2104,7 @@ class DASHGroup:
         self.duration = _libgpac.gf_dash_get_period_duration(ptr_dash)
         ## SRD object or None if no SRD defined
         self.SRD = make_srd(ptr_dash, groupidx)
-        ## \cond priv
+        ## \cond private
         self._dash = ptr_dash
         nb_qualities = _libgpac.gf_dash_group_get_num_qualities(ptr_dash, groupidx)
         for i in range(nb_qualities):
@@ -1963,7 +2116,7 @@ class DASHGroup:
 
 ## DASH groups statistics object
 class DASHGroupStatistics(Structure):
-    ## \cond priv
+    ## \cond private
     def __init__(self):
     ## \endcond
         ##download rate of last segment in bits per second, divided by current playback speed
@@ -2016,7 +2169,7 @@ class DASHGroupStatistics(Structure):
 
 ## DASH group current segment download statistics object
 class DASHGroupDownloadStatistics(Structure):
-    ## \cond priv
+    ## \cond private
     def __init__(self):
     ## \endcond
         ##download rate of last segment in bits per second
@@ -2097,7 +2250,7 @@ class DASHCustomAlgorithm:
 ## @}
 
 
-## \cond priv
+## \cond private
 
 
 @CFUNCTYPE(c_int, c_void_p, c_uint, c_void_p)
@@ -2512,6 +2665,16 @@ class Filter:
         if err<0:
             raise Exception('Failed to bind dash algo: ' + e2s(err))
         return 0
+
+    def _bind_httpout(self, object):
+        if not hasattr(object, 'on_request'):
+            raise Exception('Missing on_request member function on object, cannot bind')
+        object.sessions = []
+        err = _libgpac.gf_filter_bind_httpout_callbacks(self._filter, py_object(object), httpout_on_request)
+        if err<0:
+            raise Exception('Failed to bind httpout: ' + e2s(err))
+        object.gc_exclude=[]
+        return 0
     ##\endcond private
 
 
@@ -2526,6 +2689,8 @@ class Filter:
     def bind(self, object):
         if self.name=="dashin":
             return self._bind_dash_algo(object)
+        if self.name=="httpout":
+            return self._bind_httpout(object)
         raise Exception('No possible binding to filter class ' + self.name)
 
     ##\cond private: until end, properties
@@ -2678,21 +2843,21 @@ def _make_prop(prop4cc, propname, prop, custom_type=0):
         if isinstance(prop, list)==False:
             raise Exception('Property is not a list')
         prop_val.value.string_list.nb_items = len(prop)
-        prop_val.value.string_list.vals = (ctypes.c_char_p * len(prop))
+        prop_val.value.string_list.vals = (POINTER(c_char) * len(prop))()
         i=0
         for str in list:
-            prop_val.value.string_list.vals[i] = str.encode('utf-8')
+            prop_val.value.string_list.vals[i] = create_string_buffer(str.encode('utf-8'))
             i+=1
     elif type==GF_PROP_UINT_LIST:
         if isinstance(prop, list)==False:
             raise Exception('Property is not a list')
         prop_val.value.uint_list.nb_items = len(prop)
-        prop_val.value.uint_list.vals = (ctypes.c_uint * len(prop))(*prop)
+        prop_val.value.uint_list.vals = (c_uint * len(prop))(*prop)
     elif type==GF_PROP_4CC_LIST:
         if isinstance(prop, list)==False:
             raise Exception('Property is not a list')
         prop_val.value.uint_list.nb_items = len(prop)
-        prop_val.value.uint_list.vals = (ctypes.c_uint * len(prop))
+        prop_val.value.uint_list.vals = (c_uint * len(prop))
         i=0
         for str in list:
             prop_val.value.uint_list.vals[i] = _libgpac.gf_4cc_parse( str.encode('utf-8') )
@@ -2701,7 +2866,7 @@ def _make_prop(prop4cc, propname, prop, custom_type=0):
         if isinstance(prop, list)==False:
             raise Exception('Property is not a list')
         prop_val.value.sint_list.nb_items = len(prop)
-        prop_val.value.sint_list.vals = (ctypes.c_int * len(prop))(*prop)
+        prop_val.value.sint_list.vals = (c_int * len(prop))(*prop)
     elif type==GF_PROP_VEC2I_LIST:
         if isinstance(prop, list)==False:
             raise Exception('Property is not a list')

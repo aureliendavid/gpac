@@ -27,7 +27,7 @@
 #include <gpac/constants.h>
 #include <gpac/filters.h>
 
-#ifndef GPAC_DISABLE_AV_PARSERS
+#if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_RFADTS)
 
 enum
 {
@@ -421,7 +421,7 @@ static void adts_dmx_check_pid(GF_Filter *filter, GF_ADTSDmxCtx *ctx)
 	}
 	ctx->acfg.audioPL = gf_m4a_get_profile(&ctx->acfg);
 
-	/*for better interop, always store using full SR when using explict signaling*/
+	/*for better interop, always store using full SR when using explicit signaling*/
 	if (sbr_sr) {
 		ctx->dts_inc *= 2;
 		sr = sbr_sr;
@@ -1048,10 +1048,10 @@ const GF_FilterRegister *rfadts_register(GF_FilterSession *session)
 {
 	return &ADTSDmxRegister;
 }
-
 #else
 const GF_FilterRegister *rfadts_register(GF_FilterSession *session)
 {
 	return NULL;
 }
-#endif // GPAC_DISABLE_AV_PARSERS
+#endif // #if !defined(GPAC_DISABLE_AV_PARSERS) && !defined(GPAC_DISABLE_RFADTS)
+

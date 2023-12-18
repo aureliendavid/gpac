@@ -80,7 +80,7 @@ static u64 sys_start_time_hr = 0;
 #include <gpac/revision.h>
 #define GPAC_FULL_VERSION       GPAC_VERSION "-rev" GPAC_GIT_REVISION
 
-#define GPAC_COPYRIGHT "(c) 2000-2023 Telecom Paris distributed under LGPL v2.1+ - http://gpac.io"
+#define GPAC_COPYRIGHT "(c) 2000-2023 Telecom Paris distributed under LGPL v2.1+ - https://gpac.io"
 
 GF_EXPORT
 const char *gf_gpac_version()
@@ -881,6 +881,9 @@ Bool gf_sys_is_cov_mode()
 #endif
 
 const char *gpac_log_file_name=NULL;
+#ifndef GPAC_DISABLE_LOG
+extern Bool gpac_log_dual;
+#endif
 
 GF_EXPORT
 void gf_log_reset_file()
@@ -912,6 +915,10 @@ char gf_prog_lf = '\r';
 
 #ifndef GPAC_DISABLE_NETWORK
 extern Bool gpac_use_poll;
+#ifndef GPAC_DISABLE_NETCAP
+extern Bool gpac_netcap_rt;
+extern s32 gpac_netcap_loop;
+#endif
 #endif
 
 GF_EXPORT
@@ -965,6 +972,10 @@ GF_Err gf_sys_set_args(s32 argc, const char **argv)
 				gpac_log_file_name = arg_val;
 #endif
 				if (!use_sep) i += 1;
+			} else if (!strcmp(arg, "-log-dual") || !strcmp(arg, "-ld")) {
+#ifndef GPAC_DISABLE_LOG
+				gpac_log_dual = GF_TRUE;
+#endif
 			} else if (!strcmp(arg, "-logs") ) {
 				e = gf_log_set_tools_levels(arg_val, GF_FALSE);
 				if (e) return e;
@@ -994,7 +1005,25 @@ GF_Err gf_sys_set_args(s32 argc, const char **argv)
 #ifndef GPAC_DISABLE_NETWORK
 				gpac_use_poll = bool_value;
 #endif
-			} else if (!stricmp(arg, "-ntp-shift")) {
+			}
+#if !defined(GPAC_DISABLE_NETCAP)
+			else if (!stricmp(arg, "-netcap-dst") && arg_val) {
+				void gf_netcap_record(char *filename);
+				gf_netcap_record(arg_val);
+			} else if (!stricmp(arg, "-netcap-src") && arg_val) {
+				void gf_netcap_playback(char *filename);
+				gf_netcap_playback(arg_val);
+			} else if (!stricmp(arg, "-netcap-nrt")) {
+				gpac_netcap_rt = !bool_value;
+			} else if (!stricmp(arg, "-net-filter") && arg_val) {
+				void gf_net_filter_set_rules(char *rules);
+				gf_net_filter_set_rules(arg_val);
+			} else if (!stricmp(arg, "-netcap-loop")) {
+				gpac_netcap_loop = atoi(arg_val);
+			}
+
+#endif
+			else if (!stricmp(arg, "-ntp-shift")) {
 				s32 shift = arg_val ? atoi(arg_val) : 0;
 				gf_net_set_ntp_shift(shift);
 				if (!use_sep) i += 1;
@@ -1039,8 +1068,12 @@ GF_Err gf_sys_set_args(s32 argc, const char **argv)
 		gpac_argc = (u32) argc;
 		gpac_argv = argv;
 		gpac_argv_state = gf_realloc(gpac_argv_state, sizeof(Bool) * argc);
-		for (i=0; i<argc; i++)
+		for (i=0; i<argc; i++) {
 			gpac_argv_state[i] = GF_FALSE;
+			if (!strncmp(argv[i], "-p", 2)) gpac_argv_state[i] = GF_TRUE;
+			else if (!strcmp(argv[i], "-mem-track")) gpac_argv_state[i] = GF_TRUE;
+			else if (!strcmp(argv[i], "-mem-track-stack")) gpac_argv_state[i] = GF_TRUE;
+		}
 	}
 	return GF_OK;
 }
@@ -1558,6 +1591,11 @@ GF_Err gf_sys_init(GF_MemTrackerType mem_tracker_type, const char *profile)
 	return GF_OK;
 }
 
+
+#if !defined(GPAC_DISABLE_NETCAP) && !defined(GPAC_DISABLE_NETWORK)
+void gf_net_close_capture();
+#endif
+
 GF_EXPORT
 void gf_sys_close()
 {
@@ -1615,6 +1653,10 @@ void gf_sys_close()
 
 		gf_list_del(all_blobs);
 		all_blobs = NULL;
+
+#if !defined(GPAC_DISABLE_NETCAP) && !defined(GPAC_DISABLE_NETWORK)
+		gf_net_close_capture();
+#endif
 
 #ifdef GPAC_CONFIG_EMSCRIPTEN
 		fprintf(stderr, "\n\n");
@@ -1865,13 +1907,12 @@ Bool gf_sys_get_rti_os(u32 refresh_time_ms, GF_SystemRTInfo *rti, u32 flags)
 
 #if defined(_WIN32_WCE)
 	last_total_k_u_time = total_cpu_time;
-	if (!the_rti.process_memory) the_rti.process_memory = mem_usage_at_startup - ms.dwAvailPhys;
+	if (!the_rti.process_memory && (mem_usage_at_startup >= ms.dwAvailPhys))
+		the_rti.process_memory = mem_usage_at_startup - ms.dwAvailPhys;
 #else
 	last_proc_idle_time = proc_idle_time;
 	last_proc_k_u_time = proc_k_u_time;
 #endif
-
-	if (!the_rti.gpac_memory) the_rti.gpac_memory = the_rti.process_memory;
 
 	memcpy(rti, &the_rti, sizeof(GF_SystemRTInfo));
 	return GF_TRUE;
@@ -1922,8 +1963,8 @@ Bool gf_sys_get_rti_os(u32 refresh_time_ms, GF_SystemRTInfo *rti, u32 flags)
 	mach_msg_type_number_t count = HOST_VM_INFO_COUNT, size = sizeof(ti);
 
 	entry_time = gf_sys_clock();
+	memcpy(rti, &the_rti, sizeof(GF_SystemRTInfo));
 	if (last_update_time && (entry_time - last_update_time < refresh_time_ms)) {
-		memcpy(rti, &the_rti, sizeof(GF_SystemRTInfo));
 		return 0;
 	}
 
@@ -1964,8 +2005,20 @@ Bool gf_sys_get_rti_os(u32 refresh_time_ms, GF_SystemRTInfo *rti, u32 flags)
 	}
 
 	percent = 0;
+	the_rti.process_memory = ti.resident_size;
+
+	Bool gather_th_times = GF_TRUE;
 	utime = ti.user_time.seconds + ti.user_time.microseconds * 1e-6;
 	stime = ti.system_time.seconds + ti.system_time.microseconds * 1e-6;
+	size = TASK_INFO_MAX;
+	error = task_info(mach_task_self(), TASK_THREAD_TIMES_INFO, (task_info_t)&ti, &size);
+	if (error == KERN_SUCCESS) {
+		task_thread_times_info_t ttimes = (task_thread_times_info_t)&ti;
+		utime = ttimes->user_time.seconds + ttimes->user_time.microseconds * 1e-6;
+		stime = ttimes->system_time.seconds + ttimes->system_time.microseconds * 1e-6;
+		gather_th_times = GF_FALSE;
+	}
+
 	error = task_threads(task, &thread_table, &table_size);
 	if (error != KERN_SUCCESS) {
 		GF_LOG(GF_LOG_ERROR, GF_LOG_CORE, ("[RTI] Cannot get threads task for PID %d: error %d\n", the_rti.pid, error));
@@ -1980,8 +2033,10 @@ Bool gf_sys_get_rti_os(u32 refresh_time_ms, GF_SystemRTInfo *rti, u32 flags)
 			break;
 		}
 		if ((thi->flags & TH_FLAGS_IDLE) == 0) {
-			utime += thi->user_time.seconds + thi->user_time.microseconds * 1e-6;
-			stime += thi->system_time.seconds + thi->system_time.microseconds * 1e-6;
+			if (gather_th_times) {
+				utime += thi->user_time.seconds + thi->user_time.microseconds * 1e-6;
+				stime += thi->system_time.seconds + thi->system_time.microseconds * 1e-6;
+			}
 			percent +=  (u32) (100 * (double)thi->cpu_usage / TH_USAGE_SCALE);
 		}
 	}
@@ -2006,12 +2061,13 @@ Bool gf_sys_get_rti_os(u32 refresh_time_ms, GF_SystemRTInfo *rti, u32 flags)
 	} else {
 		mem_at_startup = the_rti.physical_memory_avail;
 	}
-	the_rti.process_memory = mem_at_startup - the_rti.physical_memory_avail;
+
+	if (!the_rti.process_memory && (mem_at_startup >= the_rti.physical_memory_avail))
+		the_rti.process_memory = mem_at_startup - the_rti.physical_memory_avail;
 
 #ifdef GPAC_MEMORY_TRACKING
 	the_rti.gpac_memory = gpac_allocated_memory;
 #endif
-
 	last_process_k_u_time = process_u_k_time;
 	last_cpu_idle_time = 0;
 	last_update_time = entry_time;
@@ -2137,9 +2193,8 @@ Bool gf_sys_get_rti_os(u32 refresh_time_ms, GF_SystemRTInfo *rti, u32 flags)
 	u32 entry_time;
 	u64 process_u_k_time;
 	u32 u_k_time, idle_time;
-#if 0
 	char szProc[100];
-#endif
+	char line[2048];
 
 	assert(sys_init);
 
@@ -2205,21 +2260,27 @@ Bool gf_sys_get_rti_os(u32 refresh_time_ms, GF_SystemRTInfo *rti, u32 flags)
 	} else {
 		GF_LOG(GF_LOG_ERROR, GF_LOG_CORE, ("[RTI] cannot open %s\n", szProc));
 	}
-	sprintf(szProc, "/proc/%d/status", the_rti.pid);
-	f = gf_fopen(szProc, "r");
-	if (f) {
-		while (gf_fgets(line, 1024, f) != NULL) {
-			if (!strnicmp(line, "VmSize:", 7)) {
-				sscanf(line, "VmSize: %"LLD" kB",  &the_rti.process_memory);
-				the_rti.process_memory *= 1024;
-			}
-		}
-		gf_fclose(f);
-	} else {
-		GF_LOG(GF_LOG_ERROR, GF_LOG_CORE, ("[RTI] cannot open %s\n", szProc));
-	}
 #endif
 
+#ifndef GPAC_CONFIG_EMSCRIPTEN
+	struct rusage r_usage;
+	getrusage(RUSAGE_SELF,&r_usage);
+	the_rti.process_memory = r_usage.ru_maxrss*1024;
+
+	if (!the_rti.process_memory) {
+		sprintf(szProc, "/proc/%d/status", the_rti.pid);
+		f = gf_fopen(szProc, "r");
+		if (f) {
+			while (gf_fgets(line, 1024, f) != NULL) {
+				if (!strnicmp(line, "VmRSS:", 7)) {
+					sscanf(line, "VmRSS: "LLD" kB", &the_rti.process_memory);
+					the_rti.process_memory *= 1024;
+				}
+			}
+			gf_fclose(f);
+		}
+	}
+#endif
 
 #ifdef GPAC_CONFIG_EMSCRIPTEN
 	the_rti.physical_memory = EM_ASM_INT(return HEAP8.length);
@@ -2293,7 +2354,10 @@ Bool gf_sys_get_rti_os(u32 refresh_time_ms, GF_SystemRTInfo *rti, u32 flags)
 	} else {
 		mem_at_startup = the_rti.physical_memory_avail;
 	}
-	the_rti.process_memory = mem_at_startup - the_rti.physical_memory_avail;
+
+	if (!the_rti.process_memory && (mem_at_startup >= the_rti.physical_memory_avail))
+		the_rti.process_memory = mem_at_startup - the_rti.physical_memory_avail;
+
 #ifdef GPAC_MEMORY_TRACKING
 	the_rti.gpac_memory = gpac_allocated_memory;
 #endif
@@ -2313,9 +2377,11 @@ Bool gf_sys_get_rti(u32 refresh_time_ms, GF_SystemRTInfo *rti, u32 flags)
 	if (gpac_disable_rti) return GF_FALSE;
 
 	Bool res = gf_sys_get_rti_os(refresh_time_ms, rti, flags);
-	if (res) {
-		if (!rti->process_memory) rti->process_memory = memory_at_gpac_startup - rti->physical_memory_avail;
-		if (!rti->gpac_memory) rti->gpac_memory = memory_at_gpac_startup - rti->physical_memory_avail;
+	if (res && memory_at_gpac_startup) {
+		if (!rti->process_memory && (memory_at_gpac_startup > rti->physical_memory_avail))
+			rti->process_memory = memory_at_gpac_startup - rti->physical_memory_avail;
+		if (!rti->gpac_memory)
+			rti->gpac_memory = rti->process_memory;
 	}
 	return res;
 }

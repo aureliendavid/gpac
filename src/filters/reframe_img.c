@@ -28,6 +28,7 @@
 #include <gpac/avparse.h>
 #include <gpac/network.h>
 
+#ifndef GPAC_DISABLE_RFIMG
 
 #if defined(WIN32) || defined(_WIN32_WCE)
 #include <windows.h>
@@ -306,7 +307,7 @@ GF_Err img_process(GF_Filter *filter)
 
 	w = fi.biWidth;
 	h = fi.biHeight;
-	pf = (fi.biBitCount==24) ? GF_PIXEL_RGB : GF_PIXEL_RGBA;
+	pf = (fi.biBitCount==24) ? GF_PIXEL_RGB : GF_PIXEL_RGBX;
 	size = (fi.biBitCount==24) ? 3 : 4;
 	size *= w;
 	out_stride = size;
@@ -437,5 +438,12 @@ const GF_FilterRegister *rfimg_register(GF_FilterSession *session)
 {
 	return &ReframeImgRegister;
 }
+#else
+const GF_FilterRegister *rfimg_register(GF_FilterSession *session)
+{
+	return NULL;
+}
+#endif //#ifndef GPAC_DISABLE_RFIMG
+
 
 

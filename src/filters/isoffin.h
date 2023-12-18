@@ -59,8 +59,8 @@ typedef struct
 {
 	//options
 	char *src, *initseg;
-	Bool allt, noedit, itt, itemid;
-	u32 smode;
+	Bool allt, itt, itemid;
+	u32 smode, edits;
 	u32 stsd;
 	Bool expart;
 	Bool alltk;
@@ -70,7 +70,8 @@ typedef struct
 	u32 xps_check;
 	char *catseg;
 	Bool sigfrag;
-	Bool nocrypt, strtxt, nodata, lightp;
+	Bool nocrypt, strtxt, lightp;
+	u32 nodata;
 	u32 mstore_purge, mstore_samples, mstore_size;
 
 	//internal
@@ -208,6 +209,8 @@ typedef struct
 
 	GF_FilterPacket *pck;
 	u32 alloc_size;
+
+	u32 nb_empty_retry;
 } ISOMChannel;
 
 void isor_reset_reader(ISOMChannel *ch);

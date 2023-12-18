@@ -778,12 +778,8 @@ static GF_Config *create_default_config(char *file_path, const char *profile)
 	gf_cfg_set_key(cfg, "core", "cache", gf_get_default_cache_directory_ex(GF_FALSE));
 #endif
 
-#if defined(WIN32)
-	gf_cfg_set_key(cfg, "core", "ds-disable-notif", "no");
-#endif
-
 	/*Setup font engine to FreeType by default, and locate TrueType font directory on the system*/
-	gf_cfg_set_key(cfg, "core", "font-reader", "FreeType Font Reader");
+	gf_cfg_set_key(cfg, "core", "font-reader", "freetype");
 	gf_cfg_set_key(cfg, "core", "rescan-fonts", "yes");
 
 
@@ -793,18 +789,18 @@ static GF_Config *create_default_config(char *file_path, const char *profile)
 	gf_cfg_set_key(cfg, "core", "cache-size", "100M");
 
 #if defined(_WIN32_WCE)
-	gf_cfg_set_key(cfg, "core", "video-output", "GAPI Video Output");
+	gf_cfg_set_key(cfg, "core", "video-output", "gapi");
 #elif defined(WIN32)
-	gf_cfg_set_key(cfg, "core", "video-output", "DirectX Video Output");
+	gf_cfg_set_key(cfg, "core", "video-output", "directx");
 #elif defined(__DARWIN__) || defined(__APPLE__)
-	gf_cfg_set_key(cfg, "core", "video-output", "SDL Video Output");
+	gf_cfg_set_key(cfg, "core", "video-output", "sdl");
 #elif defined(GPAC_CONFIG_ANDROID)
-	gf_cfg_set_key(cfg, "core", "video-output", "Android Video Output");
-	gf_cfg_set_key(cfg, "core", "audio-output", "Android Audio Output");
+	gf_cfg_set_key(cfg, "core", "video-output", "android");
+	gf_cfg_set_key(cfg, "core", "audio-output", "android");
 #else
 	//use SDL by default, will fallback to X11 if not found (our X11 wrapper is old and does not have all features of the SDL one)
-	gf_cfg_set_key(cfg, "core", "video-output", "SDL Video Output");
-	gf_cfg_set_key(cfg, "core", "audio-output", "SDL Audio Output");
+	gf_cfg_set_key(cfg, "core", "video-output", "sdl");
+	gf_cfg_set_key(cfg, "core", "audio-output", "sdla");
 #endif
 
 
@@ -1143,7 +1139,8 @@ skip_cfg:
 	if (fast_profile) goto exit;
 
 	check_modules_dir(cfg);
-	check_default_cred_file(cfg, szPath);
+	if (!profile || strcmp(profile, "0"))
+		check_default_cred_file(cfg, szPath);
 
 	if (!gf_cfg_get_key(cfg, "core", "store-dir")) {
 		if (profile && !strcmp(profile, "0")) {
@@ -1372,6 +1369,7 @@ GF_GPACArg GPAC_Args[] = {
 			"This moves all log to info level, dash to debug level and disable color logs"
  			, NULL, NULL, GF_ARG_STRING, GF_ARG_SUBSYS_LOG),
  GF_DEF_ARG("proglf", NULL, "use new line at each progress messages", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_LOG),
+ GF_DEF_ARG("log-dual", "ld", "output to both file and stderr", NULL, NULL, GF_ARG_BOOL, GF_ARG_SUBSYS_LOG),
 
  GF_DEF_ARG("strict-error", "se", "exit after the first error is reported", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_CORE),
  GF_DEF_ARG("store-dir", NULL, "set storage directory", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_CORE),
@@ -1404,14 +1402,32 @@ GF_GPACArg GPAC_Args[] = {
  GF_DEF_ARG("no-check", NULL, "disable compliance tests for inputs (ISOBMFF for now). This will likely result in random crashes", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
  GF_DEF_ARG("unhandled-rejection", NULL, "dump unhandled promise rejections", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
  GF_DEF_ARG("startup-file", NULL, "startup file of compositor in GUI mode", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
- GF_DEF_ARG("docs-dir", NULL, "default documents directoty (for GUI on iOS and Android)", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
+ GF_DEF_ARG("docs-dir", NULL, "default documents directory (for GUI on iOS and Android)", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
  GF_DEF_ARG("last-dir", NULL, "last working directory (for GUI)", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
 #ifdef GPAC_HAS_POLL
  GF_DEF_ARG("no-poll", NULL, "disable poll and use select for socket groups", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
 #endif
- GF_DEF_ARG("no-tls-rcfg", NULL, "disble automatic TCP to TLS reconfiguration", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
+ GF_DEF_ARG("no-tls-rcfg", NULL, "disable automatic TCP to TLS reconfiguration", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
  GF_DEF_ARG("no-fd", NULL, "use buffered IO instead of file descriptor for read/write - this can speed up operations on small files", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
  GF_DEF_ARG("no-mx", NULL, "disable all mutexes, threads and semaphores (do not use if unsure about threading used)", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
+#ifndef GPAC_DISABLE_NETCAP
+ GF_DEF_ARG("netcap-dst", NULL, "output packets to indicated file", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
+ GF_DEF_ARG("netcap-src", NULL, "read packets from indicated file, as produced by -netcap-dst or a pcap or pcapng file", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
+ GF_DEF_ARG("netcap-nrt", NULL, "ignore real-time regulation when reading packet from capture file", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
+ GF_DEF_ARG("netcap-loop", NULL, "set number of loops of capture file, -1 means forever", NULL, NULL, GF_ARG_INT, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
+ GF_DEF_ARG("net-filter", NULL, "set packet filtering rules (live or from file). Value is a list of `{OPT,OPT2...}` with OPT in:\n"
+ "- m=N: set rule mode - `N` can be `r` for reception only (default), `w` for send only or `rw` for both\n"
+ "- s=N: set packet start range to `N`\n"
+ "- e=N: set packet end range to `N` (only used for `r` and `f` rules)\n"
+ "- n=N: set number of packets to drop to `N`, 0 or 1 means single packet\n"
+ "- r=N: random drop one packet every `N`\n"
+ "- f=N: drop first packet every `N`\n"
+ "- p=P: local port number to filter, if not set the rule applies to all packets\n"
+ "- o=N: patch packet instead of droping (always true for TCP), replacing byte at offset `N` (0 is first byte, <0 for random)\n"
+ "- v=N: set patch byte value to `N` (hexa) or negative value for random (default)\n"
+ "\nEX {p=1234,s=100,n=20}{r=200,s=500,o=10,v=FE}\n"
+ "This will drop packets 100 to 119 on port 1234 and patch one random packet every 200 starting from packet 500, setting byte 10 to FE", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_CORE),
+#endif
 
  GF_DEF_ARG("cache", NULL, "cache directory location", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_HTTP),
  GF_DEF_ARG("proxy-on", NULL, "enable HTTP proxy", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_HTTP),
@@ -1423,7 +1439,7 @@ GF_GPACArg GPAC_Args[] = {
  GF_DEF_ARG("clean-cache", NULL, "indicate if HTTP cache should be clean upon launch/exit", NULL, NULL, GF_ARG_BOOL, GF_ARG_SUBSYS_HTTP),
  GF_DEF_ARG("cache-size", NULL, "specify cache size in bytes", "100M", NULL, GF_ARG_INT, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_HTTP),
  GF_DEF_ARG("tcp-timeout", NULL, "time in milliseconds to wait for HTTP/RTSP connect before error", "5000", NULL, GF_ARG_INT, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_HTTP),
- GF_DEF_ARG("req-timeout", NULL, "time in milliseconds to wait on HTTP/RTSP request before error", "10000", NULL, GF_ARG_INT, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_HTTP),
+ GF_DEF_ARG("req-timeout", NULL, "time in milliseconds to wait on HTTP/RTSP request before error (0 disables timeout)", "10000", NULL, GF_ARG_INT, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_HTTP),
  GF_DEF_ARG("no-timeout", NULL, "ignore HTTP 1.1 timeout in keep-alive", "false", NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_HTTP),
  GF_DEF_ARG("broken-cert", NULL, "enable accepting broken SSL certificates", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_HTTP),
  GF_DEF_ARG("user-agent", "ua", "set user agent name for HTTP/RTSP", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_HTTP),
@@ -1465,36 +1481,20 @@ GF_GPACArg GPAC_Args[] = {
  GF_DEF_ARG("blacklist", NULL, "blacklist the filters listed in the given string (comma-separated list). If first character is '-', this is a whitelist, i.e. only filters listed in the given string will be allowed", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_FILTERS),
  GF_DEF_ARG("no-graph-cache", NULL, "disable internal caching of filter graph connections. If disabled, the graph will be recomputed at each link resolution (lower memory usage but slower)", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_FILTERS),
  GF_DEF_ARG("no-reservoir", NULL, "disable memory recycling for packets and properties. This uses much less memory but stresses the system memory allocator much more", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_FILTERS),
-
  GF_DEF_ARG("buffer-gen", NULL, "default buffer size in microseconds for generic pids", "1000", NULL, GF_ARG_INT, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_FILTERS),
  GF_DEF_ARG("buffer-dec", NULL, "default buffer size in microseconds for decoder input pids", "1000000", NULL, GF_ARG_INT, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_FILTERS),
  GF_DEF_ARG("buffer-units", NULL, "default buffer size in frames when timing is not available", "1", NULL, GF_ARG_INT, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_FILTERS),
 
- GF_DEF_ARG("switch-vres", NULL, "select smallest video resolution larger than scene size, otherwise use current video resolution", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_VIDEO),
- GF_DEF_ARG("hwvmem", NULL, "specify (2D rendering only) memory type of main video backbuffer. Depending on the scene type, this may drastically change the playback speed\n"
- "- always: always on hardware\n"
- "- never: always on system memory\n"
- "- auto: selected by GPAC based on content type (graphics or video)", "auto", "auto|always|never", GF_ARG_INT, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_VIDEO),
- GF_DEF_ARG("pref-yuv4cc", NULL, "set preferred YUV 4CC for overlays (used by DirectX only)", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_VIDEO),
- GF_DEF_ARG("yuv-overlay", NULL, "indicate YUV overlay is possible on the video card. Always overridden by video output module", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_HIDE|GF_ARG_SUBSYS_VIDEO),
- GF_DEF_ARG("offscreen-yuv", NULL, "indicate if offscreen yuv->rgb is enabled. can be set to false to force disabling", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_VIDEO),
- GF_DEF_ARG("overlay-color-key", NULL, "color to use for overlay keying, hex format", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_VIDEO),
  GF_DEF_ARG("gl-bits-comp", NULL, "number of bits per color component in OpenGL", "8", NULL, GF_ARG_INT, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_VIDEO),
  GF_DEF_ARG("gl-bits-depth", NULL, "number of bits for depth buffer in OpenGL", "16", NULL, GF_ARG_INT, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_VIDEO),
  GF_DEF_ARG("gl-doublebuf", NULL, "enable OpenGL double buffering", "yes", NULL, GF_ARG_BOOL, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_VIDEO),
- GF_DEF_ARG("sdl-defer", NULL, "use defer rendering for SDL", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_VIDEO),
- GF_DEF_ARG("no-colorkey", NULL, "disable color keying at the video output level", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_VIDEO),
  GF_DEF_ARG("glfbo-txid", NULL, "set output texture ID when using `glfbo` output. The OpenGL context shall be initialized and gf_term_process shall be called with the OpenGL context active", NULL, NULL, GF_ARG_INT, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_VIDEO),
  GF_DEF_ARG("video-output", NULL, "indicate the name of the video output module to use (see `gpac -h modules`)."
 	" The reserved name `glfbo` is used in player mode to draw in the OpenGL texture identified by [-glfbo-txid](). "
-	" In this mode, the application is responsible for sending event to the compositor"
- , NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_VIDEO),
- GF_DEF_ARG("dfb-sys", NULL, "system DirectFB (x11, sdl, vnc, fbdev, osx ordevmem)", "x11", NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_VIDEO),
- GF_DEF_ARG("dfb-flip", NULL, "vsync mode for DirectFB (waitsync, wait, sync or swap)", "waitsync", NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_VIDEO),
+	" In this mode, the application is responsible for sending event to the compositor", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_VIDEO),
+
  GF_DEF_ARG("audio-output", NULL, "indicate the name of the audio output module to use", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_AUDIO),
- GF_DEF_ARG("alsa-devname", NULL, "set ALSA dev name", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_AUDIO),
- GF_DEF_ARG("force-alsarate", NULL, "force ALSA and OSS output sample rate", NULL, NULL, GF_ARG_INT, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_AUDIO),
- GF_DEF_ARG("ds-disable-notif", NULL, "disable DirectSound audio buffer notifications when supported", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_AUDIO),
+
  GF_DEF_ARG("font-reader", NULL, "indicate name of font reader module", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_TEXT),
  GF_DEF_ARG("font-dirs", NULL, "indicate comma-separated list of directories to scan for fonts", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_TEXT),
  GF_DEF_ARG("rescan-fonts", NULL, "indicate the font directory must be rescanned", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_ADVANCED|GF_ARG_SUBSYS_TEXT),
@@ -1520,6 +1520,7 @@ GF_DEF_ARG("charset", NULL, "set charset when not recognized from input. Possibl
  GF_DEF_ARG("piff-force-subsamples", NULL, "hack for PIFF PSEC files generated by 0.9.0 and 1.0 MP4Box with wrong subsample_count inserted for audio", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_HACKS),
  GF_DEF_ARG("vvdec-annexb", NULL, "hack for old vvdec+libavcodec supporting only annexB format", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_HACKS),
  GF_DEF_ARG("heif-hevc-urn", NULL, "use HEVC URN for alpha and depth in HEIF instead of MPEG-B URN (HEIF first edition)", NULL, NULL, GF_ARG_BOOL, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_HACKS),
+ GF_DEF_ARG("boxdir", NULL, "use box definitions in the given directory for XML dump", NULL, NULL, GF_ARG_STRING, GF_ARG_HINT_EXPERT|GF_ARG_SUBSYS_HACKS),
 
 
  {0}
@@ -1795,7 +1796,7 @@ u32 gf_sys_is_gpac_arg(const char *arg_name)
 
 
 GF_EXPORT
-void gf_sys_print_arg(FILE *helpout, u32 flags, const GF_GPACArg *arg, const char *arg_subsystem)
+void gf_sys_print_arg(FILE *helpout, GF_SysPrintArgFlags flags, const GF_GPACArg *arg, const char *arg_subsystem)
 {
 	u32 gen_doc = 0;
 	if (flags & GF_PRINTARG_MD)
@@ -1931,7 +1932,7 @@ void gf_sys_print_arg(FILE *helpout, u32 flags, const GF_GPACArg *arg, const cha
 
 
 GF_EXPORT
-void gf_sys_print_core_help(FILE *helpout, u32 flags, GF_SysArgMode mode, u32 subsystem_flags)
+void gf_sys_print_core_help(FILE *helpout, GF_SysPrintArgFlags flags, GF_SysArgMode mode, u32 subsystem_flags)
 {
 	u32 i=0;
 	const GF_GPACArg *args = gf_sys_get_options();
@@ -2039,7 +2040,7 @@ static void check_char_balanced(char *buf, char c)
 #endif
 
 GF_EXPORT
-void gf_sys_format_help(FILE *helpout, u32 flags, const char *fmt, ...)
+void gf_sys_format_help(FILE *helpout, GF_SysPrintArgFlags flags, const char *fmt, ...)
 {
 	char *line;
 	u32 len;
@@ -2426,14 +2427,13 @@ void gf_sys_format_help(FILE *helpout, u32 flags, const char *fmt, ...)
 					} else if (!strncmp(link, "LOG", 3)) {
 						fprintf(helpout, "[-%s](core_logs/#%s)", line, line);
 						line_pos+=7 + 2* (u32)strlen(line) + (u32)strlen("core_logs");
-					} else if (!strncmp(link, "CORE", 3)) {
+					} else if (!strncmp(link, "CORE", 4)) {
 						fprintf(helpout, "[-%s](core_options/#%s)", line, line);
 						line_pos+=7 + 2* (u32)strlen(line) + (u32)strlen("core_options");
-						line_pos+=7 + 2*(u32)strlen(line) + (u32)strlen("core_options");
 					} else if (!strncmp(link, "CFG", 3)) {
 						fprintf(helpout, "[-%s](core_config/#%s)", line, line);
 						line_pos+=7 + 2*(u32)strlen(line) + (u32)strlen("core_config");
-					} else if (!strncmp(link, "MP4B_GEN", 3)) {
+					} else if (!strncmp(link, "MP4B_GEN", 8)) {
 						fprintf(helpout, "[-%s](mp4box-gen-opts/#%s)", line, line);
 						line_pos+=7 + 2* (u32)strlen(line) + (u32)strlen("mp4box-gen-opts");
 					} else if (strlen(link)) {
@@ -2441,11 +2441,11 @@ void gf_sys_format_help(FILE *helpout, u32 flags, const char *fmt, ...)
 						line_pos+=7 + 2* (u32)strlen(line) + (u32)strlen(link);
 					} else if (is_app_opts || !strcmp(line, "i") || !strcmp(line, "o") || !strcmp(line, "h")) {
 						fprintf(helpout, "[-%s](#%s)", line, line);
-						line_pos+=5 + 2* (u32)strlen(line) + (u32)strlen(link);
+						line_pos+=6 + 2* (u32)strlen(line);
 					} else {
 						//this is a filter opt, don't print '-'
 						fprintf(helpout, "[%s](#%s)", line, line);
-						line_pos+=4 + 2* (u32)strlen(line) + (u32)strlen(link);
+						line_pos+=5 + 2* (u32)strlen(line);
 					}
 				} else {
 					if (gen_doc==2)
@@ -2453,7 +2453,7 @@ void gf_sys_format_help(FILE *helpout, u32 flags, const char *fmt, ...)
 
 					if (!strncmp(link, "GPAC", 4)
 						|| !strncmp(link, "LOG", 3)
-						|| !strncmp(link, "CORE", 3)
+						|| !strncmp(link, "CORE", 4)
 						|| strlen(link)
 						|| !strcmp(line, "i") || !strcmp(line, "o") || !strcmp(line, "h")
 					) {
@@ -2558,7 +2558,9 @@ Bool gf_sys_word_match(const char *orig, const char *dst)
 		return GF_FALSE;
 	}
 
-	if (gf_strnistr(orig, dst, dlen))
+	if ((dlen>=3) && gf_strnistr(orig, dst, dlen))
+		return GF_TRUE;
+	if ((olen>=3) && gf_strnistr(dst, orig, olen))
 		return GF_TRUE;
 
 	run = gf_malloc(sizeof(u32) * olen);

@@ -410,7 +410,7 @@ rescan_fonts:
 	}
 	if (rescan==2) {
 		void gf_get_default_font_dir(char szPath[GF_MAX_PATH]);
-		
+
 		char szPath[GF_MAX_PATH];
 		//check if font directory is default one, if not reset and rescan
 		gf_get_default_font_dir(szPath);
@@ -675,7 +675,7 @@ typedef struct
 	s32 last_x, last_y;
 } ft_outliner;
 
-#if defined(GPAC_CONFIG_IOS) || defined(GPAC_CONFIG_ANDROID)
+#if defined(GPAC_CONFIG_ANDROID)
 #define FTCST
 #else
 #define FTCST const
@@ -793,7 +793,7 @@ static GF_FontReader *ft_load()
 	FTBuilder *ftpriv;
 	dr = gf_malloc(sizeof(GF_FontReader));
 	memset(dr, 0, sizeof(GF_FontReader));
-	GF_REGISTER_MODULE_INTERFACE(dr, GF_FONT_READER_INTERFACE, "FreeType Font Reader", "gpac distribution");
+	GF_REGISTER_MODULE_INTERFACE(dr, GF_FONT_READER_INTERFACE, "freetype", "gpac distribution");
 
 	ftpriv = gf_malloc(sizeof(FTBuilder));
 	memset(ftpriv, 0, sizeof(FTBuilder));

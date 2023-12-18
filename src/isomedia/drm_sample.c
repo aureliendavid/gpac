@@ -1419,6 +1419,9 @@ Bool gf_isom_cenc_has_saiz_saio_full(GF_SampleTableBox *stbl, void *_traf, u32 s
 			if (sinf && sinf->scheme_type) {
 				saiz_aux_info_type = sinf_fmt = sinf->scheme_type->scheme_type;
 			}
+			//default to cenc for smooth
+			else if (traf->trex->track->moov->mov->is_smooth)
+				saiz_aux_info_type = sinf_fmt = GF_ISOM_CENC_SCHEME;
 		}
 		if (!saiz_aux_info_type && (c1==1) && (c2==1)) {
 			GF_LOG(GF_LOG_WARNING, GF_LOG_CONTAINER, ("[iso file] saiz box without flags nor aux info type and no default scheme, ignoring\n"));
@@ -1458,6 +1461,9 @@ Bool gf_isom_cenc_has_saiz_saio_full(GF_SampleTableBox *stbl, void *_traf, u32 s
 			if (sinf && sinf->scheme_type) {
 				saio_aux_info_type = sinf_fmt = sinf->scheme_type->scheme_type;
 			}
+			//default to cenc for smooth
+			else if (traf->trex->track->moov->mov->is_smooth)
+				saio_aux_info_type = sinf_fmt = GF_ISOM_CENC_SCHEME;
 		}
 		if (!saio_aux_info_type && (c1==1) && (c2==1)) {
 			GF_LOG(GF_LOG_WARNING, GF_LOG_CONTAINER, ("[iso file] saio box without flags nor aux info type and no default scheme, ignoring\n"));
@@ -1588,7 +1594,8 @@ static GF_Err isom_cenc_get_sai_by_saiz_saio(GF_MediaBox *mdia, u32 sampleNumber
 			saio_cenc->cached_data = gf_malloc(sizeof(u8)*saio_cenc->total_size);
 			if (!saio_cenc->cached_data) return GF_OUT_OF_MEM;
 			cur_position = gf_bs_get_position(mdia->information->dataHandler->bs);
-			gf_bs_seek(mdia->information->dataHandler->bs, offset);
+			//offset is as written in saio (relative to frag base data offset), compensate removed bytes
+			gf_bs_seek(mdia->information->dataHandler->bs, offset - mdia->mediaTrack->moov->mov->bytes_removed );
 			gf_bs_read_data(mdia->information->dataHandler->bs, saio_cenc->cached_data, saio_cenc->total_size);
 			gf_bs_seek(mdia->information->dataHandler->bs, cur_position);
 		}
@@ -1607,7 +1614,8 @@ static GF_Err isom_cenc_get_sai_by_saiz_saio(GF_MediaBox *mdia, u32 sampleNumber
 
 	offset += (nb_saio == 1) ? prev_sai_size : 0;
 	cur_position = gf_bs_get_position(mdia->information->dataHandler->bs);
-	gf_bs_seek(mdia->information->dataHandler->bs, offset);
+	//offset is as written in saio (relative to frag base data offset), compensate removed bytes
+	gf_bs_seek(mdia->information->dataHandler->bs, offset - mdia->mediaTrack->moov->mov->bytes_removed);
 
 	if (out_buffer) {
 		if ((*out_size) < size) {
@@ -1659,7 +1667,7 @@ GF_Err gf_isom_cenc_get_sample_aux_info(GF_ISOFile *the_file, u32 trackNumber, u
 
 	gf_isom_get_cenc_info(the_file, trackNumber, sampleDescIndex, NULL, &scheme_type, NULL);
 
-	/*get sample auxiliary information by saiz/saio rather than by parsing senc box*/
+	/*! if we have saiz/saio use this directly*/
 	if (gf_isom_cenc_has_saiz_saio_track(stbl, scheme_type)) {
 		return isom_cenc_get_sai_by_saiz_saio(trak->Media, sampleNumber, scheme_type, out_buffer, outSize);
 	}
@@ -1668,7 +1676,7 @@ GF_Err gf_isom_cenc_get_sample_aux_info(GF_ISOFile *the_file, u32 trackNumber, u
 
 	//senc is not loaded by default, do it now
 	if (!gf_list_count(senc->samp_aux_info)) {
-		GF_Err e = senc_Parse(trak->Media->information->dataHandler->bs, trak, NULL, senc);
+		GF_Err e = senc_Parse(trak->Media->information->dataHandler->bs, trak, NULL, senc, 0);
 		if (e) return e;
 	}
 
@@ -1690,6 +1698,10 @@ GF_Err gf_isom_cenc_get_sample_aux_info(GF_ISOFile *the_file, u32 trackNumber, u
 		u8 IV_size=0, constant_IV_size=0;
 		Bool is_Protected;
 
+#ifndef	GPAC_DISABLE_ISOM_FRAGMENTS
+		//read number of trashed samples since gf_isom_get_sample_cenc_info_internal removes them
+		sampleNumber += trak->sample_count_at_seg_start;
+#endif
 		gf_isom_get_sample_cenc_info_internal(trak, NULL, senc, sampleNumber, &is_Protected, NULL, NULL, &key_info, &key_info_size);
 		if (!key_info) {
 			IV_size = key_info_size; //piff default

@@ -28,6 +28,8 @@
 #include <gpac/constants.h>
 #include <gpac/network.h>
 
+#ifndef GPAC_DISABLE_PIN
+
 #ifdef WIN32
 
 #include <windows.h>
@@ -55,8 +57,8 @@ typedef struct
 	char *src;
 	char *ext;
 	char *mime;
-	u32 block_size;
-	Bool blk, ka, mkp, sigeos;
+	u32 block_size, bpcnt, timeout;
+	Bool blk, ka, mkp, sigflush, marker;
 
 	u32 read_block_size;
 	//only one output pid declared
@@ -75,6 +77,10 @@ typedef struct
 	Bool do_reconfigure;
 	char *buffer;
 	Bool is_stdin;
+	u32 left_over, copy_offset;
+	u8 store_char;
+	Bool has_recfg;
+	u32 last_active_ms;
 } GF_PipeInCtx;
 
 static Bool pipein_process_event(GF_Filter *filter, const GF_FilterEvent *evt);
@@ -112,7 +118,7 @@ static GF_Err pipein_initialize(GF_Filter *filter)
 		return GF_NOT_SUPPORTED;
 	}
 
-	//strip any fragment identifer
+	//strip any fragment identifier
 	frag_par = strchr(ctx->src, '#');
 	if (frag_par) frag_par[0] = 0;
 	cgi_par = strchr(ctx->src, '?');
@@ -310,10 +316,16 @@ static Bool pipein_process_event(GF_Filter *filter, const GF_FilterEvent *evt)
 	return GF_TRUE;
 }
 
+#define PIPE_FLUSH_MARKER	"GPACPIF"
+#define PIPE_RECFG_MARKER	"GPACPIR"
+#define PIPE_CLOSE_MARKER	"GPACPIC"
 
 static void pipein_pck_destructor(GF_Filter *filter, GF_FilterPid *pid, GF_FilterPacket *pck)
 {
 	GF_PipeInCtx *ctx = (GF_PipeInCtx *) gf_filter_get_udta(filter);
+	u32 size;
+	gf_filter_pck_get_data(pck, &size);
+	ctx->buffer[size] = ctx->store_char;
 	ctx->pck_out = GF_FALSE;
 	//ready to process again
 	gf_filter_post_process_task(filter);
@@ -340,6 +352,30 @@ static GF_Err pipein_process(GF_Filter *filter)
 	}
 
 	total_read = 0;
+	if (ctx->left_over) {
+		if (ctx->copy_offset)
+			memmove(ctx->buffer, ctx->buffer + ctx->copy_offset, ctx->left_over);
+		total_read = ctx->left_over;
+		ctx->left_over = 0;
+		ctx->copy_offset = 0;
+	}
+	if (ctx->has_recfg) {
+		ctx->do_reconfigure = GF_TRUE;
+		ctx->has_recfg = GF_FALSE;
+	}
+
+	if (!total_read && ctx->timeout) {
+		u32 now = gf_sys_clock();
+		if (!ctx->last_active_ms) {
+			ctx->last_active_ms = now;
+		} else if (now - ctx->last_active_ms > ctx->timeout) {
+			GF_LOG(GF_LOG_WARNING, GF_LOG_MMIO, ("[PipeIn] Timeout detected after %d ms, aborting\n", now - ctx->last_active_ms ));
+			gf_filter_pid_set_eos(ctx->pid);
+			ctx->is_end = GF_TRUE;
+			return GF_EOS;
+		}
+	}
+
 
 refill:
 
@@ -349,11 +385,12 @@ refill:
 			if (!ctx->ka) {
 				gf_filter_pid_set_eos(ctx->pid);
 				return GF_EOS;
-			} else if (ctx->sigeos) {
-				gf_filter_pid_set_eos(ctx->pid);
+			} else if (ctx->sigflush) {
+				gf_filter_pid_send_flush(ctx->pid);
+				ctx->bytes_read = 0;
 			}
 		} else {
-			nb_read = (s32) fread(ctx->buffer + total_read, 1, ctx->read_block_size, stdin);
+			nb_read = (s32) fread(ctx->buffer + total_read, 1, ctx->read_block_size-total_read, stdin);
 			if (!total_read && (nb_read<0)) {
 				if (!ctx->ka) {
 					gf_filter_pid_set_eos(ctx->pid);
@@ -362,7 +399,6 @@ refill:
 			}
 		}
 	} else {
-
 		errno = 0;
 #ifdef WIN32
 		nb_read = -1;
@@ -386,13 +422,15 @@ refill:
 						return GF_EOS;
 					}
 					GF_LOG(GF_LOG_INFO, GF_LOG_MMIO, ("[PipeIn] Pipe closed by remote side, reopening!\n"));
-					if (ctx->sigeos)
-						gf_filter_pid_set_eos(ctx->pid);
+					if (ctx->sigflush) {
+						gf_filter_pid_send_flush(ctx->pid);
+						ctx->bytes_read = 0;
+					}
 					return pipein_initialize(filter);
 				}
 			}
 		}
-		if (! ReadFile(ctx->pipe, ctx->buffer + total_read, ctx->read_block_size, (LPDWORD) &nb_read, ctx->blk ? NULL : &ctx->overlap)) {
+		if (! ReadFile(ctx->pipe, ctx->buffer + total_read, ctx->read_block_size-total_read, (LPDWORD) &nb_read, ctx->blk ? NULL : &ctx->overlap)) {
 			if (total_read) {
 				nb_read = 0;
 			} else {
@@ -415,42 +453,75 @@ refill:
 				}
 				else if (error == ERROR_BROKEN_PIPE) {
 					if (ctx->ka) {
+						if (ctx->bpcnt) {
+							ctx->bpcnt--;
+							if (!ctx->bpcnt) {
+								gf_filter_pid_set_eos(ctx->pid);
+								return GF_EOS;
+							}
+						}
 						GF_LOG(GF_LOG_INFO, GF_LOG_MMIO, ("[PipeIn] Pipe closed by remote side, reopening!\n"));
 						CloseHandle(ctx->pipe);
 						ctx->pipe = INVALID_HANDLE_VALUE;
-						if (ctx->sigeos)
-							gf_filter_pid_set_eos(ctx->pid);
+						if (ctx->sigflush) {
+							gf_filter_pid_send_flush(ctx->pid);
+							ctx->bytes_read = 0;
+						}
 						return pipein_initialize(filter);
 					} else {
 						gf_filter_pid_set_eos(ctx->pid);
 						return GF_EOS;
 					}
 				}
+				if (!ctx->bytes_read)
+					gf_filter_ask_rt_reschedule(filter, 10000);
+				else
+					gf_filter_ask_rt_reschedule(filter, 1000);
 				return GF_OK;
 			}
 		}
 #else
-		nb_read = (s32) read(ctx->fd, ctx->buffer + total_read, ctx->read_block_size);
+		nb_read = (s32) read(ctx->fd, ctx->buffer + total_read, ctx->read_block_size-total_read);
 		if (nb_read <= 0) {
 			if (total_read) {
 				nb_read = 0;
 			} else {
 				s32 res = errno;
+				//writers still active
 				if (res == EAGAIN) {
-					//non blocking pipe with writers active
-				} else if (nb_read < 0) {
+				}
+				//broken pipe
+				else if (nb_read < 0) {
 					GF_LOG(GF_LOG_ERROR, GF_LOG_MMIO, ("[PipeIn] Failed to read, error %s\n", gf_errno_str(res) ));
 					return GF_IO_ERR;
-				} else if (!ctx->ka && ctx->bytes_read) {
-					GF_LOG(GF_LOG_WARNING, GF_LOG_MMIO, ("[PipeIn] end of stream detected after %d bytes\n", ctx->bytes_read));
-					if (ctx->pid) gf_filter_pid_set_eos(ctx->pid);
-					close(ctx->fd);
-					ctx->fd=-1;
-					ctx->is_end = GF_TRUE;
-					return GF_EOS;
-				} else if (ctx->sigeos && ctx->pid) {
-					gf_filter_pid_set_eos(ctx->pid);
 				}
+				//wait for data
+				else if (ctx->bytes_read) {
+					if (ctx->ka && ctx->bpcnt) {
+						ctx->bpcnt--;
+						if (!ctx->bpcnt) {
+							GF_LOG(GF_LOG_INFO, GF_LOG_MMIO, ("[PipeIn] exiting keep-alive mode\n"));
+							ctx->ka = GF_FALSE;
+						}
+					}
+					if (!ctx->ka) {
+						GF_LOG(GF_LOG_INFO, GF_LOG_MMIO, ("[PipeIn] end of stream detected\n"));
+						if (ctx->pid) gf_filter_pid_set_eos(ctx->pid);
+						close(ctx->fd);
+						ctx->fd=-1;
+						ctx->is_end = GF_TRUE;
+						return GF_EOS;
+					}
+
+					//signal flush
+					if (ctx->sigflush && ctx->pid) {
+						gf_filter_pid_send_flush(ctx->pid);
+					}
+					//reset for longer reschedule time
+					ctx->bytes_read = 0;
+				}
+				if (!ctx->bytes_read) gf_filter_ask_rt_reschedule(filter, 10000);
+				else gf_filter_ask_rt_reschedule(filter, 1000);
 				return GF_OK;
 			}
 		}
@@ -459,17 +530,82 @@ refill:
 
 	if (nb_read) {
 		total_read += nb_read;
-		if (total_read + ctx->read_block_size < ctx->block_size) {
+		if (!ctx->left_over && (total_read + ctx->read_block_size < ctx->block_size)) {
 			nb_read = 0;
 			goto refill;
 		}
+		ctx->last_active_ms = 0;
 	}
 	nb_read = total_read;
 
+	Bool has_marker=GF_FALSE;
+	if (ctx->marker) {
+		u8 *start = ctx->buffer;
+		u32 avail = nb_read;
+		if (nb_read<8) {
+			ctx->left_over = nb_read;
+			nb_read = 0;
+			ctx->copy_offset = 0;
+		}
+		while (nb_read) {
+			u8 *m = memchr(start, PIPE_FLUSH_MARKER[0], avail);
+			if (!m) break;
+			u32 remain = (u32) ((u8*) ctx->buffer + nb_read - m);
+			if (remain<8) {
+				//check if we start with 'GPACPI', if not move to next 'G'
+				u32 check = MIN(remain, 6);
+				if (memcmp(m, PIPE_FLUSH_MARKER, check)) {
+					start = m+1;
+					avail = (u32) ((u8*)ctx->buffer+nb_read - start);
+					continue;
+				}
+				ctx->left_over = remain;
+				nb_read -= remain;
+				ctx->copy_offset = (u32) (m - (u8*)ctx->buffer);
+				break;
+			}
+			if (!memcmp(m, PIPE_FLUSH_MARKER, 7) && ((m[7]=='\0') || (m[7]=='\n'))) {
+				ctx->left_over = remain-8;
+				nb_read = (u32) (m - (u8*)ctx->buffer);
+				ctx->copy_offset = nb_read+8;
+				has_marker = GF_TRUE;
+				GF_LOG(GF_LOG_INFO, GF_LOG_MMIO, ("[PipeIn] Found flush marker\n"));
+				break;
+			}
+			if (!memcmp(m, PIPE_RECFG_MARKER, 7) && ((m[7]=='\0') || (m[7]=='\n'))) {
+				ctx->left_over = remain-8;
+				nb_read = (u32) (m - (u8*)ctx->buffer);
+				ctx->copy_offset = nb_read+8;
+				ctx->has_recfg = GF_TRUE;
+				GF_LOG(GF_LOG_INFO, GF_LOG_MMIO, ("[PipeIn] Found reconfig marker\n"));
+				break;
+			}
+			if (!memcmp(m, PIPE_CLOSE_MARKER, 7) && ((m[7]=='\0') || (m[7]=='\n'))) {
+				nb_read = (u32) (m - (u8*)ctx->buffer);
+				ctx->copy_offset = 0;
+				ctx->left_over=0;
+				ctx->bytes_read=8; //for above test
+				ctx->ka = GF_FALSE;
+				GF_LOG(GF_LOG_INFO, GF_LOG_MMIO, ("[PipeIn] Found close marker\n"));
+				break;
+			}
+			start = m+1;
+			avail = (u32) ((u8*)ctx->buffer+nb_read - start);
+		}
+	}
+
 	if (!nb_read) {
+		if (has_marker) {
+			gf_filter_pid_send_flush(ctx->pid);
+		}
+		if (!ctx->bytes_read)
+			gf_filter_ask_rt_reschedule(filter, 10000);
+		else if (!total_read)
+			gf_filter_ask_rt_reschedule(filter, 1000);
 		return GF_OK;
 	}
 
+	ctx->store_char = ctx->buffer[nb_read];
 	ctx->buffer[nb_read] = 0;
 	if (!ctx->pid || ctx->do_reconfigure) {
 		GF_LOG(GF_LOG_INFO, GF_LOG_MMIO, ("[PipeIn] configuring stream %d probe bytes\n", nb_read));
@@ -485,7 +621,7 @@ refill:
 	pck = gf_filter_pck_new_shared(ctx->pid, ctx->buffer, nb_read, pipein_pck_destructor);
 	if (!pck) return GF_OUT_OF_MEM;
 
-	GF_LOG(GF_LOG_DEBUG, GF_LOG_MMIO, ("[PipeIn] sending %d bytes\n", nb_read));
+	GF_LOG(GF_LOG_DEBUG, GF_LOG_MMIO, ("[PipeIn] Got %d bytes\n", nb_read));
 	gf_filter_pck_set_framing(pck, ctx->is_first, ctx->is_end);
 	gf_filter_pck_set_sap(pck, GF_FILTER_SAP_1);
 
@@ -494,6 +630,9 @@ refill:
 	gf_filter_pck_send(pck);
 	ctx->bytes_read += nb_read;
 
+	if (has_marker) {
+		gf_filter_pid_send_flush(ctx->pid);
+	}
 	if (ctx->is_end) {
 		gf_filter_pid_set_eos(ctx->pid);
 		return GF_EOS;
@@ -514,7 +653,11 @@ static const GF_FilterArgs PipeInArgs[] =
 	{ OFFS(blk), "open pipe in block mode", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_ADVANCED},
 	{ OFFS(ka), "keep-alive pipe when end of input is detected", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_ADVANCED},
 	{ OFFS(mkp), "create pipe if not found", GF_PROP_BOOL, "false", NULL, 0},
-	{ OFFS(sigeos), "signal end of stream whenever a pipe breaks in keep-alive mode", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_ADVANCED},
+	{ OFFS(sigflush), "signal end of stream upon pipe close - cf filter help", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_ADVANCED},
+	{ OFFS(marker), "inspect payload for flush and reconfigure signals - cf filter help", GF_PROP_BOOL, "false", NULL, GF_FS_ARG_HINT_ADVANCED},
+	{ OFFS(bpcnt), "number of broken pipe allowed before exiting, 0 means forever", GF_PROP_UINT, "0", NULL, GF_FS_ARG_HINT_EXPERT},
+	{ OFFS(timeout), "timeout in ms before considering input is in end of stream (0: no timeout)", GF_PROP_UINT, "0", NULL, GF_FS_ARG_HINT_ADVANCED},
+
 	{0}
 };
 
@@ -550,12 +693,22 @@ GF_FilterRegister PipeInRegister = {
 		"  \n"
 		"Input pipes can be setup to run forever using [-ka](). In this case:\n"
 		"- any potential pipe close on the writing side will be ignored\n"
-		"- end of stream will be triggered upon pipe close if [-sigeos]() is set\n"
+		"- pipeline flushing will be triggered upon pipe close if [-sigflush]() is set\n"
 		"- final end of stream will be triggered upon session close.\n"
 		"  \n"
 		"This can be useful to pipe raw streams from different process into gpac:\n"
 		"- Receiver side: `gpac -i pipe://mypipe:ext=.264:mkp:ka`\n"
 		"- Sender side: `cat raw1.264 > mypipe && gpac -i raw2.264 -o pipe://mypipe:ext=.264`"
+		"  \n"
+		"The pipeline flush is signaled as EOS while keeping the stream active.\n"
+		"This is typically needed for mux filters waiting for EOS to flush their data.\n"
+		"  \n"
+		"If [-marker]() is set, the following strings (all 8-bytes with `\0` or `\n` terminator) will be scanned:\n"
+		"- `GPACPIF`: triggers a pipeline flush event\n"
+		"- `GPACPIR`: triggers a reconfiguration of the format (used to signal mux type changes)\n"
+		"- `GPACPIC`: triggers a regular end of stream and aborts keepalive\n"
+		"The [-marker]() mode should be used carefully as it will slow down pipe processing (higher CPU usage and delayed output).\n"
+		"Warning: Usage of pipeline flushing may not be properly supported by some filters.\n"
 		"  \n"
 		"The pipe input can be created in blocking mode or non-blocking mode.\n"
 	"")
@@ -577,3 +730,10 @@ const GF_FilterRegister *pin_register(GF_FilterSession *session)
 	}
 	return &PipeInRegister;
 }
+#else
+const GF_FilterRegister *pin_register(GF_FilterSession *session)
+{
+	return NULL;
+}
+#endif // GPAC_DISABLE_PIN
+

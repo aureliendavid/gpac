@@ -2,7 +2,7 @@
  *			GPAC - Multimedia Framework C SDK
  *
  *			Authors: Jean Le Feuvre
- *			Copyright (c) Telecom ParisTech 2000-2022
+ *			Copyright (c) Telecom ParisTech 2000-2023
  *					All rights reserved
  *
  *  This file is part of GPAC / RTP/RTSP input filter
@@ -175,6 +175,15 @@ static void rtp_sl_packet_cbk(void *udta, u8 *payload, u32 size, GF_SLHeader *hd
 		}
 	}
 
+	if (gf_rtp_is_disc(stream->rtp_ch)) {
+		s64 delta = stream->prev_cts + stream->min_dur_rtp;
+		delta -= hdr->compositionTimeStamp;
+		stream->ts_offset -= delta;
+
+		stream->prev_cts = (u32) hdr->compositionTimeStamp;
+	}
+
+
 	pck = gf_filter_pck_new_alloc(stream->opid, size, &pck_data);
 	if (!pck) return;
 	
@@ -188,10 +197,9 @@ static void rtp_sl_packet_cbk(void *udta, u8 *payload, u32 size, GF_SLHeader *hd
 	if ((stream->rtpin->max_sleep>0) && stream->prev_cts && diff) {
 		if (diff<0) diff = -diff;
 		if (!stream->min_dur_rtp || (diff < stream->min_dur_rtp)) {
-			u64 dur = diff;
-			dur *= 1000;
-			dur /= stream->rtp_ch->TimeScale;
-			stream->min_dur_rtp = (u32) dur;
+			stream->min_dur_rtp = (u32) diff;
+
+			u64 dur = (u32) gf_timestamp_rescale(diff, stream->rtp_ch->TimeScale, 1000);
 			if (dur > stream->rtpin->max_sleep) dur = stream->rtpin->max_sleep;
 			if (!stream->rtpin->min_frame_dur_ms || ( (u32) dur < stream->rtpin->min_frame_dur_ms)) {
 				stream->rtpin->min_frame_dur_ms = (u32) dur;
@@ -475,7 +483,7 @@ GF_RTPInStream *rtpin_stream_new(GF_RTPIn *rtp, GF_SDPMedia *media, GF_SDPInfo *
 		char *rvc_data=NULL;
 		u32 rvc_size=0;
 		Bool is_gz = GF_FALSE;
-		if (!strncmp(rvc_config_att, "data:application/rvc-config+xml", 32) && strstr(rvc_config_att, "base64") ) {
+		if (!strncmp(rvc_config_att, "data:application/rvc-config+xml", 31) && strstr(rvc_config_att, "base64") ) {
 			char *data = strchr(rvc_config_att, ',');
 			if (data) {
 				rvc_size = (u32) strlen(data) * 3 / 4 + 1;
@@ -483,7 +491,7 @@ GF_RTPInStream *rtpin_stream_new(GF_RTPIn *rtp, GF_SDPMedia *media, GF_SDPInfo *
 				rvc_size = gf_base64_decode(data, (u32) strlen(data), rvc_data, rvc_size);
 				rvc_data[rvc_size] = 0;
 			}
-			if (!strncmp(rvc_config_att, "data:application/rvc-config+xml+gz", 35)) is_gz = GF_TRUE;
+			if (!strncmp(rvc_config_att, "data:application/rvc-config+xml+gz", 34)) is_gz = GF_TRUE;
 		} else if (!strnicmp(rvc_config_att, "http://", 7) || !strnicmp(rvc_config_att, "https://", 8) ) {
 			return NULL;
 		}
@@ -494,7 +502,7 @@ GF_RTPInStream *rtpin_stream_new(GF_RTPIn *rtp, GF_SDPMedia *media, GF_SDPInfo *
 				gf_free(rvc_data);
 				return NULL;
 #else
-				gf_gz_decompress_payload(rvc_data, rvc_size, &tmp->depacketizer->sl_map.rvc_config, &tmp->depacketizer->sl_map.rvc_config_size);
+				gf_gz_decompress_payload_ex(rvc_data, rvc_size, &tmp->depacketizer->sl_map.rvc_config, &tmp->depacketizer->sl_map.rvc_config_size, GF_TRUE);
 				gf_free(rvc_data);
 #endif
 			} else {
@@ -744,6 +752,7 @@ u32 rtpin_stream_read(GF_RTPInStream *stream)
 			tot_size += size;
 			rtpin_stream_on_rtcp_pck(stream, stream->buffer, size);
 		}
+		stream->rtpin->eos_probe_start = 0;
 	}
 
 	if (gf_sk_group_sock_is_set(stream->rtpin->sockgroup, stream->rtp_ch->rtp, GF_SK_SELECT_READ)) {
@@ -752,6 +761,7 @@ u32 rtpin_stream_read(GF_RTPInStream *stream)
 			tot_size += size;
 			rtpin_stream_on_rtp_pck(stream, stream->buffer, size);
 		}
+		stream->rtpin->eos_probe_start = 0;
 	}
 
 	/*and send the report*/

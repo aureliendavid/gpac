@@ -82,6 +82,13 @@ Macro formatting a 4-character code (or 4CC) "abcd" as 0xAABBCCDD
 */
 const char *gf_4cc_to_str(u32 type);
 
+/*! converts four character code to string in the provided buffer - thread-safe version of \ref gf_4cc_to_str
+\param type a four character code
+\param szType buffer to write the code to
+\return the onput buffer
+*/
+const char *gf_4cc_to_str_safe(u32 type, char szType[GF_4CC_MSIZE]);
+
 /*! converts a 4CC string to its 32 bits value
 \param val  four character string
 \return code value or 0 if error
@@ -281,7 +288,7 @@ Bool gf_parse_frac(const char *str, GF_Fraction *frac);
 /*!
 \brief search string without case
 
-Search a aubstring in a string witout checking for case
+Search a substring in a string without checking for case
 \param text text to search
 \param subtext string to find
 \param subtext_len length of string to find
@@ -1112,7 +1119,7 @@ int gf_getch();
 \param showContent boolean indicating if the line read should be printed on stderr or not
 \return GF_TRUE if some content was read, GF_FALSE otherwise
 */
-u32 gf_read_line_input(char * line, int maxSize, Bool showContent);
+Bool gf_read_line_input(char * line, int maxSize, Bool showContent);
 
 
 /*!
@@ -1776,7 +1783,7 @@ typedef int (*gfio_printf_proc)(GF_FileIO *fileio, const char *format, va_list a
 
 /*! Creates a new file IO object
 
-There is no guarantee that the corresponding resource will be opened by the framework, it is therefore the caller responsability to track objects created by
+There is no guarantee that the corresponding resource will be opened by the framework, it is therefore the caller responsibility to track objects created by
 gf_fileio_new or as a response to open with mode "url".
 
 \param url the original URL this file IO object wraps
@@ -1976,7 +1983,7 @@ GF_Err gf_gz_compress_payload_ex(u8 **data, u32 data_len, u32 *out_size, u8 data
 Decompresses a data buffer using zlib/inflate.
 \param data data buffer to be decompressed
 \param data_len length of the data buffer to be decompressed
-\param uncompressed_data pointer to the uncompressed data buffer. It is the responsibility of the caller to free this buffer.
+\param uncompressed_data pointer to the uncompressed data buffer. The resulting buffer is NULL-terminated. It is the responsibility of the caller to free this buffer.
 \param out_size size of the uncompressed buffer
 \return error if any
  */
@@ -1986,7 +1993,7 @@ GF_Err gf_gz_decompress_payload(u8 *data, u32 data_len, u8 **uncompressed_data, 
 Decompresses a data buffer using zlib/inflate.
 \param data data buffer to be decompressed
 \param data_len length of the data buffer to be decompressed
-\param uncompressed_data pointer to the uncompressed data buffer. It is the responsibility of the caller to free this buffer.
+\param uncompressed_data pointer to the uncompressed data buffer. The resulting buffer is NULL-terminated. It is the responsibility of the caller to free this buffer.
 \param out_size size of the uncompressed buffer
 \param use_gz if true, gz header is present
 \return error if any
