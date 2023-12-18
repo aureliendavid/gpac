@@ -95,7 +95,7 @@ const char *gf_fs_path_escape_colon_ex(GF_FilterSession *sess, const char *path,
 	if (sep && ((sep[5]==sess->sep_args) || (sep[5]==0)))
 		return sep;
 	//for local files, check if file/dir exists for each ':' specified
-	//this allows for file path with ':' 
+	//this allows for file path with ':'
 	if (!strncmp(path, "file://", 7) || !strstr(path, "://")) {
 		sep = (char*)res;
 		while (1) {
@@ -250,8 +250,6 @@ static void filter_push_args(GF_FilterSession *fsess, char **out_args, char *in_
 		else if (!strncmp(in_args, "SID", 3) && (in_args[3]==fsess->sep_name)) {
 		}
 		else if (!strncmp(in_args, "TAG", 3) && (in_args[3]==fsess->sep_name)) {
-		}
-		else if (!strncmp(in_args, "ITAG", 4) && (in_args[4]==fsess->sep_name)) {
 		}
 		else if (!strncmp(in_args, "FS", 2) && (in_args[2]==fsess->sep_name)) {
 		}
@@ -1391,7 +1389,7 @@ static const char *gf_filter_load_arg_config(GF_Filter *filter, const char *sec_
 			filter->pid_decode_buffer_max_us = ap.value.uint;
 		}
 	}
-	
+
 	//ifce (used by socket and other filters), use core default
 	if (!strcmp(arg_name, "ifce")) {
 		opt = gf_opts_get_key("core", "ifce");
@@ -1519,7 +1517,7 @@ static void filter_parse_dyn_args(GF_Filter *filter, const char *args, GF_Filter
 	) {
 		filter->force_demux = 1;
 	}
-	//implicit linking mode: if not a script or if script init (initialized called) and no extra pid set, enable clonable 
+	//implicit linking mode: if not a script or if script init (initialized called) and no extra pid set, enable clonable
 	if ( (filter->session->flags & GF_FS_FLAG_IMPLICIT_MODE)
 		&& !filter->max_extra_pids
 		&& (for_script || !(filter->freg->flags&GF_FS_REG_SCRIPT))
@@ -2018,10 +2016,8 @@ skip_date:
 			}
 			//filter itag
 			else if (!strcmp("ITAG", szArg)) {
-				if (! filter->dynamic_filter) {
-					if (filter->itag) gf_free(filter->itag);
-					filter->itag = value ? gf_strdup(value) : NULL;
-				}
+				if (filter->itag) gf_free(filter->itag);
+				filter->itag = value ? gf_strdup(value) : NULL;
 				found = GF_TRUE;
 				internal_arg = GF_TRUE;
 			}
@@ -3686,10 +3682,13 @@ void gf_filter_remove(GF_Filter *filter)
 
 	//locate source filter(s)
 	gf_mx_p(filter->tasks_mx);
+	fprintf(stderr, "%s:%d filter remove: %s\n", __FILE__, __LINE__, filter->name);
 	for (i=0; i<filter->num_input_pids; i++) {
 		GF_FilterPidInst *pidi = gf_list_get(filter->input_pids, i);
+		fprintf(stderr, "%s:%d filter : %s num_destinations %d\n", __FILE__, __LINE__, filter->name, pidi->pid->num_destinations);
 		//fanout, only disconnect this pid instance
 		if (pidi->pid->num_destinations>1) {
+			fprintf(stderr, "%s:%d branching remove: %s\n", __FILE__, __LINE__, filter->name);
 			//post STOP and disconnect
 			GF_FilterEvent fevt;
 			GF_FEVT_INIT(fevt, GF_FEVT_STOP, (GF_FilterPid *) pidi);
@@ -3699,13 +3698,16 @@ void gf_filter_remove(GF_Filter *filter)
 		}
 		//this is a source for the chain
 		else if (!pidi->pid->filter->num_input_pids) {
+			fprintf(stderr, "%s:%d branching remove: %s\n", __FILE__, __LINE__, filter->name);
 			gf_filter_remove_internal(pidi->pid->filter, NULL, GF_FALSE);
 		}
 		//otherwise walk down the chain if we have one-to-one
 		else if (pidi->pid->filter->num_output_pids==1) {
+			fprintf(stderr, "%s:%d branching remove: %s\n", __FILE__, __LINE__, filter->name);
 			gf_filter_remove(pidi->pid->filter);
 		} else {
 			GF_FilterEvent fevt;
+			fprintf(stderr, "%s:%d branching remove: %s\n", __FILE__, __LINE__, filter->name);
 			//source filter still active, mark output pid as not connected, send a stop and post disconnect
 			assert(pidi->pid->num_destinations==1);
 			pidi->pid->not_connected=1;

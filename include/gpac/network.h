@@ -400,6 +400,8 @@ typedef struct __tag_sock_group GF_SockGroup;
 #define GF_SOCK_TYPE_UDP_UN		0x04
 #endif
 
+#define GF_SOCK_TYPE_WS		0x05
+
 /*!
 \brief socket constructor
 

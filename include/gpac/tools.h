@@ -601,6 +601,12 @@ typedef void (*gf_rmt_user_callback)(void *udta, const char* text);
 GF_Err gf_sys_profiler_set_callback(void *udta, gf_rmt_user_callback rmt_usr_cbk);
 
 
+/*! Sends a log message to remotery web client
+\param msg text message to send. The message format should be json
+\return GF_OK if success, GF_BAD_PARAM if profiler is not running, GF_NOT_SUPPORTED if profiler not supported
+*/
+GF_Err gf_sys_profiler_log(const char *msg);
+
 /*! Sends a message to remotery web client
 \param msg text message to send. The message format should be json
 \return GF_OK if success, GF_BAD_PARAM if profiler is not running, GF_NOT_SUPPORTED if profiler not supported
@@ -2292,7 +2298,7 @@ Bool gf_creds_check_membership(const char *username, const char *users, const ch
 
 /*to call whenever the OpenGL library is opened - this function is needed to bind OpenGL and remotery, and to load
 OpenGL extensions on windows
-not exported, and not included in src/compositor/gl_inc.h since it may be needed even when no OpenGL 
+not exported, and not included in src/compositor/gl_inc.h since it may be needed even when no OpenGL
 calls are made by the caller*/
 void gf_opengl_init();
 
@@ -2357,4 +2363,3 @@ void gf_gl_txw_reset(GF_GLTextureWrapper *tx);
 
 
 #endif		/*_GF_CORE_H_*/
-

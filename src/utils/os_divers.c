@@ -1247,12 +1247,29 @@ GF_Err gf_sys_profiler_set_callback(void *udta, gf_rmt_user_callback usr_cbk)
 #endif
 }
 
+
+GF_EXPORT
+GF_Err gf_sys_profiler_log(const char *msg)
+{
+#ifndef GPAC_DISABLE_REMOTERY
+	if (remotery_handle) {
+		rmt_LogText(msg);
+		return GF_OK;
+	}
+	return GF_BAD_PARAM;
+#else
+	return GF_NOT_SUPPORTED;
+#endif
+}
+
 GF_EXPORT
 GF_Err gf_sys_profiler_send(const char *msg)
 {
 #ifndef GPAC_DISABLE_REMOTERY
 	if (remotery_handle) {
-		rmt_LogText(msg);
+		//rmt_LogText(msg);
+		//fprintf(stderr, "in gf_sys_profiler_send() size %d: %s\n", sizeof(msg), msg);
+		rmt_SendText(msg);
 		return GF_OK;
 	}
 	return GF_BAD_PARAM;
