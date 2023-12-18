@@ -223,8 +223,8 @@ function add_png_probe(idx, name) {
 		print("discrepency in filter names " + filter.name + " v. " + name);
 	}
 	else {
-		// probefilter = filter.insert("dst="+dst.url+":osize=128x128:dur=33/1000:ITAG=NODISPLAY");ù
-		probefilter = filter.insert("dst="+dst.url+":osize=128x128:fps=1/1");
+		probefilter = filter.insert("dst="+dst.url+":osize=128x128:dur=33/1000:ITAG=NODISPLAY");ù
+		// probefilter = filter.insert("dst="+dst.url+":osize=128x128:fps=1/1");
 		//probefilter.tagged = "hideme";
 		//let probefilter = session.add_filter("dst="+dst.url+":osize=128x128", filter);
 		console.log("probe added :" + JSON.stringify(gpac_filter_to_object(probefilter)));
@@ -360,11 +360,11 @@ function send_all_filters() {
 		session.post_task( ()=> {
 
 			let js_filters = [];
-			png_rm += 1;
+			// png_rm += 1;
 
-			if (png_added && png_rm == 50) {
-				session.get_filter(9).remove();
-			}
+			// if (png_added && png_rm == 50) {
+			// 	session.get_filter(9).remove();
+			// }
 
 
 			session.lock_filters(true);
@@ -406,7 +406,8 @@ function gpac_filter_to_object(f, full=false) {
 	jsf['gpac_args'] = [] ; // filtrer par type de filtre ?
 
 	if (full) {		//TODO: remove tmp hack to avoid pfmt error on ffenc
-		let all_args = f.all_args(false); // full args
+		// let all_args = f.all_args(false); // full args
+		let all_args = f.all_args(true); // full args => error in js interface (param is reverse of value_only)
 		// console.log(JSON.stringify(all_args));
 		for (let arg of all_args) {
 			if (arg && (full || filter_args_lite.includes(arg.name)))
