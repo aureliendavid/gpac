@@ -1348,6 +1348,7 @@ static GF_Err isoffin_process(GF_Filter *filter)
 {
 	ISOMReader *read = gf_filter_get_udta(filter);
 	u32 i, count = gf_list_count(read->channels);
+	GF_Err ret = GF_OK;
 	Bool is_active = GF_FALSE;
 	Bool in_is_eos = GF_FALSE;
 	Bool in_is_flush = GF_FALSE;
@@ -1730,7 +1731,8 @@ static GF_Err isoffin_process(GF_Filter *filter)
 					read->eos_signaled = GF_TRUE;
 					gf_filter_pid_set_eos(ch->pid);
 				}
-				return ch->last_state;
+				ret = ch->last_state;
+				break;
 			} else {
 				if ((ch->last_state==GF_OK) && ch->sap_only)
 					gf_filter_ask_rt_reschedule(filter, 1);
@@ -1766,7 +1768,7 @@ static GF_Err isoffin_process(GF_Filter *filter)
 		return GF_EOS;
 	}
 
-	return GF_OK;
+	return ret;
 
 }
 
