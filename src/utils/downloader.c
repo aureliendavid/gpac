@@ -2903,7 +2903,7 @@ static GF_Err curl_setup_session(GF_DownloadSession *sess)
 		//fallback 1.1
 		if (res==CURLE_UNSUPPORTED_PROTOCOL)
 			res = curl_easy_setopt(sess->curl_hnd, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_1_1);
-	
+
 	}
 
 	curl_easy_setopt(sess->curl_hnd, CURLOPT_VERBOSE, 1);
@@ -2922,18 +2922,18 @@ static GF_Err curl_setup_session(GF_DownloadSession *sess)
 	//}
 
 	{
-		char* cainfo = NULL;
-		char* capath = NULL;
+		// char* cainfo = NULL;
+		// char* capath = NULL;
 
-		curl_easy_getinfo(sess->curl_hnd, CURLINFO_CAINFO, &cainfo);	
-		curl_easy_getinfo(sess->curl_hnd, CURLINFO_CAPATH, &capath);
-		fprintf(stderr, "%s:%d CURLINFO_CAINFO %s CURLINFO_CAPATH %s\n", __FILE__, __LINE__, cainfo ? cainfo : "nULL", capath ? capath : "nULL");
+		// curl_easy_getinfo(sess->curl_hnd, CURLINFO_CAINFO, &cainfo);
+		// curl_easy_getinfo(sess->curl_hnd, CURLINFO_CAPATH, &capath);
+		// fprintf(stderr, "%s:%d CURLINFO_CAINFO %s CURLINFO_CAPATH %s\n", __FILE__, __LINE__, cainfo ? cainfo : "nULL", capath ? capath : "nULL");
 
-		curl_easy_setopt(sess->curl_hnd, CURLOPT_CAINFO, "./curl-ca-bundle.crt");
+		// curl_easy_setopt(sess->curl_hnd, CURLOPT_CAINFO, "./curl-ca-bundle.crt");
 
-		curl_easy_getinfo(sess->curl_hnd, CURLINFO_CAINFO, &cainfo);
-		curl_easy_getinfo(sess->curl_hnd, CURLINFO_CAPATH, &capath);
-		fprintf(stderr, "%s:%d CURLINFO_CAINFO %s CURLINFO_CAPATH %s\n", __FILE__, __LINE__, cainfo ? cainfo : "nULL", capath ? capath : "nULL");
+		// curl_easy_getinfo(sess->curl_hnd, CURLINFO_CAINFO, &cainfo);
+		// curl_easy_getinfo(sess->curl_hnd, CURLINFO_CAPATH, &capath);
+		// fprintf(stderr, "%s:%d CURLINFO_CAINFO %s CURLINFO_CAPATH %s\n", __FILE__, __LINE__, cainfo ? cainfo : "nULL", capath ? capath : "nULL");
 
 	}
 
@@ -3088,21 +3088,21 @@ GF_Err gf_dm_sess_setup_from_url(GF_DownloadSession *sess, const char *url, Bool
 
 #ifdef GPAC_HAS_CURL
 		if (!sess->dm->curl_multi) {
-			sess->dm->curl_multi = curl_multi_init();
-			//curl_easy_setopt(sess->dm->curl_multi, CURLOPT_VERBOSE, 1);
-			//{
-			//	long http_version;
-			//	curl_easy_getinfo(sess->dm->curl_multi, CURLINFO_HTTP_VERSION, &http_version);
-			//	fprintf(stderr, "%s:%d CURLINFO_HTTP_VERSION %d\n", __FILE__, __LINE__, http_version);
-			//}
-			//curl_easy_setopt(sess->dm->curl_multi, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_1_1);
-			//curl_multi_setopt(sess->dm->curl_multi, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_1_1);
-			//{
-			//	long http_version;
-			//	curl_easy_getinfo(sess->dm->curl_multi, CURLINFO_HTTP_VERSION, &http_version);
-			//	fprintf(stderr, "%s:%d CURLINFO_HTTP_VERSION %d\n", __FILE__, __LINE__, http_version);
-			//}
-			curl_global_trace("all");
+			// sess->dm->curl_multi = curl_multi_init();
+			// //curl_easy_setopt(sess->dm->curl_multi, CURLOPT_VERBOSE, 1);
+			// //{
+			// //	long http_version;
+			// //	curl_easy_getinfo(sess->dm->curl_multi, CURLINFO_HTTP_VERSION, &http_version);
+			// //	fprintf(stderr, "%s:%d CURLINFO_HTTP_VERSION %d\n", __FILE__, __LINE__, http_version);
+			// //}
+			// //curl_easy_setopt(sess->dm->curl_multi, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_1_1);
+			// //curl_multi_setopt(sess->dm->curl_multi, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_1_1);
+			// //{
+			// //	long http_version;
+			// //	curl_easy_getinfo(sess->dm->curl_multi, CURLINFO_HTTP_VERSION, &http_version);
+			// //	fprintf(stderr, "%s:%d CURLINFO_HTTP_VERSION %d\n", __FILE__, __LINE__, http_version);
+			// //}
+			// curl_global_trace("all");
 		}
 #endif
 
@@ -3786,10 +3786,10 @@ Bool gf_ssl_check_cert(SSL *ssl, const char *server_name)
 	X509 *cert = SSL_get_peer_certificate(ssl);
 	if (!cert) return GF_TRUE;
 
-	
-	
 
-	
+
+
+
 	{
 		#include <openssl/x509.h>
 		char* dir=NULL;
@@ -3803,10 +3803,10 @@ Bool gf_ssl_check_cert(SSL *ssl, const char *server_name)
 		fprintf(stderr, "x509 dir = %s file=%s\n", dir, file);
 
 		if (!dir) {
-			dir = X509_get_default_cert_dir();		
+			dir = X509_get_default_cert_dir();
 		}
 		fprintf(stderr, "x509 dir = %s file=%s\n", dir, file);
-				
+
 
 		file = X509_get_default_cert_file_env();
 		fprintf(stderr, "x509 dir = %s file=%s\n", dir, file);
@@ -4616,7 +4616,7 @@ GF_DownloadManager *gf_dm_new(GF_FilterSession *fsess)
 #ifdef GPAC_HAS_CURL
 	if (gf_opts_get_bool("core", "curl")) {
 		dm->curl_multi = curl_multi_init();
-		curl_multi_setopt(dm->curl_multi, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);		
+		curl_multi_setopt(dm->curl_multi, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);
 		dm->curl_mx = gf_mx_new("curl");
 		curl_global_init(CURL_GLOBAL_ALL);
 		curl_easy_setopt(dm->curl_multi, CURLOPT_VERBOSE, 1);
@@ -4632,7 +4632,7 @@ GF_DownloadManager *gf_dm_new(GF_FilterSession *fsess)
 			curl_easy_getinfo(dm->curl_multi, CURLINFO_HTTP_VERSION, &http_version);
 			fprintf(stderr, "%s:%d CURLINFO_HTTP_VERSION %d\n", __FILE__, __LINE__, http_version);
 		}
-		curl_global_trace("all");
+		//curl_global_trace("all");
 	}
 #endif
 
@@ -8897,4 +8897,3 @@ void gf_dm_sess_set_netcap_id(GF_DownloadSession *sess, const char *netcap_id)
 }
 
 #endif // GPAC_CONFIG_EMSCRIPTEN
-

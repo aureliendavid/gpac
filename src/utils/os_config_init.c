@@ -1186,7 +1186,7 @@ static GF_Config *gf_cfg_init(const char *profile)
 			fprintf(stderr, "got config ca_bundle value: %s\n", ca_bundle);
 
 			if (!ca_bundle) {
-				char* szShare[GF_MAX_PATH];
+				char szShare[GF_MAX_PATH];
 				if (get_default_install_path(szShare, GF_PATH_SHARE)) {
 					char gui_path[GF_MAX_PATH + 100];
 
