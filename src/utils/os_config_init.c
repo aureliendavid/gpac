@@ -884,6 +884,9 @@ static GF_Config *create_default_config(char *file_path, const char *profile)
 			gf_cfg_set_key(cfg, "core", "startup-file", gui_path);
 		}
 
+		sprintf(gui_path, "%s%cres%cca-bundle.crt", szPath, GF_PATH_SEPARATOR, GF_PATH_SEPARATOR);
+		gf_cfg_set_key(cfg, "core", "ca-bundle", gui_path);
+
 		/*shaders are at the same location*/
 		sprintf(gui_path, "%s%cshaders%cvertex.glsl", szPath, GF_PATH_SEPARATOR, GF_PATH_SEPARATOR);
 		gf_cfg_set_key(cfg, "filter@compositor", "vertshader", gui_path);
@@ -1177,6 +1180,18 @@ static GF_Config *gf_cfg_init(const char *profile)
 			}
 			if (rescan_fonts)
 				gf_opts_set_key("core", "rescan-fonts", "yes");
+
+			// if ca-bundle is not set or explicitly disabled (empty string), set to default
+			const char* ca_bundle = gf_cfg_get_key(cfg, "core", "ca-bundle");
+			if (!ca_bundle) {
+				char szShare[GF_MAX_PATH];
+				if (get_default_install_path(szShare, GF_PATH_SHARE)) {
+					char gui_path[GF_MAX_PATH + 100];
+
+					sprintf(gui_path, "%s%cres%cca-bundle.crt", szShare, GF_PATH_SEPARATOR, GF_PATH_SEPARATOR);
+					gf_cfg_set_key(cfg, "core", "ca-bundle", gui_path);
+				}
+			}
 		}
 	}
 	//no config file found

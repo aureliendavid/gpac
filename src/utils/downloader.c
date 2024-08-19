@@ -1544,6 +1544,12 @@ void *gf_dm_ssl_init(GF_DownloadManager *dm, u32 mode)
 	 than examining the error stack after a failed SSL_connect.  */
 	SSL_CTX_set_verify(dm->ssl_ctx, SSL_VERIFY_NONE, NULL);
 
+	const char* ca_bundle = gf_opts_get_key("core", "ca-bundle");
+	if (ca_bundle) {
+		X509_STORE* xs = SSL_CTX_get_cert_store(dm->ssl_ctx);
+		X509_STORE_load_locations(xs, ca_bundle, NULL);
+	}
+
 #ifndef GPAC_DISABLE_LOG
 	if (gf_log_tool_level_on(GF_LOG_NETWORK, GF_LOG_DEBUG) ) {
 		SSL_CTX_set_msg_callback(dm->ssl_ctx, ssl_on_log);
@@ -3715,81 +3721,21 @@ static Bool rfc2818_match(const char *pattern, const char *string)
 #ifdef GPAC_HAS_SSL
 Bool gf_ssl_check_cert(SSL *ssl, const char *server_name)
 {
-	Bool success;
-	X509 *cert = SSL_get_peer_certificate(ssl);
-	if (!cert) return GF_TRUE;
 
-	long vresult;
-	SSL_set_verify_result(ssl, 0);
-	vresult = SSL_get_verify_result(ssl);
+	long vresult = SSL_get_verify_result(ssl);
+	Bool success = (vresult == X509_V_OK);
 
-	if (vresult == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY) {
-		GF_LOG(GF_LOG_WARNING, GF_LOG_HTTP, ("[SSL] Cannot locate issuer's certificate on the local system, will not attempt to validate\n"));
-		SSL_set_verify_result(ssl, 0);
-		vresult = SSL_get_verify_result(ssl);
+	if (!success) {
+		int level = GF_LOG_ERROR;
+		if (gf_opts_get_bool("core", "broken-cert")) {
+			success = GF_TRUE;
+			level = GF_LOG_WARNING;
+		}
+		GF_LOG(level, GF_LOG_HTTP, ("[SSL] Certificate verification failed for domain %s: %s. %s\n", server_name, ERR_error_string(vresult, NULL), (level == GF_LOG_ERROR ? " Use -broken-cert to bypass." : "")));
 	}
 
-	if (vresult == X509_V_OK) {
-		char common_name[256];
-		STACK_OF(GENERAL_NAME) *altnames;
-		GF_List* valid_names;
-		int i;
-
-		valid_names = gf_list_new();
-
-		common_name[0] = 0;
-		X509_NAME_get_text_by_NID(X509_get_subject_name(cert), NID_commonName, common_name, sizeof (common_name));
-		gf_list_add(valid_names, common_name);
-
-		altnames = X509_get_ext_d2i(cert, NID_subject_alt_name, NULL, NULL);
-		if (altnames) {
-			for (i = 0; i < sk_GENERAL_NAME_num(altnames); ++i) {
-				const GENERAL_NAME *altname = sk_GENERAL_NAME_value(altnames, i);
-				if (altname->type == GEN_DNS)
-				{
-					#if OPENSSL_VERSION_NUMBER < 0x10100000L
-						unsigned char *altname_str = ASN1_STRING_data(altname->d.ia5);
-					#else
-						unsigned char *altname_str = (unsigned char *)ASN1_STRING_get0_data(altname->d.ia5);
-					#endif
-					gf_list_add(valid_names, altname_str);
-				}
-			}
-		}
-
-		success = GF_FALSE;
-		for (i = 0; i < (int)gf_list_count(valid_names); ++i) {
-			const char *valid_name = (const char*) gf_list_get(valid_names, i);
-			if (rfc2818_match(valid_name, server_name)) {
-				success = GF_TRUE;
-				GF_LOG(GF_LOG_INFO, GF_LOG_HTTP, ("[SSL] Hostname %s matches %s\n", server_name, valid_name));
-				break;
-			}
-		}
-		if (!success) {
-			if ( gf_opts_get_bool("core", "broken-cert")) {
-				success = GF_TRUE;
-				GF_LOG(GF_LOG_WARNING, GF_LOG_HTTP, ("[SSL] Mismatch in certificate names: expected %s\n", server_name));
-			} else {
-				GF_LOG(GF_LOG_ERROR, GF_LOG_HTTP, ("[SSL] Mismatch in certificate names, try using -broken-cert: expected %s\n", 	server_name));
-			}
-#ifndef GPAC_DISABLE_LOG
-			for (i = 0; i < (int)gf_list_count(valid_names); ++i) {
-				const char *valid_name = (const char*) gf_list_get(valid_names, i);
-				GF_LOG(success ? GF_LOG_DEBUG : GF_LOG_ERROR, GF_LOG_HTTP, ("[SSL] Tried name: %s\n", valid_name));
-			}
-#endif
-		}
-
-		gf_list_del(valid_names);
-		GENERAL_NAMES_free(altnames);
-	} else {
-		success = GF_FALSE;
-		GF_LOG(GF_LOG_ERROR, GF_LOG_HTTP, ("[SSL] Error verifying certificate %x\n", vresult));
-	}
-
-	X509_free(cert);
 	return success;
+
 }
 
 #endif
