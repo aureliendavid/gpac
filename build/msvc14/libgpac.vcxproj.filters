@@ -1496,9 +1496,6 @@
     <ClCompile Include="..\..\src\filters\in_route_repair.c">
       <Filter>filters</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\filters\in_route.h">
-      <Filter>filters</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\src\evg\ftgrays.c">
       <Filter>evg</Filter>
     </ClCompile>

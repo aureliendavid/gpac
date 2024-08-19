@@ -49,6 +49,13 @@
 #ifndef CURLPIPE_MULTIPLEX
 #define CURLPIPE_MULTIPLEX 0
 #endif
+
+#if !defined(__GNUC__)
+# if defined(_WIN32_WCE) || defined (WIN32)
+#pragma comment(lib, "libcurl")
+# endif
+#endif
+
 #else
 #undef GPAC_HAS_CURL
 #endif
@@ -1544,6 +1551,18 @@ void *gf_dm_ssl_init(GF_DownloadManager *dm, u32 mode)
 	 than examining the error stack after a failed SSL_connect.  */
 	SSL_CTX_set_verify(dm->ssl_ctx, SSL_VERIFY_NONE, NULL);
 
+	const char* ca_bundle = gf_opts_get_key("core", "ca-bundle");
+
+	if (ca_bundle) {
+		X509_STORE* xs = SSL_CTX_get_cert_store(dm->ssl_ctx);
+		fprintf(stderr, "store = %p\n", xs);
+
+		//int ret = X509_STORE_load_locations(xs, "C:\\Users\\adavid\\dev\\gpac\\master\\gpac_public\\bin\\x64\\release\\curl-ca-bundle.crt", NULL);
+		int ret = X509_STORE_load_locations(xs, ca_bundle, NULL);
+
+		fprintf(stderr, "ret = %d\n", ret);
+	}
+
 #ifndef GPAC_DISABLE_LOG
 	if (gf_log_tool_level_on(GF_LOG_NETWORK, GF_LOG_DEBUG) ) {
 		SSL_CTX_set_msg_callback(dm->ssl_ctx, ssl_on_log);
@@ -2884,7 +2903,40 @@ static GF_Err curl_setup_session(GF_DownloadSession *sess)
 		//fallback 1.1
 		if (res==CURLE_UNSUPPORTED_PROTOCOL)
 			res = curl_easy_setopt(sess->curl_hnd, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_1_1);
+	
 	}
+
+	curl_easy_setopt(sess->curl_hnd, CURLOPT_VERBOSE, 1);
+	//{
+	//	long http_version;
+	//	curl_easy_getinfo(sess->curl_hnd, CURLINFO_HTTP_VERSION, &http_version);
+	//	fprintf(stderr, "%s:%d CURLINFO_HTTP_VERSION %d\n", __FILE__, __LINE__, http_version);
+	//}
+
+	//curl_easy_setopt(sess->curl_hnd, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_1_1);
+	//curl_multi_setopt(sess->curl_hnd, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_1_1);
+	//{
+	//	long http_version;
+	//	curl_easy_getinfo(sess->curl_hnd, CURLINFO_HTTP_VERSION, &http_version);
+	//	fprintf(stderr, "%s:%d CURLINFO_HTTP_VERSION %d\n", __FILE__, __LINE__, http_version);
+	//}
+
+	{
+		char* cainfo = NULL;
+		char* capath = NULL;
+
+		curl_easy_getinfo(sess->curl_hnd, CURLINFO_CAINFO, &cainfo);	
+		curl_easy_getinfo(sess->curl_hnd, CURLINFO_CAPATH, &capath);
+		fprintf(stderr, "%s:%d CURLINFO_CAINFO %s CURLINFO_CAPATH %s\n", __FILE__, __LINE__, cainfo ? cainfo : "nULL", capath ? capath : "nULL");
+
+		curl_easy_setopt(sess->curl_hnd, CURLOPT_CAINFO, "./curl-ca-bundle.crt");
+
+		curl_easy_getinfo(sess->curl_hnd, CURLINFO_CAINFO, &cainfo);
+		curl_easy_getinfo(sess->curl_hnd, CURLINFO_CAPATH, &capath);
+		fprintf(stderr, "%s:%d CURLINFO_CAINFO %s CURLINFO_CAPATH %s\n", __FILE__, __LINE__, cainfo ? cainfo : "nULL", capath ? capath : "nULL");
+
+	}
+
 	const char *proxy = gf_opts_get_key("core", "proxy");
 	if (proxy) {
 		sess->proxy_enabled = 1;
@@ -3037,6 +3089,20 @@ GF_Err gf_dm_sess_setup_from_url(GF_DownloadSession *sess, const char *url, Bool
 #ifdef GPAC_HAS_CURL
 		if (!sess->dm->curl_multi) {
 			sess->dm->curl_multi = curl_multi_init();
+			//curl_easy_setopt(sess->dm->curl_multi, CURLOPT_VERBOSE, 1);
+			//{
+			//	long http_version;
+			//	curl_easy_getinfo(sess->dm->curl_multi, CURLINFO_HTTP_VERSION, &http_version);
+			//	fprintf(stderr, "%s:%d CURLINFO_HTTP_VERSION %d\n", __FILE__, __LINE__, http_version);
+			//}
+			//curl_easy_setopt(sess->dm->curl_multi, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_1_1);
+			//curl_multi_setopt(sess->dm->curl_multi, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_1_1);
+			//{
+			//	long http_version;
+			//	curl_easy_getinfo(sess->dm->curl_multi, CURLINFO_HTTP_VERSION, &http_version);
+			//	fprintf(stderr, "%s:%d CURLINFO_HTTP_VERSION %d\n", __FILE__, __LINE__, http_version);
+			//}
+			curl_global_trace("all");
 		}
 #endif
 
@@ -3716,12 +3782,64 @@ static Bool rfc2818_match(const char *pattern, const char *string)
 Bool gf_ssl_check_cert(SSL *ssl, const char *server_name)
 {
 	Bool success;
+
 	X509 *cert = SSL_get_peer_certificate(ssl);
 	if (!cert) return GF_TRUE;
 
+	
+	
+
+	
+	{
+		#include <openssl/x509.h>
+		char* dir=NULL;
+		char* file = NULL;
+
+		dir = X509_get_default_cert_dir_env();
+
+		fprintf(stderr, "x509 dir = %s file=%s\n", dir, file);
+
+		dir = getenv(dir);
+		fprintf(stderr, "x509 dir = %s file=%s\n", dir, file);
+
+		if (!dir) {
+			dir = X509_get_default_cert_dir();		
+		}
+		fprintf(stderr, "x509 dir = %s file=%s\n", dir, file);
+				
+
+		file = X509_get_default_cert_file_env();
+		fprintf(stderr, "x509 dir = %s file=%s\n", dir, file);
+		file = getenv(file);
+		fprintf(stderr, "x509 dir = %s file=%s\n", dir, file);
+
+		if (!file)
+			file = X509_get_default_cert_file();
+
+		fprintf(stderr, "x509 dir = %s file=%s\n", dir, file);
+
+	}
+
 	long vresult;
+	vresult = SSL_get_verify_result(ssl);
+	fprintf(stderr, "vresult = %d ssl state = %s \n ssl long state = %s\n err string = %s\n", vresult, SSL_state_string(ssl), SSL_state_string_long(ssl), ERR_error_string(vresult, NULL));
+	success = (vresult == X509_V_OK);
+
+	if (!success) {
+		int level = GF_LOG_ERROR;
+		if (gf_opts_get_bool("core", "broken-cert")) {
+			success = GF_TRUE;
+			level = GF_LOG_WARNING;
+		}
+		GF_LOG(level, GF_LOG_HTTP, ("[SSL] Certificate verification failed for domain %s: %s. %s\n", server_name, ERR_error_string(vresult, NULL), (level==GF_LOG_ERROR?" Use -broken-cert to bypass.":"")));
+	}
+
+	return success;
+
+
 	SSL_set_verify_result(ssl, 0);
 	vresult = SSL_get_verify_result(ssl);
+	fprintf(stderr, "vresult = %d\n", vresult);
 
 	if (vresult == X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY) {
 		GF_LOG(GF_LOG_WARNING, GF_LOG_HTTP, ("[SSL] Cannot locate issuer's certificate on the local system, will not attempt to validate\n"));
@@ -4498,9 +4616,23 @@ GF_DownloadManager *gf_dm_new(GF_FilterSession *fsess)
 #ifdef GPAC_HAS_CURL
 	if (gf_opts_get_bool("core", "curl")) {
 		dm->curl_multi = curl_multi_init();
-		curl_multi_setopt(dm->curl_multi, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);
+		curl_multi_setopt(dm->curl_multi, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);		
 		dm->curl_mx = gf_mx_new("curl");
 		curl_global_init(CURL_GLOBAL_ALL);
+		curl_easy_setopt(dm->curl_multi, CURLOPT_VERBOSE, 1);
+		{
+			long http_version;
+			curl_easy_getinfo(dm->curl_multi, CURLINFO_HTTP_VERSION, &http_version);
+			fprintf(stderr, "%s:%d CURLINFO_HTTP_VERSION %d\n", __FILE__, __LINE__, http_version);
+		}
+		curl_easy_setopt(dm->curl_multi, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_1_1);
+		curl_multi_setopt(dm->curl_multi, CURLOPT_HTTP_VERSION, (long)CURL_HTTP_VERSION_1_1);
+		{
+			long http_version;
+			curl_easy_getinfo(dm->curl_multi, CURLINFO_HTTP_VERSION, &http_version);
+			fprintf(stderr, "%s:%d CURLINFO_HTTP_VERSION %d\n", __FILE__, __LINE__, http_version);
+		}
+		curl_global_trace("all");
 	}
 #endif
 
