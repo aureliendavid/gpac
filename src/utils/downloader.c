@@ -49,6 +49,13 @@
 #ifndef CURLPIPE_MULTIPLEX
 #define CURLPIPE_MULTIPLEX 0
 #endif
+
+#if !defined(__GNUC__)
+# if defined(_WIN32_WCE) || defined (WIN32)
+#pragma comment(lib, "libcurl")
+# endif
+#endif
+
 #else
 #undef GPAC_HAS_CURL
 #endif
@@ -1545,9 +1552,27 @@ void *gf_dm_ssl_init(GF_DownloadManager *dm, u32 mode)
 	SSL_CTX_set_verify(dm->ssl_ctx, SSL_VERIFY_NONE, NULL);
 
 	const char* ca_bundle = gf_opts_get_key("core", "ca-bundle");
-	if (ca_bundle) {
-		X509_STORE* xs = SSL_CTX_get_cert_store(dm->ssl_ctx);
-		X509_STORE_load_locations(xs, ca_bundle, NULL);
+	fprintf(stderr, "ca_bundle = %s\n", ca_bundle);
+
+	if (ca_bundle && gf_file_exists(ca_bundle)) {
+		SSL_CTX_load_verify_locations(dm->ssl_ctx, ca_bundle, NULL);
+	}
+	else {
+		char* ossl_bundle = X509_get_default_cert_file_env();
+		ossl_bundle = getenv(ossl_bundle);
+		if (!ossl_bundle)
+			ossl_bundle = X509_get_default_cert_file();
+		fprintf(stderr, "ossl_bundle = %s\n", ossl_bundle);
+
+		if (!ossl_bundle || !gf_file_exists(ossl_bundle)) {
+
+			const char* ca_bundle_default = gf_opts_get_key("core", "ca-bundle-default");
+			fprintf(stderr, "ca_bundle_default = %s\n", ca_bundle_default);
+
+			if (ca_bundle_default) {
+				SSL_CTX_load_verify_locations(dm->ssl_ctx, ca_bundle_default, NULL);
+			}
+		}
 	}
 
 #ifndef GPAC_DISABLE_LOG
@@ -2837,7 +2862,7 @@ static size_t curl_on_data(char *ptr, size_t size, size_t nmemb, void *clientp)
 #endif
 
 #ifdef GPAC_HAS_CURL
-static GF_Err curl_setup_session(GF_DownloadSession *sess)
+static GF_Err curl_setup_session(GF_DownloadSession* sess)
 {
 	CURLcode res;
 	sess->curl_hnd = curl_easy_init();
@@ -2871,10 +2896,42 @@ static GF_Err curl_setup_session(GF_DownloadSession *sess)
 	if (!res) res = curl_easy_setopt(sess->curl_hnd, CURLOPT_CONNECTTIMEOUT_MS, sess->conn_timeout);
 	if (!res) res = curl_easy_setopt(sess->curl_hnd, CURLOPT_ACCEPTTIMEOUT_MS, sess->conn_timeout);
 	if (!res) res = curl_easy_setopt(sess->curl_hnd, CURLOPT_NOSIGNAL, 1);
-	if ( gf_opts_get_bool("core", "broken-cert")) {
-		if (!res) res = curl_easy_setopt(sess->curl_hnd,  CURLOPT_SSL_VERIFYPEER, 0);
-		if (!res) res = curl_easy_setopt(sess->curl_hnd,  CURLOPT_SSL_VERIFYHOST, 0);
+	if (gf_opts_get_bool("core", "broken-cert")) {
+		if (!res) res = curl_easy_setopt(sess->curl_hnd, CURLOPT_SSL_VERIFYPEER, 0);
+		if (!res) res = curl_easy_setopt(sess->curl_hnd, CURLOPT_SSL_VERIFYHOST, 0);
 	}
+
+
+	char* cainfo = NULL;
+	curl_easy_getinfo(sess->curl_hnd, CURLINFO_CAINFO, &cainfo);
+	fprintf(stderr, "%s:%d CURLINFO_CAINFO %s \n", __FILE__, __LINE__, cainfo);
+
+	const char* ca_bundle = gf_opts_get_key("core", "ca-bundle");
+	fprintf(stderr, "ca_bundle = %s\n", ca_bundle);
+
+	if (ca_bundle && gf_file_exists(ca_bundle)) {
+		curl_easy_setopt(sess->curl_hnd, CURLOPT_CAINFO, ca_bundle);
+		curl_easy_setopt(sess->curl_hnd, CURLOPT_CAPATH, NULL);
+	}
+#if CURL_AT_LEAST_VERSION(7,84,0)
+	else {
+		char* curl_bundle = NULL;
+		curl_easy_getinfo(sess->curl_hnd, CURLINFO_CAINFO, &curl_bundle);
+		fprintf(stderr, "%s:%d CURLINFO_CAINFO %s \n", __FILE__, __LINE__, curl_bundle);
+
+		if (!curl_bundle || !gf_file_exists(curl_bundle)) {
+
+			const char* ca_bundle_default = gf_opts_get_key("core", "ca-bundle-default");
+			fprintf(stderr, "ca_bundle_default = %s\n", ca_bundle_default);
+
+			if (ca_bundle_default) {
+				curl_easy_setopt(sess->curl_hnd, CURLOPT_CAINFO, ca_bundle_default);
+			}
+
+		}
+	}
+#endif
+
 	//set HTTP version
 	if (!res) {
 		curl_version_info_data *ver = curl_version_info(CURLVERSION_NOW);
