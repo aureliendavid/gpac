@@ -3,6 +3,7 @@
 import argparse
 import re
 import subprocess
+import pprint
 
 
 def cmd(command, log=False, check=True, printcmd=False):
@@ -55,7 +56,7 @@ def main(args):
     with open(VERSIONH_PATH, "r") as f:
         versionh = f.read()
 
-    valid, args.abi1, args.abi2, args.abi3 = parse_version(args.abi) if args.abi else get_current_abi(versionh)
+    valid, args.abi1, args.abi2, args.abi3 = parse_version(args.abi) if (args.abi and args.abi!="") else get_current_abi(versionh)
     if not valid:
         parser.print_usage()
         exit(1)

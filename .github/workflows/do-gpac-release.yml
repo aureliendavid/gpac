@@ -1,0 +1,40 @@
+name: Relase new GPAC version
+run-name: Relase new GPAC version
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version for this release (format: MAJOR.minor[.micrco])'
+        required: true
+        type: string
+      abi:
+        description: '(optional) New ABI version (format: MAJOR.minor[.micrco])'
+        required: false
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GPAC_BUILDBOT_PAT }}
+
+      - name: Set up git
+        run: |
+            git config user.name "GitHub Actions Bot"
+            git config user.email "<>"
+
+      - name: Run release script
+        run: |
+          ./do_release.py '${{ github.event.inputs.version }}' --abi '${{ github.event.inputs.abi }}'
+
+      - name: Push commit and tag
+        run: |
+            git push
+            git push --tags
