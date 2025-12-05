@@ -16133,7 +16133,7 @@ Bool gf_ac4_parser(u8 *buf, u32 buflen, u32 *pos, GF_AC4Config *hdr, Bool full_p
 	if (*pos >= buflen) return GF_FALSE;
 
 	bs = gf_bs_new((const char*)(buf + *pos), buflen, GF_BITSTREAM_READ);
-	ret = gf_ac4_parser_bs(bs, hdr, full_parse, start_from_toc);
+	ret = gf_ac4_parser_bs(bs, hdr, full_parse, start_from_toc, GF_FALSE);
 	gf_bs_del(bs);
 
 	return ret;
@@ -16151,12 +16151,14 @@ Bool gf_ac4_frame_size(GF_BitStream *bs, GF_AC4Config *hdr)
 }
 
 GF_EXPORT
-Bool gf_ac4_parser_bs(GF_BitStream *bs, GF_AC4Config *hdr, Bool full_parse, Bool start_from_toc)
+Bool gf_ac4_parser_bs(GF_BitStream *bs, GF_AC4Config *hdr, Bool full_parse, Bool start_from_toc, Bool abi_change)
 {
 	u32 sync_word = 0;
 	u64 pos;
 	GF_AC4StreamInfo* stream;
 	if (!hdr || !bs) return GF_FALSE;
+
+	if (abi_change) fprintf(stderr, "abi change!");
 
 	pos = gf_bs_get_position(bs);
 	stream = &(hdr->stream);

@@ -2021,7 +2021,7 @@ static GF_Err cenc_encrypt_packet(GF_CENCEncCtx *ctx, GF_CENCStream *cstr, GF_Fi
 				break;
 			case CENC_AC4:
 				pos = gf_bs_get_position(ctx->bs_r);
-				if (!gf_ac4_parser_bs(ctx->bs_r, cstr->ac4_state->config, GF_TRUE, GF_TRUE))
+				if (!gf_ac4_parser_bs(ctx->bs_r, cstr->ac4_state->config, GF_TRUE, GF_TRUE, GF_TRUE))
 					return GF_NON_COMPLIANT_BITSTREAM;
 				gf_bs_seek(ctx->bs_r, pos);
 

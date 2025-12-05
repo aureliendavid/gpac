@@ -724,7 +724,7 @@ Bool gf_ac4_parser(u8 *buffer, u32 buffer_size, u32 *pos, GF_AC4Config *out_hdr,
 \param start_from_toc if GF_TRUE, parsing starts from the toc
 \return GF_TRUE if success
 */
-Bool gf_ac4_parser_bs(GF_BitStream *bs, GF_AC4Config *hdr, Bool full_parse, Bool start_from_toc);
+Bool gf_ac4_parser_bs(GF_BitStream *bs, GF_AC4Config *hdr, Bool full_parse, Bool start_from_toc, Bool abi_change);
 
 /*! gets basic information from an AVC Sequence Parameter Set
 \param sps SPS NAL buffer
