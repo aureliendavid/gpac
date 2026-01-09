@@ -171,6 +171,7 @@ u64 gf_sys_clock_high_res()
 #endif
 
 GF_Err gf_sys_enable_rmtws(Bool start);
+GF_Err gf_sys_enable_userws(Bool start);
 
 static Bool gpac_disable_rti = GF_FALSE;
 
@@ -1165,42 +1166,69 @@ const char *gf_sys_find_global_arg(const char *arg)
 
 
 #ifndef GPAC_DISABLE_RMTWS
-RMT_WS *rmtws_handle=NULL;
+RMT_WS* rmtws_handle=NULL;
+RMT_WS* userws_handle=NULL;
 #endif
 
 GF_EXPORT
 void* gf_sys_get_rmtws() {
 	return (void*)rmtws_handle;
 }
-GF_EXPORT
-GF_Err gf_sys_enable_rmtws(Bool start) {
-#ifndef GPAC_DISABLE_RMTWS
-	if (start && !rmtws_handle) {
 
-		rmtws_handle = rmt_ws_new();
-		if (!rmtws_handle) {
+void* gf_sys_get_userws() {
+	return (void*)userws_handle;
+}
+
+#ifndef GPAC_DISABLE_RMTWS
+GF_Err gf_sys_init_ws(RMT_WS** rmt, Bool start, u16 port) {
+
+	fprintf(stderr, "gf_sys_init_ws rmt %p\n", rmt);
+	if (!rmt)
+		return GF_BAD_PARAM;
+
+	if (start && !*rmt) {
+
+		*rmt = rmt_ws_new();
+		if (!rmt) {
 			GF_LOG(GF_LOG_ERROR, GF_LOG_CORE, ("[core] unable to initialize RMT websocket server\n"));
 			return GF_OUT_OF_MEM;
 		}
 
-		RMT_Settings *rmcfg = gf_rmt_get_settings(rmtws_handle);
+		RMT_Settings *rmcfg = gf_rmt_get_settings(*rmt);
 
-		rmcfg->port = gf_opts_get_int("core", "rmt-port");
+		rmcfg->port = port;
 		rmcfg->limit_connections_to_localhost = gf_opts_get_bool("core", "rmt-localhost");
 		rmcfg->msSleepBetweenServerUpdates = gf_opts_get_int("core", "rmt-sleep");
 		rmcfg->cert = gf_opts_get_key("core", "rmt-cert");
 		rmcfg->pkey = gf_opts_get_key("core", "rmt-pkey");
 
-		rmt_ws_run(rmtws_handle);
+		rmt_ws_run(*rmt);
 
 
-	} else if (!start && rmtws_handle) {
+	} else if (!start && *rmt) {
 
-		rmt_ws_del(rmtws_handle);
-		rmtws_handle=NULL;
+		rmt_ws_del(*rmt);
+		*rmt=NULL;
 
 	}
 	return GF_OK;
+
+}
+#endif
+
+GF_EXPORT
+GF_Err gf_sys_enable_rmtws(Bool start) {
+#ifndef GPAC_DISABLE_RMTWS
+	return gf_sys_init_ws(&rmtws_handle, start, gf_opts_get_int("core", "rmt-port"));
+#else
+	return GF_NOT_SUPPORTED;
+#endif
+}
+
+GF_EXPORT
+GF_Err gf_sys_enable_userws(Bool start) {
+#ifndef GPAC_DISABLE_RMTWS
+	return gf_sys_init_ws(&userws_handle, start, gf_opts_get_int("core", "rmt-port")+1);
 #else
 	return GF_NOT_SUPPORTED;
 #endif
