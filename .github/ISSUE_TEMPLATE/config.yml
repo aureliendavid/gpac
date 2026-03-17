@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: 💡 Feature Request
-    url: https://github.com/org/repo/discussions/new?category=ideas
+    url: "mailto:support@example.com?subject=GitHub%20Issue%20Report"
     about: Please suggest new ideas in our Discussions tab.
   - name: 🛡️ Security Policy
     url: https://example.com/security
