@@ -1,3 +1,4 @@
+blank_issues_enabled: false
 contact_links:
   - name: 💡 Feature Request
     url: https://github.com/org/repo/discussions/new?category=ideas
@@ -5,6 +6,9 @@ contact_links:
   - name: 🛡️ Security Policy
     url: https://example.com/security
     about: Read our security vulnerability disclosure process.
+  - name: "📧 Report via Email"
+    url: "mailto:security@yourdomain.com"
+    about: "If you prefer to report issues privately, please email our team."    
   - name: 🆘 Get Help
     url: https://stackoverflow.com/questions/tagged/your-tag
     about: Ask the community for help with using this library.
