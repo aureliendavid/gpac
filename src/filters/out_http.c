@@ -346,6 +346,7 @@ static u32 httpio_read(GF_FileIO *fileio, u8 *buffer, u32 bytes)
 }
 static u32 httpio_write(GF_FileIO *fileio, u8 *buffer, u32 bytes)
 {
+	if (!buffer || !bytes) return 0;
 	GF_HTTPFileIO *ioctx = gf_fileio_get_udta(fileio);
 	if (!ioctx || ioctx->parent) return 0;
 
@@ -1840,17 +1841,53 @@ static void httpout_sess_io(void *usr_cbk, GF_NETIO_Parameter *parameter)
 		if (full_path) {
 			HTTP_DIRInfo *di = NULL;
 			u32 di_len = 0;
-			for (i=0; i<count; i++) {
-				HTTP_DIRInfo *adi = gf_list_get(sess->ctx->directories, i);
-				u32 adi_len = (u32) strlen(adi->path);
-				if (strncmp(adi->path, full_path, adi_len)) continue;
-				if (!di || (di_len < adi_len)) {
-					di_len = adi_len;
-					di = adi;
+
+			char* full_path_res = gf_realpath(full_path, NULL);
+
+			if (full_path_res) {
+				u32 full_path_len = (u32)strlen(full_path_res);
+
+				for (i=0; i<count; i++) {
+					Bool is_child = GF_TRUE;
+					HTTP_DIRInfo *adi = gf_list_get(sess->ctx->directories, i);
+					u32 adi_len = (u32) strlen(adi->path);
+
+					char* adi_res = gf_realpath(adi->path, NULL);
+					if (!adi_res) continue;
+
+					u32 adi_res_len = (u32) strlen(adi_res);
+					// GF_DBG("testing adi->path=%s full_path=%s adi_len=%d adi_res=%s adi_res_len=%d => cmp %d", adi->path, full_path, adi_len, adi_res, adi_res_len, strncmp(adi_res, full_path, adi_res_len));
+					if (strncmp(adi_res, full_path_res, adi_res_len)) {
+						is_child = GF_FALSE;
+					}
+					else if (full_path_len > adi_res_len) {
+						// prevent allowing /webroot_secret/file as child of /webroot
+						char next_char = full_path_res[adi_res_len];
+						if (next_char != '/' && next_char != '\\') {
+							if (adi_res_len && adi->path[adi_res_len-1] != '/' && adi->path[adi_res_len-1] != '\\')
+								is_child = GF_FALSE;
+						}
+					}
+					if (is_child) {
+						if (!di || (di_len < adi_len)) {
+							di_len = adi_len;
+							di = adi;
+						}
+					}
+					free(adi_res);
+					GF_DBG("di=%p di_len=%d", di, di_len);
 				}
 			}
-			sess->dir_desc = di;
+			if (di)
+				sess->dir_desc = di;
+			else {
+				GF_DBG("full_path=%s (%p)", full_path, full_path);
+				gf_free(full_path);
+				full_path=NULL;
+			}
+			free(full_path_res);
 		}
+
 		if (!full_path && !strcmp(url+1, "favicon.ico")) {
 			char path[GF_MAX_PATH];
 			if (gf_opts_default_shared_directory(path)) {
@@ -3368,6 +3405,7 @@ static void httpout_del_session(GF_HTTPOutSession *s)
 	if (s->http_sess)
 		httpout_close_session(s, GF_OK);
 	if (s->buffer) gf_free(s->buffer);
+	GF_DBG("(s->path=%s (%p)", s->path, s->path);
 	if (s->path) gf_free(s->path);
 	if (s->mime) gf_free(s->mime);
 	if (s->req_url) gf_free(s->req_url);
